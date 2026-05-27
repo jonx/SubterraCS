@@ -356,7 +356,41 @@ The two GUI apps:
   scanner: type an address + cell size, see decoded cells, hover
   for raw bytes, "Save PNG" dumps the sheet to `renders/`.
 
-## 12. First extracted asset
+## 12. Two visual quirks that look like bugs but aren't
+
+While playing, the ship visibly **flickers** and the **colour of
+nearby enemies changes when the ship moves past them**. Both turn
+out to be authentic Spectrum behaviour — our emulator is
+reproducing them faithfully.
+
+**Flicker** comes from the way Spectrum games animate. The 48 K
+machine has no hardware sprites, only a single 6 144-byte bitmap +
+768-byte attribute buffer. To move any object you have to *erase
+the old position, then draw at the new position* — both operations
+mutate the live framebuffer. If the game's main loop isn't strictly
+synchronised to the 50 Hz frame interrupt, the raster beam catches
+the framebuffer in an "erased" state for one or more scanlines and
+the sprite is missing on that frame. Subterranean Stryker's main
+loop (`$D7FB`–`$D826`) calls a dozen update routines in sequence
+without an obvious `HALT` between draw and erase, so this happens
+constantly. Most Spectrum action games have the same look.
+
+**Colour clash** comes from the Spectrum's attribute layout. The
+bitmap is 1 bit per pixel — only ink-vs-paper, no colour. Colour is
+stored separately in the 32×24 attribute grid, one byte per 8×8
+character cell. A sprite that moves across cells takes its colour
+from whichever cell it currently sits in; any *other* sprite or
+piece of terrain inside that cell shares the same colour, because
+there's only one attribute byte for the whole cell. So as the
+player ship sweeps past an enemy, the enemy briefly takes on the
+ship's ink colour — the famous "colour clash" effect. Every
+Spectrum game has it; usually the artists work *with* the grid by
+keeping sprites colour-uniform inside each 8×8.
+
+Neither is something we'd want our future C# port to "fix" — they
+are part of what makes the game look like itself.
+
+## 13. First extracted asset
 
 The game keeps its in-game UDGs at `$E62B`. `MainEntry` does
 `LD HL,$E62B; LD ($5C7B),HL` early on, pointing the Spectrum
