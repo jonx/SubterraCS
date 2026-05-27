@@ -65,10 +65,17 @@ internal static class ScreenWriteTraceCommand
             }
         };
 
+        // Capture A (the sprite byte) at the moment of the XOR-draw
+        // primitive so we can see the actual sprite-data byte stream.
+        var spriteBytes = new List<byte>();
         sys.Cpu.MaskableInterrupt();
         long target = sys.Cpu.Cycles + Spectrum48.TStatesPerFrame;
         while (sys.Cpu.Cycles < target)
         {
+            if (sys.Cpu.PC == 0xE1E1) // about to execute XOR (HL)
+            {
+                spriteBytes.Add(sys.Cpu.A);
+            }
             sys.Cpu.Step();
         }
 
@@ -88,6 +95,24 @@ internal static class ScreenWriteTraceCommand
             Console.WriteLine();
             Console.WriteLine($"Bitmap addresses touched: ${lo:X4}..${hi:X4}");
         }
+        if (spriteBytes.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"Sprite source bytes captured at $E1E1 (raw A in XOR-draw, {spriteBytes.Count} total):");
+            for (int i = 0; i < spriteBytes.Count; i += 16)
+            {
+                int len = Math.Min(16, spriteBytes.Count - i);
+                var sb = new System.Text.StringBuilder();
+                sb.Append($"  {i,4}: ");
+                for (int j = 0; j < len; j++)
+                {
+                    sb.Append(spriteBytes[i + j].ToString("X2"));
+                    sb.Append(' ');
+                }
+                Console.WriteLine(sb.ToString());
+            }
+        }
+
         Console.WriteLine();
         Console.WriteLine($"First {bitmapTrace.Count} bitmap writes (chronological):");
         Console.WriteLine("  #    PC      screen   byte   sx,sy");

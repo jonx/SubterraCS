@@ -153,6 +153,35 @@ Recognisable contents:
 * Row 9: projectiles and sparks.
 * Row 10+: misc creature/enemy parts.
 
+## RAM ($E03D–$E045)  — overwrite tile-draw inner loop (used for HUD)
+
+```
+E03D  LD B,$08      ; 8 rows
+E03F  LD A,(DE)     ; sprite byte
+E040  LD (HL),A     ; overwrite (not XOR)
+E041  INC H         ; next scanline (within an 8-row band)
+E042  INC DE
+E043  DJNZ $E03F
+E045  RET
+```
+
+The 8-row block-copy used for *static* content. The caller sets DE
+via the helper at `$E030`:
+
+```
+E030  LD BC,($5C36) ; tile-bank base
+E034  LD H,$00; LD L,A
+E036-E039  ADD HL,HL × 3   ; HL = tile index × 8
+E03A  ADD HL,BC            ; HL = base + index*8
+```
+
+So *which* tile bank gets used depends on `($5C36)`. In our running
+game it's `$3C00` — that's the Spectrum **ROM system font** (96
+characters × 8 bytes at `$3C00-$3FFF`). So the HUD labels (DEPTH /
+SCORE / SHIELD / FUEL / RESCUED) are drawn using the stock ROM font
+through this routine. Game-specific graphics use the `$B0F4` bank
+via the indirection at `$DAF2` (see below).
+
 ## RAM ($E1DE–$E1E3)  — XOR sprite-draw inner loop
 
 ```
