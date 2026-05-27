@@ -782,3 +782,49 @@ Lessons for future-me, recorded so I don't repeat them:
    it's not the shovels?" / "you confirmed the blinking was by
    design") pointed me at exactly the right place in three steps.
    When the user nudges, take the nudge.
+
+### Postscript: this wasn't actually hidden — I found it the hard way
+
+To be honest with future-me: the player sprite was not buried.
+Every clue I needed was already on the page two sections earlier,
+in §14's own table of "the three concurrent draw paths". I
+*already* had:
+
+* `$DD26 / $DD27 / $DD2E` listed as one of the hot bitmap-write
+  PCs at frame 280 — I labelled them "playfield edge" and moved
+  on, but the writes there were all at **column 15 (x = 120) of
+  the bitmap** — which is the player's x position on screen. Had
+  I followed *any* of those three writes back to its routine, I
+  would have landed on `$DCF5` directly.
+* `$E1DE` already named as "the XOR draw primitive for moving
+  sprites", with the explicit prediction in §12 that **the
+  flicker comes from XOR drawing**. The entity-table draws in
+  §16 use `$F2BC`, which is *overwrite*, not XOR — so they
+  *can't* be the flickering player by construction. That alone
+  ruled out the whole entity-type rabbit hole.
+* A trivial `subterra find-bytes` of the byte sequence `AE 77`
+  (the `XOR (HL); LD (HL),A` instruction pair) across game RAM
+  would have produced a short hit list including `$DCF5`, and a
+  one-glance look at the few hits would have shown the
+  player-specific setup (`LD IX,$E8C9; LD DE,$E8A9`).
+
+The straight-line approach would have been:
+
+```
+flicker observed → §12 says flicker = XOR draw
+                 → grep RAM for `AE 77` (the XOR-then-store pair)
+                 → find $DCF5 → read setup → $E8A9 → trace upstream → $E63B
+```
+
+Three steps. Instead I disassembled the entity-type table, wrote
+a quadrant decoder, rendered 16+ banks, mis-identified the first
+one, got corrected twice, and only then took the actually short
+path. The user was generous about it ("okay but it wasn't that
+hidden, you just found it the hard way") — which earns its own
+lesson:
+
+4. **Before diving into a new system, re-read the notes I
+   already have.** §12 + §14 of this very log contained the two
+   facts that would have collapsed the whole problem. RE-LOG
+   isn't just a write-only journal; it's a tool, and I should
+   consult it before generating new tools.
