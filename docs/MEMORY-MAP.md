@@ -237,6 +237,152 @@ Spectrum bitmap address via the screen-row → high-byte table at
 `$E80F`. The two `SRL E` × 3 shifts divide by 8 to convert pixel
 coordinates into character cells.
 
+## RAM ($F5A0–$F5DF)  — entity-type table (4 bytes × ~16 types)
+
+The master lookup that connects an entity *kind* to its sprite
+graphics and colour. Each entry is 4 bytes:
+
+| Offset | Meaning |
+| ------ | ------- |
+| +0..1  | Little-endian pointer to the 16-frame sprite bank for this entity type |
+| +2     | Max frames in the bank (`$10` for full-size entities, `$08` or `$04` for smaller ones) |
+| +3     | Attribute byte to paint into the entity's 8×8 cell (ink + paper + bright) |
+
+First entries decoded from `build/post-game.bin`:
+
+| Type | Sprite ptr | Frames | Attr | Decoded contents (from `entity-bank` PNG) |
+| ---- | ---------- | ------ | ---- | ----------------------------------------- |
+| 0    | `$B8F4`    | 16     | `$43` bright magenta | **The player submarine** — side view, drill, descent / explode frames |
+| 1    | `$BAF4`    | 16     | `$42` bright red     | Lava / molten droplets, ascend & fall |
+| 2    | `$BCF4`    | 16     | `$43` bright magenta | Cave-roof stalactite formations |
+| 3    | `$BEF4`    | 16     | `$44` bright green   | Falling rocks / cave debris |
+| 4    | `$C0F4`    | 16     | `$43` bright magenta | (TBD) |
+| 5    | `$C2F4`    | 8      | `$46` bright yellow  | (TBD) |
+| 6    | `$C354`    | 5      | `$02` red            | (TBD — note the unusual 5-frame count and the offset that isn't `…F4`) |
+| …    | up to slot 22 (`$D6F4`) before the table fizzles into other purposes |
+
+So the game has a clean **type → bank → 16 animation frames**
+indirection. Adding a new enemy is just an entry in this table.
+
+## RAM (entity sprite banks at $B8F4 onwards)
+
+Each entity-type bank is **16 frames × 32 bytes/frame = 512 bytes**.
+Per frame, the 32 bytes are laid out in a **column-major quadrant**
+form:
+
+| Byte offset | Maps to |
+| ----------- | ------- |
+| 0  – 7      | Top-left 8 rows × 1 byte (8 × 8 pixels) |
+| 8  – 15     | Top-right 8 rows × 1 byte |
+| 16 – 23     | Bottom-left 8 rows × 1 byte |
+| 24 – 31     | Bottom-right 8 rows × 1 byte |
+
+i.e. the four 8 × 8 quadrants are stored *vertically* (one byte per
+scanline) rather than row-major. The decoder lives in
+`QuadrantSpriteRenderer` in `Subterra.Assets`; the corresponding
+CLI command is `subterra entity-bank`.
+
+## RAM ($F1EF–$F2E1)  — per-entity 16 × 16 sprite draw
+
+The routine that consumes the table above and produces actual
+pixels on screen. Per entity:
+
+```
+F1F0  LD IY,$F5A0           ; entity-type table base
+F1F4  LD E,(IX+$00)         ; entity type ID
+F1F9  SLA E; SLA E          ; × 4 (each type-entry is 4 bytes)
+F1FD  ADD IY,DE             ; IY = $F5A0 + type*4
+
+F1FF  LD L,(IX+$02)         ; sprite frame index
+...
+F228  LD L,(IX+$02); LD H,$00
+F22D-F231  ADD HL,HL × 5    ; HL = frame_index × 32
+F232  LD E,(IY+$00); LD D,(IY+$01)
+F238  ADD HL,DE             ; HL = sprite_bank_base + frame*32  → sprite source
+```
+
+Then `EX DE,HL` and four calls to `$F2BC`, each drawing one
+8-row × 1-byte quadrant of the 16 × 16 picture to the screen
+address held in (IX+3..4) for the top half and (IX+5..6) for the
+bottom half. Attribute byte from `(IY+$03)` is written to the
+appropriate cell at the end of every `$F2BC` call.
+
+The IX entity layout (8 bytes per slot):
+
+| Offset | Meaning |
+| ------ | ------- |
+| +0     | Type id (×4 → index into `$F5A0` type table) |
+| +1     | `y` coordinate (used by `$F1F4` cheap "on-screen" check `CP $41`) |
+| +2     | Current animation frame index (×32 → offset into sprite bank) |
+| +3, +4 | Screen address (lo, hi) for the top half of the sprite |
+| +5, +6 | Screen address (lo, hi) for the bottom half |
+| +7     | (TBD — likely a flag bit, or x coordinate retained for redraw) |
+
+## RAM (`($F1B9)`, `($F1BB)`)  — active entity list pointer + count
+
+Inside the entity dispatcher at `$F1A5`:
+
+```
+F1AE  LD A,($F1BB)          ; B = entity count
+F1B2  LD IX,($F1B9)         ; IX = entity list base
+```
+
+The pointer + count are patched per "slice" — the dispatcher cycles
+through 4 slices (`$F593 = 0..3`), processing a different sub-list
+per frame to time-slice the workload across four 50 Hz frames.
+
+## RAM ($E881–$E8A0)  — particle / bullet table (8 × 4 bytes)
+
+A small entity list of **8 slots × 4 bytes**:
+
+| Offset | Meaning |
+| ------ | ------- |
+| +0     | `x` (pixel column / 1 — used directly as `C` in `$E1E4`) |
+| +1     | `y` (pixel row — used directly as `B` in `$E1E4`) |
+| +2     | `dx` (signed velocity, added to x each frame) |
+| +3     | `dy` (signed velocity, added to y each frame) |
+
+The draw loop at `$E199` walks IX through this table:
+
+```
+E199  LD IX,$E881
+E19D  LD B,$08            ; 8 entities
+E19F  PUSH BC
+E1A0  LD A,(IX+$01); CP $41
+E1A5  JR C,$E1B7          ; off-screen, skip
+E1A7  LD C,(IX+$00)       ; x → C
+E1AA  LD B,(IX+$01)       ; y → B
+E1AD  CALL $E1C0           ; falls into $E1C1 → 2x2 XOR wrapper
+E1B0  CALL $DB0E          ; compute attribute address
+E1B3  LD H,A
+E1B4  EX AF,AF'           ; swap to shadow A (the colour byte)
+E1B5  LD (HL),A           ; paint the attribute cell
+E1B6  EX AF,AF'
+E1B7  LD BC,$0004; ADD IX,BC; DJNZ $E19F
+```
+
+Each entity is XOR-drawn as a **single byte**, with A being whatever
+the caller set up before invoking the draw pass. In practice the
+captured byte stream shows single-bit values like `$80, $40, $20,
+$10, …` — i.e. the entities are 1-pixel dots that move along
+trajectories given by `(dx, dy)`. Bullets and particles, in other
+words.
+
+The update loop sits immediately after (`$DC11`+):
+
+```
+DC11  LD IX,$E881; LD B,$08; LD DE,$0004
+DC18  LD A,(IX+$01); CP $41; JR C,$DC31    ; off-screen → skip
+DC1F  LD A,(IX+$00); ADD A,(IX+$02); LD (IX+$00),A   ; x += dx
+DC28  LD A,(IX+$01); ADD A,(IX+$03); LD (IX+$01),A   ; y += dy
+DC31  ADD IX,DE; DJNZ $DC18
+```
+
+So `$E881` is the **particle simulation buffer**. The player ship
+and enemy sprites — being larger than one byte — must live in a
+different table (TBD); the entity list here is dedicated to flying
+dots.
+
 ## RAM ($E579–$E57A) — current sprite composition table pointer
 
 Holds the base address of the array the sprite-draw routine at

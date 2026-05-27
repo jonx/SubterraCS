@@ -560,3 +560,120 @@ Where they overlap, the memory map is authoritative for the
 *what* (address, name, brief description) and the log is
 authoritative for the *why* (how we found it, what dead-ends we
 hit). Commits where we identify something new should touch both.
+
+## 16. Cracking the entity system
+
+Picking up from §14: we knew every moving sprite was XOR-drawn one
+byte at a time at `$E1E2`, but we hadn't found *where the source
+bytes came from*. The trace at frame 300 had given us single-bit
+patterns (`$80, $40, $20, …`) which made obvious sense for bullets
+but not for the player ship or the enemies (which clearly draw
+more pixels than one bit per byte).
+
+So there had to be a *second* draw path used for bigger sprites.
+The PC histogram at frame 280 (a less bullet-heavy gameplay state)
+spelled it out:
+
+```
+PC=$E041     72 writes   ← overwrite font copy (HUD)
+PC=$F2CF     64 writes   ← !! unknown path !!
+PC=$DC87     32 writes
+PC=$E1E3     22 writes   ← XOR draw (the bullets)
+PC=$DD26/27/2E  14 each  ← playfield edge
+...
+```
+
+`$F2CF` had nothing to do with `$E1DE`. Disassembling around it
+showed a separate primitive:
+
+```
+F2BC  LD B,$08
+F2BE  PUSH HL
+F2BF  LD A,(HL)            ; read screen
+F2C0  JP $F2CD             ; (always)
+F2CD  LD A,(DE)            ; load sprite byte
+F2CE  LD (HL),A            ; overwrite — no XOR
+F2CF  INC DE
+F2D0  INC H                ; next scanline (within band)
+F2D1  DJNZ $F2BF           ; 8 rows
+F2D3  POP HL
+F2D4  …                    ; compute attribute address from H
+F2DD  LD A,(IY+$03); LD (HL),A
+F2E1  RET
+```
+
+So `$F2BC` is an 8-row × 1-byte sprite blit (with attribute byte
+from `(IY+$03)`). Then the wrapper at `$F26D` calls it four times
+— at four screen addresses pulled from `(IX+3..4)` and `(IX+5..6)`
+— to draw a full **16 × 16-pixel quadrant sprite**.
+
+And the *sprite source* address comes from this beautiful little
+indirection in `$F228` onward:
+
+```
+F228  LD L,(IX+$02)        ; current animation frame
+F22B  LD H,$00
+F22D-F231  ADD HL,HL × 5    ; HL = frame * 32
+F232  LD E,(IY+$00)
+F235  LD D,(IY+$01)         ; DE = sprite-bank base for this *type*
+F238  ADD HL,DE              ; HL = bank_base + frame*32
+```
+
+Going back one step: where do IX and IY come from? `IY` is set
+inside the per-entity setup at `$F1F0`:
+
+```
+F1F0  LD IY,$F5A0           ; entity-type table base
+F1F4  LD E,(IX+$00)          ; type id
+F1F9  SLA E; SLA E            ; ×4 (4 bytes per type)
+F1FD  ADD IY,DE               ; IY = $F5A0 + type*4
+```
+
+— and `IX` is walked across an *entity instance list* in the
+dispatcher at `$F1A5` (which is one of the calls in the main game
+loop at `$D7FB`). Each instance is 8 bytes; each type is 4 bytes.
+
+A `subterra hex` dump of `$F5A0` revealed the type table content:
+
+```
+F5A0  F4 B8 10 43 F4 BA 10 42 F4 BC 10 43 F4 BE 10 44 …
+```
+
+— interpreted: type 0 → bank `$B8F4`, 16 frames, attr `$43`
+(bright magenta on black). 16-byte stride between types.  ✓
+
+To *see* the result we wrote `Subterra.Assets.QuadrantSpriteRenderer`
+(the column-major-quadrant decoder) and `subterra entity-bank`
+(the CLI tool that walks the type table and dumps every bank as a
+PNG). The first PNG was unmistakable:
+
+* **Type 0** = the **player submarine**, magenta, with the drill
+  on top, in 16 animation frames: side view, descent, drilling,
+  explosion.
+* **Type 1** = red molten lava droplets, falling and rising frames.
+* **Type 2** = magenta cave-roof stalactites.
+* **Type 3** = green falling rocks / debris.
+* …and so on, up to ~22 entity types.
+
+So the sprite system is now fully decoded:
+
+```
+   ($F1B9), ($F1BB)            ← active entity-list pointer + count
+        │
+        ▼
+   entity instance (IX, 8 bytes)  ── type id, y, frame, screen-addr top, screen-addr bottom
+        │
+        ▼  type id × 4
+   entity-type table at $F5A0 (IY, 4 bytes per type)  ── sprite-bank ptr, max-frames, attr
+        │
+        ▼  frame × 32
+   16 × 16 sprite in column-major quadrant layout
+        │
+        ▼  four calls to $F2BC
+   pixels on screen + colour attribute
+```
+
+This was *exactly* the "unravel backwards from the screen writes"
+strategy the user suggested in [§14](#14-unravelling-the-sprite-system-backwards-from-the-screen-writes)
+— traced one extra layer further with `scrwrite-trace`'s PC
+histogram + targeted disassembly + memory peeks.

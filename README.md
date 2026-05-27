@@ -68,7 +68,20 @@ and instruction-level execution tracing. The full reference lives in
 * `sprite-scan` interprets a memory region as a grid of 8 × 8 (or
   any size) cells and writes a contact-sheet PNG for each window.
 
-### Two asset banks already extracted
+### Three asset banks already extracted
+
+<p align="center">
+  <img src="renders/entity-type00_20260528-003543.png" alt="Player submarine sprite — 16 animation frames in bright magenta, including side-view, drilling, descent, and explosion frames" width="640"/><br/>
+  <em>The 16-frame animation bank for the player submarine
+  (entity type 0 at <code>$B8F4</code>, bright magenta).
+  Top row: side view, drilling, descent. Bottom row: rotation
+  and explosion frames. Extracted by
+  <code>subterra entity-bank build/post-game.bin all</code> —
+  see <a href="docs/RE-LOG.md#16-cracking-the-entity-system">RE-LOG §16</a>
+  for the full chain of reasoning.</em>
+</p>
+
+### Two more asset banks already extracted
 
 <p align="center">
   <img src="renders/scan-%24E62B-8x8_20260528-001405.png" alt="21 UDG cave-terrain tiles at address E62B" width="416"/><br/>
@@ -107,17 +120,6 @@ lockstep; every "found new routine" commit touches both.
 
 A few highlights from the journey:
 
-* **The first bug** wasn't in the emulator — it was in the
-  Spectrum's interleaved bitmap-address arithmetic, which I got
-  wrong on the first try and the title text rendered vertically
-  replicated. The fix lives in
-  [`SpectrumScreen.BitmapAddress`](src/Subterra.Spectrum/SpectrumScreen.cs).
-* **The "ship doesn't move" mystery** was a misunderstanding of the
-  game's controls, not a CPU bug. The main loop gates on
-  `($E584) ≥ 117` (player altitude), and you have to *dive* before
-  the world starts scrolling. Found by walking back from the gate
-  with `subterra find-bytes` and `subterra emu-peek` —
-  see [RE-LOG §10](docs/RE-LOG.md).
 * **The master tile bank at `$B0F4`** was found by tracing back
   from `LD DE,$4000` (the routine writing the *screen* address) to
   the inner draw helper at `$DAF2`, where the indirection

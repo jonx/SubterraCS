@@ -136,6 +136,103 @@ public sealed class SpriteSheet
     }
 }
 
+/// <summary>
+/// Renders a 16×16 sprite stored as four 8-byte column-major quadrants
+/// — the format used by the entity-type sprite banks at <c>$B8F4</c>
+/// onwards in Subterranean Stryker.
+///
+/// The 32 source bytes are laid out as:
+///   bytes  0– 7: top-left 8 rows × 1 byte
+///   bytes  8–15: top-right 8 rows × 1 byte
+///   bytes 16–23: bottom-left 8 rows × 1 byte
+///   bytes 24–31: bottom-right 8 rows × 1 byte
+/// </summary>
+public static class QuadrantSpriteRenderer
+{
+    public const int BytesPerSprite = 32;
+    public const int Width = 16;
+    public const int Height = 16;
+
+    /// <summary>
+    /// Decode a single 32-byte sprite into a 16×16 RGBA buffer.
+    /// </summary>
+    public static byte[] RenderRgba(
+        ReadOnlySpan<byte> sprite,
+        (byte r, byte g, byte b) inkRgb,
+        (byte r, byte g, byte b) paperRgb)
+    {
+        if (sprite.Length < BytesPerSprite)
+        {
+            throw new ArgumentException(
+                $"Sprite must be at least {BytesPerSprite} bytes; got {sprite.Length}.");
+        }
+        var output = new byte[Width * Height * 4];
+        for (int row = 0; row < Height; row++)
+        {
+            int half = row < 8 ? 0 : 16;
+            int sub = row & 7;
+            byte left = sprite[half + sub];
+            byte right = sprite[half + 8 + sub];
+            for (int col = 0; col < Width; col++)
+            {
+                byte src = col < 8 ? left : right;
+                int bit = 7 - (col & 7);
+                bool on = (src & (1 << bit)) != 0;
+                int idx = (row * Width + col) * 4;
+                var (r, g, b) = on ? inkRgb : paperRgb;
+                output[idx + 0] = r;
+                output[idx + 1] = g;
+                output[idx + 2] = b;
+                output[idx + 3] = 0xFF;
+            }
+        }
+        return output;
+    }
+
+    /// <summary>
+    /// Render all sprites in a buffer (assumed contiguous 32-byte
+    /// frames) as a sheet of <paramref name="columns"/> columns.
+    /// </summary>
+    public static RenderedImage RenderBank(
+        ReadOnlySpan<byte> bank,
+        int columns,
+        (byte r, byte g, byte b) inkRgb,
+        (byte r, byte g, byte b) paperRgb,
+        (byte r, byte g, byte b) gridRgb)
+    {
+        int frameCount = bank.Length / BytesPerSprite;
+        int rows = (frameCount + columns - 1) / columns;
+        int gap = 1;
+        int imgW = columns * (Width + gap) + gap;
+        int imgH = rows * (Height + gap) + gap;
+        var img = new byte[imgW * imgH * 4];
+        for (int i = 0; i < imgW * imgH; i++)
+        {
+            img[i * 4 + 0] = gridRgb.r;
+            img[i * 4 + 1] = gridRgb.g;
+            img[i * 4 + 2] = gridRgb.b;
+            img[i * 4 + 3] = 0xFF;
+        }
+        for (int idx = 0; idx < frameCount; idx++)
+        {
+            int gx = idx % columns;
+            int gy = idx / columns;
+            int x0 = gx * (Width + gap) + gap;
+            int y0 = gy * (Height + gap) + gap;
+            var cell = RenderRgba(
+                bank.Slice(idx * BytesPerSprite, BytesPerSprite),
+                inkRgb,
+                paperRgb);
+            for (int y = 0; y < Height; y++)
+            {
+                Buffer.BlockCopy(cell, y * Width * 4,
+                    img, ((y0 + y) * imgW + x0) * 4, Width * 4);
+            }
+        }
+        return new RenderedImage(img, imgW, imgH);
+    }
+}
+
 /// <summary>An RGBA image: byte buffer plus dimensions.</summary>
 public readonly record struct RenderedImage(byte[] Rgba, int Width, int Height)
 {

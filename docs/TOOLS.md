@@ -290,6 +290,33 @@ dotnet run --project src/Subterra.Tools -- \
     -keys=5-10:SPACE,40-50:1,200-300:A
 ```
 
+### `entity-bank <file.z80|file.bin> [hexAddr] [frames] [-cols=N] [-scale=N]`
+
+**What:** renders an *entity-type sprite bank* — 16 frames × 32 bytes
+each, laid out in the column-major quadrant layout the game uses —
+into a single PNG. Pass `all` as the address to auto-walk the type
+table at `$F5A0` and dump every type's bank, using each type's own
+attribute byte for the ink colour.
+
+**Why:** once we found that bigger sprites in the game (the player
+sub, enemies) are stored at `(IY+0,1) + frame*32` in a column-major
+quadrant layout — and that `IY` is loaded from the type table at
+`$F5A0` — this is the tool that produced the legible PNGs. Type 0
+turns out to be the player submarine; the rest are the enemies and
+hazards. See RE-LOG §16.
+
+**How:**
+```sh
+# Dump *all* identifiable entity types, picking the ink colour from
+# each type's attribute byte automatically.
+dotnet run --project src/Subterra.Tools -- \
+    entity-bank build/post-game.bin all
+
+# Or dump one specific bank by address
+dotnet run --project src/Subterra.Tools -- \
+    entity-bank build/post-game.bin B8F4 16 -cols=8 -scale=5
+```
+
 ### `scrwrite-trace <48k.rom> <file.z80> <frames-before-trace> [-keys=...]`
 
 **What:** subscribes to `Spectrum48.MemoryWritten` and logs every
