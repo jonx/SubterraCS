@@ -98,6 +98,73 @@ add per frame. With $E585 = 1 we add 1/frame.
 
 Word-sized; indexes into a level table.
 
+## RAM ($6000–$60xx) — Follin music data (best guess)
+
+A hex dump shows neat repeating *word* patterns at `$6000`:
+
+```
+6000  96 00 E6 00 1E 00 5E 01  1E 00 E6 00 1E 00 5E 01
+6010  1E 00 E6 00 1E 00 5E 01  1E 00 FD 00 1E 00 5E 01
+6020  1E 00 FD 00 1E 00 5E 01  1E 00 FD 00 1E 00 5E 01
+```
+
+That looks like (pitch, duration) pairs for the Spectrum beeper —
+which lines up with Tim & Mike Follin doing the music. We had
+initially mistaken this for a font because the 8×8 visualisation
+of random word data accidentally resembles digit shapes; in fact
+the real font lives inside the tile bank at `$B0F4` (numbers and
+letters appear among the tiles there).
+
+## RAM ($B0F4–$BFFF) — sprite tile bank
+
+This is the master 8 × 8 tile sheet from which every in-game object
+(player sub, enemies, terrain, explosions, HUD icons) is composed.
+
+The draw routine at `$DAF2` is the key:
+
+```
+DAF3  6E          LD L,(HL)        ; read tile index from sprite-composition table
+DAF4  26 00       LD H,$00
+DAF6  29          ADD HL,HL        ; ×2
+DAF7  29          ADD HL,HL        ; ×4
+DAF8  29          ADD HL,HL        ; ×8 (bytes per tile)
+DAF9  01 F4 B0    LD BC,$B0F4      ; tile bank base
+DAFC  09          ADD HL,BC        ; HL = $B0F4 + index*8
+DAFD  06 08       LD B,$08         ; 8 rows
+DAFF  7E          LD A,(HL)
+DB00  12          LD (DE),A
+DB01  14          INC D            ; advance scanline within band
+DB02  23          INC HL
+DB03  10 FA       DJNZ $DAFF
+```
+
+So the bank is an 8 byte-per-cell flat array, indexed from
+`$B0F4`. ~390 distinct 8×8 tiles are stored before the data drifts
+into other purposes. Decoded sheet:
+[`renders/scan-$B0F4-8x8_20260527-234030.png`](../renders/).
+
+Recognisable contents:
+
+* Rows 1-3: cave walls, dripping ceilings, stalactites.
+* Row 4: trees, mountains, surface decoration.
+* Row 5: buildings / structures (early-level surface).
+* Row 6: small humanoid figures (the "RESCUED" people!).
+* Row 7-8: vehicles / equipment / power-ups.
+* Row 9: projectiles and sparks.
+* Row 10+: misc creature/enemy parts.
+
+## RAM ($E579–$E57A) — current sprite composition table pointer
+
+Holds the base address of the array the sprite-draw routine at
+`$DAA9` walks. Each entry in that array is a *tile index* (a single
+byte) that the routine multiplies by 8 and adds to `$B0F4` to find
+the 8 × 8 graphic. Sprite objects are stored as small 2D arrays of
+these indices (a 16×16 game sprite is a 2 × 2 block of tile
+indices — 4 bytes per logical sprite).
+
+In the running game we measured `$E579 → $60F4`, i.e. the composition
+table sits right after the game font in the same `$6000` block.
+
 ## RAM ($E62B–$F4FF) — buffers (STKBOT moved here)
 
 The game points STKBOT (`$5C7B`) at `$E62B`, giving the BASIC

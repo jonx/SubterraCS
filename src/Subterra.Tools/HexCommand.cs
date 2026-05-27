@@ -13,13 +13,26 @@ internal static class HexCommand
             Console.Error.WriteLine("usage: hex <path/to/file.z80> <hexAddr> <count>");
             return 2;
         }
-        var snap = Z80SnapshotReader.Load(args[0]);
+        byte[] ram;
+        if (args[0].EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+        {
+            ram = File.ReadAllBytes(args[0]);
+            if (ram.Length != 0xC000)
+            {
+                Console.Error.WriteLine($"Raw RAM dump must be exactly {0xC000} bytes; got {ram.Length}.");
+                return 1;
+            }
+        }
+        else
+        {
+            ram = Z80SnapshotReader.Load(args[0]).Ram48K;
+        }
         ushort addr = ushort.Parse(args[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         int count = int.Parse(args[2], CultureInfo.InvariantCulture);
 
         if (addr < 0x4000)
         {
-            Console.Error.WriteLine("Snapshot does not include ROM ($0000-$3FFF).");
+            Console.Error.WriteLine("RAM image starts at $4000; pick an address ≥ $4000.");
             return 1;
         }
 
@@ -34,7 +47,7 @@ internal static class HexCommand
                 if (i == 8) sb.Append(' ');
                 if (i < len)
                 {
-                    byte b = snap.Ram48K[addr + row + i - 0x4000];
+                    byte b = ram[addr + row + i - 0x4000];
                     sb.Append(b.ToString("X2", CultureInfo.InvariantCulture));
                     sb.Append(' ');
                 }
@@ -46,7 +59,7 @@ internal static class HexCommand
             sb.Append("  |");
             for (int i = 0; i < len; i++)
             {
-                byte b = snap.Ram48K[addr + row + i - 0x4000];
+                byte b = ram[addr + row + i - 0x4000];
                 sb.Append(b >= 32 && b < 127 ? (char)b : '.');
             }
             sb.Append('|');
