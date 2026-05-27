@@ -263,3 +263,109 @@ corrected formula (see [`SpectrumScreen.cs`](../src/Subterra.Spectrum/SpectrumSc
 puts `y`'s low 3 bits into address bits 10–8 and the next 3 bits of
 `y` into address bits 7–5; that produced a correct render on the
 next try.
+
+## 9. Z80 emulator
+
+`src/Subterra.Spectrum/Z80/Z80Cpu.cs` is a hand-written, dependency-free
+Z80 emulator covering the documented instruction set in full:
+
+* All 256 main opcodes, with full flag-correct ALU including the F3
+  and F5 "undocumented" bits that follow the result.
+* CB prefix (rotates / shifts / `BIT` / `RES` / `SET`), with all 8
+  rotate/shift modes including `SLL` (undocumented but commonly used).
+* ED prefix (`SBC HL,rr` / `ADC HL,rr`, block ops `LDI`/`LDD`/`LDIR`/
+  `LDDR`/`CPI`/`CPD`/`CPIR`/`CPDR`, `IN`/`OUT (C)`, `RRD`/`RLD`,
+  `RETI`/`RETN`, `IM 0/1/2`, register-I/R loads).
+* DD/FD prefix (IX/IY indexed forms) plus the DD-CB / FD-CB four-byte
+  indexed bit ops with displacement.
+* Interrupt acceptance for IM 0 / 1 / 2, with the correct PC-advance
+  when waking from `HALT` (this was the one tricky bug we caught: the
+  CPU stalls PC at the HALT opcode, but on interrupt acceptance the
+  return address pushed must be the address *after* the HALT).
+
+`src/Subterra.Spectrum/Spectrum48.cs` wraps the CPU into a 48 K
+machine — 16 K ROM at `$0000-$3FFF`, 48 K RAM, ULA port `$FE` (border
+write / keyboard read). `RunFrame()` fires one maskable interrupt
+then ticks 69 888 T-states (the canonical 50 Hz frame).
+
+With this plus a snapshot loader, `subterra run-emu` boots
+`SUBSTRYK.Z80`, runs N frames with a scripted key schedule, and
+renders the final screen to `renders/`. After ~30 frames with SPACE
+pressed (to break out of `PAUSE 0`) the game's *own* title screen
+appears with "BY MIKE FOLLIN" and the four-option control menu;
+after another 100 frames with "1" held, the gameplay screen with the
+HUD, terrain and player sprite materialises. That's our smoke test
+for the entire stack.
+
+## 10. The "ship doesn't scroll" mystery
+
+The first time we got the game running in our emulator, the player
+sprite would move up/down but the *world* never scrolled. This sent
+us through several false hypotheses (HALT bug? interrupt mode mismatch?
+issue 2 vs issue 3 keyboard? `FRAMES` counter never updating?). The
+actual answer turned out to be a *game-mechanics* misunderstanding:
+
+The main loop at `$D7FB` calls a pre-step routine `$F868` first, and
+`$F868` gates everything on this condition:
+
+```
+F86D  3A 84 E5    LD A,($E584)   ; player altitude
+F870  FE 75       CP $75         ; = 117
+F872  D8          RET C          ; if altitude < 117, do nothing
+```
+
+`$E584` is the player altitude (0..120). It starts at 0 each new
+section. Holding DOWN (key A, row 1) increments it by 1 per frame
+via the routine at `$D95D`. Once it reaches 117 the world scrolls
+one page, `$E584` is reset to 0, and the player keeps diving. The
+name "Subterranean Stryker" turns out to be literal: the game
+scrolls *down* into the earth, not sideways like we'd assumed.
+
+This was diagnosed entirely by tooling — no real Spectrum needed:
+
+* `subterra find-bytes` to grep RAM for the opcode of every keyboard
+  read (`DB FE`) and every store to `($E584)` (`32 84 E5`).
+* `subterra disasm` to read the main loop and the pre-step gate.
+* `subterra emu-peek` to watch `($E584)` advance frame-by-frame
+  while DOWN was held.
+* `subterra run-emu -stride=N` to drop a flip-book of renders
+  showing the world transition from "static surface scene" to
+  "scrolling underground caverns" once the threshold was crossed.
+
+## 11. Tooling so far (current)
+
+```
+subterra render-scr     PNG of a 6 912-byte .scr file
+subterra render-snapshot PNG of a .z80 snapshot's screen memory
+subterra unz80          decompress .z80 → flat 48 K RAM image
+subterra snapshot-info  registers + per-block byte histogram
+subterra disasm         Z80 disassembly from a snapshot
+subterra stack-walk     dump top of stack (return-addr trace)
+subterra hex            classic hex+ASCII dump
+subterra find-bytes     opcode/data pattern search with ?? wildcards
+subterra run-emu        boot a snapshot, run frames, render + dump RAM
+subterra emu-peek       boot, run, then print named memory addresses
+subterra sprite-scan    bulk render of candidate sprite cells across RAM
+```
+
+The two GUI apps:
+
+* `dotnet run --project src/Subterra.Game` — Avalonia window of the
+  live emulator, playable on macOS / Linux / Windows.
+* `dotnet run --project src/Subterra.Editor` — Avalonia sprite
+  scanner: type an address + cell size, see decoded cells, hover
+  for raw bytes, "Save PNG" dumps the sheet to `renders/`.
+
+## 12. First extracted asset
+
+The game keeps its in-game UDGs at `$E62B`. `MainEntry` does
+`LD HL,$E62B; LD ($5C7B),HL` early on, pointing the Spectrum
+system's UDG-base sysvar at the game's own glyph table (21 cells of
+8 × 8 bytes = 168 bytes). Decoded with `subterra sprite-scan
+build/post-game.bin E62B E700 8x8`, they turn out to be a small
+cave-terrain dictionary: smooth-cloud / dust-cloud variants,
+checkerboard cave-wall tiles, and ground variants. The PNG is in
+[`renders/scan-$E62B-8x8…`](../renders/). This confirms the
+asset-extraction pipeline end-to-end: emulator → run-N-frames →
+post-game RAM dump → SpriteSheet decoder → timestamped PNG in
+`renders/`.

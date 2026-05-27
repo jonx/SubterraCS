@@ -71,11 +71,26 @@ internal static class Program
             Hex/ASCII dump of <count> bytes starting at hex address
             <hexAddr> in the snapshot's RAM image.
 
-          run-emu <48k.rom> <file.z80> <frames> [-keys=N:KEY,...]
+          run-emu <48k.rom> <file.z80> <frames> [opts]
             Boot the snapshot inside our Z80 emulator, run <frames>
             video frames, then render the final screen to renders/.
-            Optional -keys schedules key presses by frame number
-            (e.g. -keys=10:SPACE,20:ENTER).
+            Optional flags:
+              -keys=START[-END]:KEY,... — press keys on given frames
+              -stride=N — drop a render every N frames into renders/
+              -ram=path/to/out.bin — dump the 48 K RAM after running
+
+          emu-peek <48k.rom> <file.z80> <frames> <hexAddr> [hexAddr ...]
+            Like run-emu, but prints the byte/word/triple value at
+            each <hexAddr> after running. -keys is supported too.
+
+          find-bytes <file.z80> <hex-pattern> [-min=ADDR] [-max=ADDR]
+            Find every occurrence of a byte pattern (with ?? wildcards)
+            in the snapshot's RAM. Useful for spotting opcodes.
+
+          sprite-scan <file.z80|file.bin> <fromHex> <toHex> <WxH[,WxH...]> [opts]
+            Bulk-render candidate sprite cells across a RAM range.
+            Each addr/shape produces a contact sheet PNG in renders/.
+              -cols=N, -count=N, -scale=N — sheet dimensions / zoom
         """);
         return 0;
     }
