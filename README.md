@@ -37,6 +37,26 @@ renders/          timestamped screenshots/asset dumps — kept forever as
 docs/             reverse engineering log and design notes
 ```
 
+## Playing it
+
+```sh
+dotnet run --project src/Subterra.Game
+```
+
+That opens an Avalonia window with our Z80 emulator running the
+original 1985 binary inside it. Controls:
+
+* **A** / **Q** — dive / climb the submarine
+* **Space** — fire
+* **Enter** — confirm menus
+* **1 / 2 / 3 / 4** — pick a control option on the title screen
+  (the game asks for KEYBOARD / Interface 2 / Kempston / Cursor)
+* **Esc** — quit
+
+Tip: the game is *subterranean* — the world only scrolls once you
+have dived deep enough. Hold **A** for about two seconds to start
+descending; you'll see DEPTH tick up and the cave roll past.
+
 ## Quick start
 
 ```sh

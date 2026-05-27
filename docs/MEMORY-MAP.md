@@ -46,6 +46,42 @@ RANDOMIZE USR 62973. See [RE-LOG.md §7](RE-LOG.md).
 | `$6EBE`  | PreGameEntry     | First `RANDOMIZE USR` from BASIC; runs once before the main game starts. |
 | `$E3B2`  | InitHelper       | Called twice early in MainEntry, presumably resets a UI/state structure. |
 
+## RAM ($E45F)  — current frame's player input flags
+
+Bit 3 = DOWN pressed, bit 4 = UP pressed (after the keyboard-scan
+routine at `$D918` collates rows). The vertical-movement routine at
+`$D95D` reads this each frame.
+
+## RAM ($E583)  — game state lock
+
+If non-zero, the main loop's pre-step routine at `$F868` returns
+immediately; no scrolling, no enemy updates, no level advance. Used
+to freeze the world during animations / death / level-complete.
+
+## RAM ($E584)  — player altitude / depth counter
+
+Range 0–120 (`$00`–`$78`). Pushing the DOWN key adds to it (one
+unit per frame at base speed), pushing UP subtracts. The main loop
+at `$F868` checks `CP $75; RET C` — i.e. the level only starts
+*scrolling* and the world only advances when the altitude reaches
+`$75` (117). At `$78` the player has reached the bottom of the
+current section; the game resets `$E584` to 0 and the next page of
+the level scrolls into view.
+
+**Practical gameplay note:** at the start of a new section the sub
+sits at altitude 0 and the world is static. The player must HOLD
+the DOWN key for ~2 seconds to dive deep enough for the level to
+start scrolling.
+
+## RAM ($E585)  — vertical-speed shift
+
+Used as `B = (SRL E585) | 1` to compute how many altitude units to
+add per frame. With $E585 = 1 we add 1/frame.
+
+## RAM ($E587)  — current level/page index
+
+Word-sized; indexes into a level table.
+
 ## RAM ($E62B–$F4FF) — buffers (STKBOT moved here)
 
 The game points STKBOT (`$5C7B`) at `$E62B`, giving the BASIC
