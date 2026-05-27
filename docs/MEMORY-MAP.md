@@ -182,6 +182,33 @@ SCORE / SHIELD / FUEL / RESCUED) are drawn using the stock ROM font
 through this routine. Game-specific graphics use the `$B0F4` bank
 via the indirection at `$DAF2` (see below).
 
+## RAM ($E1C1–$E1DD)  — 2×2 XOR sprite wrapper
+
+The wrapper that drives `$E1DE` to draw the four corners of a 2×2
+pixel-byte sprite (with bounds-check on B for row 0x3F..0xBC):
+
+```
+E1C1  LD A,B
+E1C2  CP $BD; RET NC       ; off-screen bottom
+E1C5  CP $3F; RET C        ; off-screen top
+E1C8  PUSH BC; CALL $E1DE  ; draw at (B  , C  )
+E1CC  POP BC; INC B
+E1CE  PUSH BC; CALL $E1DE  ; draw at (B+1, C  )
+E1D2  POP BC; INC C
+E1D4  PUSH BC; CALL $E1DE  ; draw at (B+1, C+1)
+E1D8  POP BC; DEC B
+E1DA  CALL $E1DE           ; draw at (B  , C+1)
+E1DD  RET
+```
+
+`A` is not modified between the four calls — each "2×2 sprite" is
+either a single byte stamped four times in a square (chunky pixel),
+or the caller updates A between two halves of an object. The
+`scrwrite-trace` of frame 300 shows pairs like `80 80 40 40` —
+i.e. the same byte is XOR'd twice (erase + redraw at the *other*
+position), then a new byte is XOR'd twice. So a single moving
+object = two XOR pairs = 4 writes total.
+
 ## RAM ($E1DE–$E1E3)  — XOR sprite-draw inner loop
 
 ```
