@@ -153,6 +153,34 @@ Recognisable contents:
 * Row 9: projectiles and sparks.
 * Row 10+: misc creature/enemy parts.
 
+## RAM ($E1DE–$E1E3)  — XOR sprite-draw inner loop
+
+```
+E1DE  CD E4 E1    CALL $E1E4      ; compute screen address into HL
+E1E1  AE          XOR (HL)        ; A = sprite-byte XOR screen
+E1E2  77          LD (HL),A       ; write back
+E1E3  C9          RET
+```
+
+**This is the master sprite-draw primitive for moving objects.** Every
+in-game sprite (player sub, enemies, projectiles, ...) ends up being
+drawn by repeatedly calling `$E1DE` with a single byte of sprite data
+in `A`. Because it's XOR, the same call both *draws* (when the screen
+byte was empty) and *erases* (when called again with the same bytes).
+That's also exactly why the game flickers — between the erase pass
+and the redraw pass, the sprite is briefly absent.
+
+The `subterra scrwrite-trace` command confirmed it at runtime: out of
+158 bitmap writes during one gameplay frame, **all 158** came from
+the `LD (HL),A` instruction at `$E1E2`, with PC=`$E1E3` (the
+following `RET`).
+
+`$E1E4` is the geometry helper: given `B` (row in screen-space) and
+`C` (column in screen-space), it produces the correct interleaved
+Spectrum bitmap address via the screen-row → high-byte table at
+`$E80F`. The two `SRL E` × 3 shifts divide by 8 to convert pixel
+coordinates into character cells.
+
 ## RAM ($E579–$E57A) — current sprite composition table pointer
 
 Holds the base address of the array the sprite-draw routine at

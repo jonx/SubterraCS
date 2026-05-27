@@ -72,11 +72,18 @@ public sealed class Spectrum48 : IZ80Bus
         return address < 0x4000 ? _rom[address] : _ram[address - 0x4000];
     }
 
+    /// <summary>
+    /// Fired right before a byte is committed to RAM. Useful for
+    /// tracing the source of screen writes during reverse engineering.
+    /// </summary>
+    public event Action<ushort, byte>? MemoryWritten;
+
     public void WriteMemory(ushort address, byte value)
     {
         if (address >= 0x4000)
         {
             _ram[address - 0x4000] = value;
+            MemoryWritten?.Invoke(address, value);
         }
         // Writes to ROM are simply ignored.
     }
