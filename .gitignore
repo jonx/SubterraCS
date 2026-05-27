@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+out/
+*.user
+
+# IDE
+.vs/
+.idea/
+*.swp
+.DS_Store
+
+# Generated artifacts that can be re-created from the originals
+build/
+artifacts/
+
+# Python bytecode (if any helper scripts grow up)
+__pycache__/
+*.pyc
+
+# Large memory dumps regenerated from snapshots
+*.bin.tmp

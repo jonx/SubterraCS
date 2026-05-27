@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Subterra.Assets/Subterra.Assets.csproj" />
+    <Project Path="src/Subterra.Spectrum/Subterra.Spectrum.csproj" />
+    <Project Path="src/Subterra.Tools/Subterra.Tools.csproj" />
+  </Folder>
+</Solution>

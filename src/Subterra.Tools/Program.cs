@@ -1,0 +1,56 @@
+using Subterra.Spectrum;
+
+namespace Subterra.Tools;
+
+internal static class Program
+{
+    private static int Main(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            return PrintHelp();
+        }
+        var command = args[0];
+        var rest = args[1..];
+        return command switch
+        {
+            "render-scr"        => RenderScrCommand.Run(rest),
+            "render-snapshot"   => RenderSnapshotCommand.Run(rest),
+            "unz80"             => UnZ80Command.Run(rest),
+            "snapshot-info"     => SnapshotInfoCommand.Run(rest),
+            "-h" or "--help" or "help" => PrintHelp(),
+            _ => Unknown(command),
+        };
+    }
+
+    private static int Unknown(string command)
+    {
+        Console.Error.WriteLine($"Unknown command: {command}");
+        return PrintHelp();
+    }
+
+    private static int PrintHelp()
+    {
+        Console.WriteLine("""
+        Subterra.Tools — reverse-engineering toolkit.
+
+        Commands:
+          render-scr <path/to/file.scr>
+            Render a 6 912-byte Spectrum screen file as RGBA PNG into
+            renders/, with a timestamped filename.
+
+          render-snapshot <path/to/file.z80>
+            Load a .z80 snapshot, decode its screen memory and render
+            it as RGBA PNG into renders/ with a timestamped filename.
+
+          unz80 <path/to/file.z80> <output.bin>
+            Decompress a .z80 snapshot and write the flat 48 K RAM image
+            to <output.bin> (Spectrum address 0x4000 lands at offset 0).
+
+          snapshot-info <path/to/file.z80>
+            Print register state and basic memory checksums for a
+            snapshot.
+        """);
+        return 0;
+    }
+}
