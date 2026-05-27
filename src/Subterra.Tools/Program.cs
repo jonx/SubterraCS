@@ -21,6 +21,7 @@ internal static class Program
             "disasm"            => DisasmCommand.Run(rest),
             "stack-walk"        => StackWalkCommand.Run(rest),
             "hex"               => HexCommand.Run(rest),
+            "run-emu"           => RunEmuCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };
@@ -66,6 +67,12 @@ internal static class Program
           hex <path/to/file.z80> <hexAddr> <count>
             Hex/ASCII dump of <count> bytes starting at hex address
             <hexAddr> in the snapshot's RAM image.
+
+          run-emu <48k.rom> <file.z80> <frames> [-keys=N:KEY,...]
+            Boot the snapshot inside our Z80 emulator, run <frames>
+            video frames, then render the final screen to renders/.
+            Optional -keys schedules key presses by frame number
+            (e.g. -keys=10:SPACE,20:ENTER).
         """);
         return 0;
     }
