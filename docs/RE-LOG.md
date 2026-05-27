@@ -140,6 +140,25 @@ emulator is the next big step.
 Renders live in [`renders/`](../renders/) with a timestamp suffix so
 we keep a complete visual history; never overwrite.
 
+## 6. First renders confirm the screen pipeline
+
+Two PNG artefacts come out of the early pipeline and live in
+[`renders/`](../renders/):
+
+* The original `.scr` loading screen — the iconic sub & explosion
+  with the "INSIGHT" credit and "SUBTERRANEAN STRYKER" title.
+* The first 6 912 bytes of the snapshot's RAM, decoded with the same
+  Spectrum-bitmap-address math — pixel-identical to the `.scr`,
+  confirming both our snapshot loader and our screen decoder.
+
+The first attempt also caught a classic Spectrum bug: our
+`BitmapAddress(x, y)` had the position of `y`'s low 3 bits wrong,
+producing a render where the title was *vertically replicated*. The
+fix — put `y & 0x07` into address bits 10-8 and `y & 0x38 >> 3` into
+address bits 7-5 — produced a correct render on the next try. The
+buggy render is preserved in `renders/` as a reminder; it's the same
+mistake every Spectrum emulator author has to make at least once.
+
 ## 7. Following the BASIC loader
 
 PROG (the BASIC program start, system variable at `$5C53`) points to
@@ -403,3 +422,92 @@ checkerboard cave-wall tiles, and ground variants. The PNG is in
 asset-extraction pipeline end-to-end: emulator → run-N-frames →
 post-game RAM dump → SpriteSheet decoder → timestamped PNG in
 `renders/`.
+
+## 14. Unravelling the sprite system backwards from the screen writes
+
+The UDGs at `$E62B` are only used for a small set of static
+terrain glyphs; the *real* sprite content (the player sub, every
+enemy, the explosions, the HUD font, …) had to be found by tracing
+how the game actually draws pixels onto the screen. We grew the
+toolkit in three small steps:
+
+1. **`subterra find-bytes`** for opcode-pattern search. Used to
+   locate every `LDIR` / `LDDR` block-move in game code (≈ 10 of
+   them), every `IN A,($FE)` keyboard read, and so on.
+2. **`subterra tile-trace`** for breakpoint-style inspection.
+   Steps through one frame, captures the program state at a
+   chosen address, and produces a per-256-byte PC histogram of
+   where the CPU spent its time during the frame.
+3. **`subterra scrwrite-trace`** for full memory observation.
+   Subscribes to a new `Spectrum48.MemoryWritten` event and logs
+   every write into bitmap memory (`$4000-$57FF`) and attribute
+   memory (`$5800-$5AFF`) during one frame, with the PC, the
+   target address, the byte value, and (post-decoded) the screen
+   pixel coordinates. Plus a single-step capture of the A register
+   right at the XOR-draw entry, so the actual *source* sprite byte
+   is visible.
+
+The big find from following the trail was that **the game
+maintains three completely separate draw paths in parallel**, and
+that combination — not any one of them — explains everything we see
+on screen.
+
+| Draw path | Routine | Tile source | Used for |
+| --- | --- | --- | --- |
+| Block-copy from indexed bank | `$DAF2` (via `($E579) + index*8 + $B0F4`) | `$B0F4` master tile bank | Scenery, level tiles (overwrite, no flicker) |
+| Block-copy from ROM font | `$E03D`-`$E045` (via `($5C36) → $3C00`) | Spectrum ROM character set | HUD labels: DEPTH / SCORE / SHIELD / FUEL / RESCUED |
+| Per-byte XOR draw | `$E1DE` (driven by 2×2 wrapper at `$E1C1`) | A is supplied by the caller per byte | Every moving sprite: player, enemies, projectiles |
+
+The third path is the source of the visible flicker. XOR is
+double-duty (`a ⊕ a == 0`): the *same* call both draws and erases.
+So once per frame, every moving sprite is XOR'd at its old position
+to remove it, then XOR'd at its new position to redraw — with a
+brief window in between where it isn't on the screen at all. Most
+1980s Spectrum games do exactly this; the colour clash on adjacent
+enemies is just the standard 8 × 8 attribute-cell quirk on top.
+
+`scrwrite-trace` proved the model at runtime: 158 bitmap writes
+during one frame of normal gameplay, **all 158 from the same
+`LD (HL),A` at `$E1E2`**. At a different gameplay frame we see a
+mix — `$E1E3` (XOR draws), `$E041` (HUD font copy), `$DD26..$DD2E`
+(playfield-edge column), `$F2CF` (still to be analysed) — which
+matches a model where the HUD and edges are written once per frame
+solidly, and the moving objects are XOR'd over the top.
+
+The biggest asset extraction so far is the **`$B0F4` master tile
+bank** (≈ 390 distinct 8 × 8 cells, 3 KB stored flat in
+`assets/extracted/tiles-b0f4.bin`). Recognisable in the contact
+sheet at `renders/scan-$B0F4-8x8…`:
+
+* Rows 1-3: cave walls, drips, stalactites.
+* Row 4: trees, mountains, surface decoration.
+* Row 5: surface buildings.
+* Row 6: humanoid figures — the "RESCUED" people.
+* Row 7-8: equipment, vehicles, power-ups.
+* Row 9: projectiles and sparks.
+* Hidden in there too: the letters F, U, E, L and the digits used
+  by the HUD.
+
+What's *not* yet pinned down: the per-object **sprite composition
+tables** — i.e. for each enemy type, the list of tile indices and
+their (row, column) offsets that together form the 16 × 16 or
+24 × 16 picture you see. Every byte the XOR-draw routine processes
+comes through `A` in `$E1E1`, so capturing those values across a
+frame and matching them back to byte sequences in the tile bank
+will give us the per-sprite tile lists. That's the next obvious
+follow-up.
+
+## 15. Documentation hygiene
+
+Two living documents anchor the project:
+
+* [`docs/RE-LOG.md`](RE-LOG.md) (this file) — narrative, ordered
+  story of *how* we found each thing. New sections at the bottom.
+* [`docs/MEMORY-MAP.md`](MEMORY-MAP.md) — the lookup table of every
+  named address we've identified, organised by RAM region. Updated
+  in lockstep every time we name a new routine or table.
+
+Where they overlap, the memory map is authoritative for the
+*what* (address, name, brief description) and the log is
+authoritative for the *why* (how we found it, what dead-ends we
+hit). Commits where we identify something new should touch both.
