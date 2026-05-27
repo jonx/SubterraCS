@@ -23,7 +23,29 @@ provenance of every line of code is clear.
 
 ## Status
 
-See [`docs/RE-LOG.md`](docs/RE-LOG.md) for the running notebook.
+What works today:
+
+* Hand-written **Z80 emulator** (full documented instruction set,
+  CB / ED / DD / FD / DD-CB / FD-CB prefixes, flag-correct ALU).
+* **Spectrum 48 host** (16 K ROM + 48 K RAM + ULA port `$FE`,
+  IM 0/1/2 interrupts at 50 Hz). 48 K ROM bundled with permission.
+* **`.z80` snapshot reader** (v1, v2, v3; RLE decompression).
+* **Spectrum screen decoder** → RGBA, plus a hand-rolled **PNG
+  writer** (and our own CRC-32) so the asset pipeline has zero
+  graphics dependencies.
+* **Z80 disassembler** with full prefix handling.
+* **Subterra.Game** — Avalonia 12 window playing the original game
+  cross-platform on macOS / Linux / Windows.
+* **Subterra.Editor** — Avalonia sprite scanner: type an address,
+  see decoded cells, hover for raw bytes, save sheets to `renders/`.
+* **`subterra` CLI** with 10+ subcommands for poking around the
+  binary, the live emulator, and RAM dumps.
+* **First asset extracted**: the in-game UDG terrain dictionary at
+  `$E62B` (21 × 8×8 cells of cave wall / dust / ground tiles).
+
+See [`docs/RE-LOG.md`](docs/RE-LOG.md) for the running notebook and
+[`docs/MEMORY-MAP.md`](docs/MEMORY-MAP.md) for every named address
+we've identified.
 
 ## Layout
 
@@ -74,7 +96,33 @@ dotnet run --project src/Subterra.Tools -- render-snapshot original/dumps/SUBSTR
 # dump the 48K RAM image from the snapshot
 dotnet run --project src/Subterra.Tools -- unz80 \
     original/dumps/SUBSTRYK.Z80 build/substryk-ram.bin
+
+# boot the game in our own emulator, save its post-game RAM
+dotnet run --project src/Subterra.Tools -- run-emu \
+    original/rom/48k.rom original/dumps/SUBSTRYK.Z80 600 \
+    -keys=5-10:SPACE,40-50:1,200-500:A \
+    -ram=build/post-game.bin
+
+# extract the in-game UDG cave tiles from that dump
+dotnet run --project src/Subterra.Tools -- sprite-scan \
+    build/post-game.bin E62B E700 8x8 -cols=8 -count=21 -scale=6
+
+# get all subcommands
+dotnet run --project src/Subterra.Tools -- --help
 ```
+
+## Editing assets
+
+```sh
+dotnet run --project src/Subterra.Editor
+```
+
+Opens the asset viewer with the bundled snapshot pre-loaded. The
+preset buttons jump to known interesting addresses (title text,
+UDG area, dense code region). Adjust the cell width / height / count
+/ columns to interpret memory as sprite cells; hover any cell to
+see its address and bytes; click **Save PNG** to drop a contact
+sheet into `renders/`.
 
 ## Legal
 
