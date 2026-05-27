@@ -26,11 +26,16 @@ internal static class RunEmuCommand
         }
 
         int stride = 0;
+        string? ramOut = null;
         for (int i = 3; i < args.Length; i++)
         {
             if (args[i].StartsWith("-stride=", StringComparison.Ordinal))
             {
                 stride = int.Parse(args[i].Substring("-stride=".Length), CultureInfo.InvariantCulture);
+            }
+            else if (args[i].StartsWith("-ram=", StringComparison.Ordinal))
+            {
+                ramOut = args[i].Substring("-ram=".Length);
             }
         }
 
@@ -67,6 +72,11 @@ internal static class RunEmuCommand
         PngWriter.WriteRgba(outPath, finalRgba, SpectrumScreen.Width, SpectrumScreen.Height);
         Console.WriteLine($"After {frames} frames: PC={sys.Cpu.PC:X4} Cycles={sys.Cpu.Cycles}");
         Console.WriteLine(outPath);
+        if (ramOut is not null)
+        {
+            File.WriteAllBytes(ramOut, sys.RamView().ToArray());
+            Console.WriteLine($"RAM dump: {ramOut}");
+        }
         return 0;
     }
 

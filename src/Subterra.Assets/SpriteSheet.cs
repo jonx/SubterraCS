@@ -137,4 +137,41 @@ public sealed class SpriteSheet
 }
 
 /// <summary>An RGBA image: byte buffer plus dimensions.</summary>
-public readonly record struct RenderedImage(byte[] Rgba, int Width, int Height);
+public readonly record struct RenderedImage(byte[] Rgba, int Width, int Height)
+{
+    /// <summary>
+    /// Return a new image scaled up by an integer factor using nearest-neighbour
+    /// (so pixels stay crisp — useful for chunky retro art).
+    /// </summary>
+    public RenderedImage UpscaleNearest(int factor)
+    {
+        if (factor < 1) throw new ArgumentOutOfRangeException(nameof(factor));
+        if (factor == 1) return this;
+        int newW = Width * factor;
+        int newH = Height * factor;
+        var output = new byte[newW * newH * 4];
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                int sIdx = (y * Width + x) * 4;
+                byte r = Rgba[sIdx + 0];
+                byte g = Rgba[sIdx + 1];
+                byte b = Rgba[sIdx + 2];
+                byte a = Rgba[sIdx + 3];
+                for (int dy = 0; dy < factor; dy++)
+                {
+                    int rowStart = ((y * factor + dy) * newW + x * factor) * 4;
+                    for (int dx = 0; dx < factor; dx++)
+                    {
+                        output[rowStart + dx * 4 + 0] = r;
+                        output[rowStart + dx * 4 + 1] = g;
+                        output[rowStart + dx * 4 + 2] = b;
+                        output[rowStart + dx * 4 + 3] = a;
+                    }
+                }
+            }
+        }
+        return new RenderedImage(output, newW, newH);
+    }
+}

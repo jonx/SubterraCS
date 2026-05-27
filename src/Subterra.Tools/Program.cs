@@ -24,6 +24,7 @@ internal static class Program
             "run-emu"           => RunEmuCommand.Run(rest),
             "find-bytes"        => FindBytesCommand.Run(rest),
             "emu-peek"          => EmuPeekCommand.Run(rest),
+            "sprite-scan"       => SpriteScanCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };
