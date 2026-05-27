@@ -140,7 +140,101 @@ emulator is the next big step.
 Renders live in [`renders/`](../renders/) with a timestamp suffix so
 we keep a complete visual history; never overwrite.
 
-## 6. Tooling so far
+## 7. Following the BASIC loader
+
+PROG (the BASIC program start, system variable at `$5C53`) points to
+`$5CCB`. Reading the tokens out of line 10:
+
+```
+10  BORDER NOT PI
+   :POKE VAL "23693", VAL "71"
+   :CLEAR VAL "24199"
+   :LOAD "" CODE
+   :RANDOMIZE USR VAL "28350"
+   :POKE VAL "23739", VAL "111"
+   :LOAD "" CODE
+   :POKE VAL "23739", VAL "244"
+   :PAUSE NOT PI
+   :RANDOMIZE USR VAL "62973"
+```
+
+A perfectly typical mid-80s Spectrum loader. We learn:
+
+* `CLEAR 24199` sets RAMTOP to `$5E87`, so the game code lives at
+  addresses ≥ `$5E88` (= 24200).
+* The first `LOAD "" CODE` is the loading screen (loads at `$4000`).
+* `RANDOMIZE USR 28350` (`$6EBE`) — a pre-game routine, probably for
+  the credits/title decoration.
+* The second `LOAD "" CODE` is the main game binary.
+* `PAUSE NOT PI` is `PAUSE 0`, i.e. "wait for a key", which is why the
+  snapshot's PC sits at `$1F3D` — that's the Spectrum ROM's PAUSE
+  routine.
+* `RANDOMIZE USR 62973` (`$F5FD`) — the real game entry point.
+
+Disassembling at `$F5FD`:
+
+```
+F5FD  21 57 FF    LD HL,$FF57
+F600  CB 8E       RES 1,(HL)
+F602  CD B2 E3    CALL $E3B2          ; init helper (used twice)
+F605  3E 02       LD A,$02
+F607  CD 01 16    CALL $1601          ; ROM CHAN-OPEN (upper screen)
+F60A  21 2B E6    LD HL,$E62B
+F60D  22 7B 5C    LD ($5C7B),HL       ; STKBOT
+F610  CD B2 E3    CALL $E3B2
+F613  AF          XOR A
+F614  D3 FE       OUT ($FE),A         ; border black
+F616  32 83 EE    LD ($EE83),A        ; clear a game flag
+F619  3E 02       LD A,$02
+F61B  CD 01 16    CALL $1601
+F61E  21 2B E6    LD HL,$E62B
+F621  22 7B 5C    LD ($5C7B),HL
+F624  21 2B F8    LD HL,$F82B
+F627  7E          LD A,(HL)
+F628  FE FF       CP $FF
+F62A  28 04       JR Z,$F630
+F62C  D7          RST $10             ; ROM print char
+F62D  23          INC HL
+F62E  18 F7       JR $F627
+F630  06 60       LD B,$60            ; 96 reps
+F632  3E 96       LD A,$96            ; UDG #6 (block)
+F634  D7          RST $10             ; print it
+F635  10 FB       DJNZ $F632
+F637  3E 7F       LD A,$7F
+F639  DB FE       IN A,($FE)          ; read keyboard row 7F
+F63B  E6 0C       AND $0C
+F63D  C8          RET Z               ; (etc.)
+```
+
+The string at `$F82B` is:
+
+```
+AT 8,8 INK 0 PAPER 0 "BY  MIKE FOLLIN"
+AT 2,31 OVER 0  <UDG-codes…> FF
+```
+
+So we now have hard names:
+
+| Address  | Meaning                                        |
+| -------- | ---------------------------------------------- |
+| `$5CCB`  | BASIC loader, line 10                          |
+| `$6EBE`  | Pre-game USR routine                           |
+| `$E3B2`  | Init helper called twice from `$F5FD`          |
+| `$F5FD`  | Main game entry (the second `RANDOMIZE USR`)   |
+| `$F82B`  | "BY MIKE FOLLIN" title-screen string + UDGs    |
+
+These get tracked in [`docs/MEMORY-MAP.md`](MEMORY-MAP.md) so we can
+look them up while porting.
+
+The game also calls ROM routines directly (CHAN-OPEN at `$1601`,
+`RST $10` for print-char). Any emulator we build needs the 48 K ROM
+loaded, or we have to intercept those calls and re-implement the
+handful that the game uses. The latter is more in the spirit of "do
+it yourself", but for now we'll bring in the ROM (it has been freely
+redistributable for non-commercial use since Amstrad's 1999
+permission grant).
+
+## 8. Tooling so far
 
 `src/Subterra.Spectrum` is a small dependency-free library with:
 

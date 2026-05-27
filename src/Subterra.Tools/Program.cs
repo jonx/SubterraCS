@@ -18,6 +18,9 @@ internal static class Program
             "render-snapshot"   => RenderSnapshotCommand.Run(rest),
             "unz80"             => UnZ80Command.Run(rest),
             "snapshot-info"     => SnapshotInfoCommand.Run(rest),
+            "disasm"            => DisasmCommand.Run(rest),
+            "stack-walk"        => StackWalkCommand.Run(rest),
+            "hex"               => HexCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };
@@ -50,6 +53,19 @@ internal static class Program
           snapshot-info <path/to/file.z80>
             Print register state and basic memory checksums for a
             snapshot.
+
+          disasm <path/to/file.z80> <hexAddr> <count> [out.asm]
+            Disassemble <count> Z80 instructions starting at hex
+            address <hexAddr>. Writes to stdout unless out.asm given.
+
+          stack-walk <path/to/file.z80> [depth]
+            Show the top of stack (return addresses) for a snapshot;
+            handy for tracking down where game code was running when
+            PC sits in ROM.
+
+          hex <path/to/file.z80> <hexAddr> <count>
+            Hex/ASCII dump of <count> bytes starting at hex address
+            <hexAddr> in the snapshot's RAM image.
         """);
         return 0;
     }
