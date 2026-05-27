@@ -25,6 +25,15 @@ internal static class RunEmuCommand
             }
         }
 
+        int stride = 0;
+        for (int i = 3; i < args.Length; i++)
+        {
+            if (args[i].StartsWith("-stride=", StringComparison.Ordinal))
+            {
+                stride = int.Parse(args[i].Substring("-stride=".Length), CultureInfo.InvariantCulture);
+            }
+        }
+
         var rom = File.ReadAllBytes(romPath);
         var snap = Z80SnapshotReader.Load(snapPath);
         var sys = new Spectrum48(rom);
@@ -33,17 +42,29 @@ internal static class RunEmuCommand
         var repoRoot = RenderTarget.FindRepoRoot(AppContext.BaseDirectory);
         Console.WriteLine($"Boot: PC={sys.Cpu.PC:X4} SP={sys.Cpu.SP:X4} I={sys.Cpu.I:X2}");
 
+        var snapName = Path.GetFileNameWithoutExtension(snapPath).ToLowerInvariant();
+        // One timestamp shared by the whole run, so the sequence sorts together.
+        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+
         for (int f = 0; f < frames; f++)
         {
             ApplyKeysForFrame(sys, keys, f);
             sys.RunFrame();
+
+            if (stride > 0 && (f + 1) % stride == 0)
+            {
+                var rgba = SpectrumScreen.DecodeRgba(sys.RamView().Slice(0, SpectrumScreen.ScrBytes));
+                var path = RenderTarget.ForExtension(
+                    repoRoot, $"emu-{snapName}-seq-f{f + 1:D5}", "png", stamp);
+                PngWriter.WriteRgba(path, rgba, SpectrumScreen.Width, SpectrumScreen.Height);
+            }
         }
 
-        // Snapshot the screen and write it out.
-        var rgba = SpectrumScreen.DecodeRgba(sys.RamView().Slice(0, SpectrumScreen.ScrBytes));
-        var descriptor = $"emu-{Path.GetFileNameWithoutExtension(snapPath).ToLowerInvariant()}-f{frames:D5}";
-        var outPath = RenderTarget.ForPng(repoRoot, descriptor);
-        PngWriter.WriteRgba(outPath, rgba, SpectrumScreen.Width, SpectrumScreen.Height);
+        // Always render the final frame too.
+        var finalRgba = SpectrumScreen.DecodeRgba(sys.RamView().Slice(0, SpectrumScreen.ScrBytes));
+        var outPath = RenderTarget.ForExtension(
+            repoRoot, $"emu-{snapName}-f{frames:D5}", "png", stamp);
+        PngWriter.WriteRgba(outPath, finalRgba, SpectrumScreen.Width, SpectrumScreen.Height);
         Console.WriteLine($"After {frames} frames: PC={sys.Cpu.PC:X4} Cycles={sys.Cpu.Cycles}");
         Console.WriteLine(outPath);
         return 0;
