@@ -22,6 +22,7 @@ internal static class Program
             "stack-walk"        => StackWalkCommand.Run(rest),
             "hex"               => HexCommand.Run(rest),
             "run-emu"           => RunEmuCommand.Run(rest),
+            "find-bytes"        => FindBytesCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };

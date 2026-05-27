@@ -1,0 +1,64 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:Class="Subterra.Editor.MainWindow"
+        Background="#1A1A1A"
+        Width="1200" Height="800"
+        Title="Subterra.Editor — asset/map viewer">
+    <DockPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Background="#252525" Padding="8">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="Snapshot:"/>
+                <TextBlock x:Name="SnapshotPath" VerticalAlignment="Center"
+                           FontFamily="Menlo,Consolas,monospace" Foreground="#80B0FF"
+                           Text="(none)"/>
+                <Separator Margin="6,0"/>
+                <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="Address:"/>
+                <TextBox x:Name="AddressBox" Width="80"
+                         FontFamily="Menlo,Consolas,monospace" Text="6000"/>
+                <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="W (bytes):"/>
+                <NumericUpDown x:Name="WidthBox" Width="80" Minimum="1" Maximum="8" Value="2"/>
+                <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="H (rows):"/>
+                <NumericUpDown x:Name="HeightBox" Width="80" Minimum="1" Maximum="64" Value="16"/>
+                <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="Count:"/>
+                <NumericUpDown x:Name="CountBox" Width="100" Minimum="1" Maximum="2048" Value="64"/>
+                <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="Cols:"/>
+                <NumericUpDown x:Name="ColumnsBox" Width="80" Minimum="1" Maximum="32" Value="8"/>
+                <Button x:Name="RefreshButton" Content="Refresh" Padding="12,4"/>
+                <Button x:Name="SaveButton" Content="Save PNG" Padding="12,4"/>
+            </StackPanel>
+        </Border>
+        <!-- Status -->
+        <TextBlock x:Name="StatusBar" DockPanel.Dock="Bottom"
+                   Margin="8,4" Foreground="#909090"
+                   FontFamily="Menlo,Consolas,monospace"
+                   Text="Load a snapshot via File menu, or it will auto-pick the bundled one."/>
+        <!-- Main: sprite sheet on left, info on right -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="260"/>
+            </Grid.ColumnDefinitions>
+            <ScrollViewer Grid.Column="0" Padding="8" Background="#202020">
+                <Image x:Name="SheetImage" Stretch="None"
+                       HorizontalAlignment="Left" VerticalAlignment="Top"
+                       RenderOptions.BitmapInterpolationMode="None"/>
+            </ScrollViewer>
+            <Border Grid.Column="1" Background="#262626" Padding="8" BorderBrush="#404040" BorderThickness="1,0,0,0">
+                <StackPanel Spacing="8">
+                    <TextBlock Foreground="#C8C8C8" FontSize="14" FontWeight="Bold" Text="Preset addresses"/>
+                    <Button x:Name="PresetTitleString" Content="$F82B title string" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <Button x:Name="PresetTopRam"      Content="$6000 dense region"  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <Button x:Name="PresetE000"        Content="$E000 game data"     HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <Button x:Name="PresetUdg"         Content="UDG area ($FF58)"    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <TextBlock Foreground="#C8C8C8" FontSize="14" FontWeight="Bold" Margin="0,8,0,0" Text="Selected"/>
+                    <TextBlock x:Name="HoverInfo" Foreground="#A0A0A0" FontFamily="Menlo,Consolas,monospace" Text="hover a sprite"/>
+                    <TextBlock x:Name="HoverBytes" Foreground="#80B0FF" FontFamily="Menlo,Consolas,monospace" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

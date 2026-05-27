@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="640"
+        x:Class="Subterra.Game.MainWindow"
+        Background="#101010"
+        Width="768" Height="640"
+        Title="Subterranean Stryker — Subterra.Game">
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Margin="8,6,8,4" Foreground="#A0A0A0">
+            QAOP / Cursors map to the Spectrum keyboard.  Space = fire.  Enter advances menus.
+        </TextBlock>
+        <TextBlock x:Name="StatusBar" DockPanel.Dock="Bottom"
+                   Margin="8,2,8,4" Foreground="#808080" FontFamily="Menlo,Consolas,monospace"/>
+        <Border BorderBrush="#404040" BorderThickness="1" Margin="8">
+            <Image x:Name="Screen" Stretch="Uniform"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   RenderOptions.BitmapInterpolationMode="None"/>
+        </Border>
+    </DockPanel>
+</Window>
