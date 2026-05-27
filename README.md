@@ -295,6 +295,31 @@ need to look in here.
 
 ---
 
+## The native port
+
+There is now a **second, emulator-free C# port** alongside the
+Avalonia-wrapping `Subterra.Game`. It lives in
+[`native/`](native/) — a standalone three-project solution
+([`SubterraCS.slnx`](native/SubterraCS.slnx)) with a hand-rolled
+SDL2 wrapper (~250 LoC of P/Invokes, no NuGet packages), the four
+sprite-blitters ported as C# methods, the entity / spawn / level
+systems re-implemented natively, and a **procedural level
+generator** that takes over once the original's six pages have
+been exhausted — giving infinite seeded levels keyed on depth.
+
+<p align="center">
+  <img src="renders/native-headless-f00525_20260528-013851.png" alt="Native C# port — gameplay frame showing green stalactites and red lava droplets falling, magenta cave-roof formations, player Stryker mid-screen, HUD reading DEPTH:002 SCORE:00275" width="384"/><br/>
+  <em>A frame from the native port — no emulator, no Avalonia,
+  no Z80 in sight; just SDL2 + ~1.2k lines of game C#. See
+  <a href="native/README.md">native/README.md</a>.</em>
+</p>
+
+```sh
+cd native
+dotnet run --project SubterraCS.Game           # interactive SDL2 mode
+dotnet run --project SubterraCS.Game -- --headless --frames=600   # headless test
+```
+
 ## Is a full C# port realistic?
 
 Yes — **two to three weeks of focused work**, given everything we

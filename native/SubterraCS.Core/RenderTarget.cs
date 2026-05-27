@@ -21,13 +21,15 @@ public static class RenderTarget
 
     public static string FindRepoRoot(string start)
     {
-        // Walk upward looking for a directory containing both the
-        // original solution and the new native one — that's our root.
+        // The repo root is the one and only directory holding both the
+        // original solution and the asset bins.  Looking for the
+        // SubterraneanStryker.slnx alone uniquely identifies it (the
+        // native/ subdirectory has its own README.md so we can't use
+        // that as a marker).
         var dir = new DirectoryInfo(start);
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "SubterraneanStryker.slnx"))
-                || File.Exists(Path.Combine(dir.FullName, "README.md")))
+            if (File.Exists(Path.Combine(dir.FullName, "SubterraneanStryker.slnx")))
             {
                 return dir.FullName;
             }
