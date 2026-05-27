@@ -42,6 +42,12 @@ What works today:
   binary, the live emulator, and RAM dumps.
 * **First asset extracted**: the in-game UDG terrain dictionary at
   `$E62B` (21 × 8×8 cells of cave wall / dust / ground tiles).
+* **Master sprite tile bank**: every in-game 8×8 tile (~390 of them
+  — cave walls, trees, ships, humanoid figures, projectiles, the
+  HUD font, ...) lives flat at `$B0F4`, indexed by the sprite-draw
+  routine at `$DAF2`. Saved out as
+  [`assets/extracted/tiles-b0f4.bin`](assets/extracted/) and
+  visualised in [`renders/scan-$B0F4-8x8…`](renders/).
 
 See [`docs/RE-LOG.md`](docs/RE-LOG.md) for the running notebook and
 [`docs/MEMORY-MAP.md`](docs/MEMORY-MAP.md) for every named address

@@ -29,9 +29,25 @@ public partial class MainWindow : Window
         try
         {
             _repoRoot = RenderTarget.FindRepoRoot(AppContext.BaseDirectory);
-            var snapPath = Path.Combine(_repoRoot, "original", "dumps", "SUBSTRYK.Z80");
-            _snapshot = Z80SnapshotReader.Load(snapPath);
-            SnapshotPath.Text = snapPath;
+            // Prefer a post-game RAM dump if present — that has the in-game
+            // tile bank and UDGs populated; the raw snapshot only shows the
+            // boot-time state (PAUSE 0 on the title screen).
+            var postGame = Path.Combine(_repoRoot, "build", "post-game.bin");
+            if (File.Exists(postGame))
+            {
+                var ram = File.ReadAllBytes(postGame);
+                if (ram.Length == 0xC000)
+                {
+                    _snapshot = new Z80Snapshot(default, ram, Z80SnapshotKind.V1);
+                    SnapshotPath.Text = postGame + "  (post-game RAM dump)";
+                }
+            }
+            if (_snapshot is null)
+            {
+                var snapPath = Path.Combine(_repoRoot, "original", "dumps", "SUBSTRYK.Z80");
+                _snapshot = Z80SnapshotReader.Load(snapPath);
+                SnapshotPath.Text = snapPath + "  (boot snapshot — run the game to get a richer dump)";
+            }
         }
         catch (Exception ex)
         {
@@ -40,10 +56,11 @@ public partial class MainWindow : Window
 
         RefreshButton.Click += (_, __) => RefreshSheet();
         SaveButton.Click += (_, __) => SaveSheet();
-        PresetTitleString.Click += (_, __) => SetPreset(0xF82B, 1, 8, 64);
-        PresetTopRam.Click += (_, __) => SetPreset(0x6000, 2, 16, 64);
-        PresetE000.Click += (_, __) => SetPreset(0xE000, 2, 16, 128);
-        PresetUdg.Click += (_, __) => SetPreset(0xFF58, 1, 8, 21);
+        PresetTileBank.Click    += (_, __) => SetPreset(0xB0F4, 1, 8, 384, cols: 32);
+        PresetIngameUdg.Click   += (_, __) => SetPreset(0xE62B, 1, 8, 21, cols: 8);
+        PresetMusic.Click       += (_, __) => SetPreset(0x6000, 2, 16, 64, cols: 8);
+        PresetTitleString.Click += (_, __) => SetPreset(0xF82B, 1, 8, 64, cols: 16);
+        PresetE000.Click        += (_, __) => SetPreset(0xE000, 2, 16, 128, cols: 8);
 
         AddressBox.KeyDown += (_, e) => { if (e.Key == Key.Return) RefreshSheet(); };
         WidthBox.ValueChanged += (_, __) => RefreshSheet();
@@ -55,12 +72,13 @@ public partial class MainWindow : Window
         RefreshSheet();
     }
 
-    private void SetPreset(int addr, int w, int h, int count)
+    private void SetPreset(int addr, int w, int h, int count, int cols = -1)
     {
         AddressBox.Text = addr.ToString("X4", CultureInfo.InvariantCulture);
         WidthBox.Value = w;
         HeightBox.Value = h;
         CountBox.Value = count;
+        if (cols > 0) ColumnsBox.Value = cols;
         RefreshSheet();
     }
 
@@ -150,7 +168,10 @@ public partial class MainWindow : Window
         int idx = gy * _currentColumns + gx;
         if (idx < 0 || idx >= _currentSheet.CellCount) return;
         ushort cellAddr = _currentSheet.AddressOf(idx);
-        HoverInfo.Text = $"cell {idx,3}   addr ${cellAddr:X4}   ({_currentSheet.CellWidthPixels}×{_currentSheet.CellHeightPixels} px)";
+        string tileNote = _currentBase == 0xB0F4
+            ? $"   (sprite tile #${idx:X2} = {idx})"
+            : "";
+        HoverInfo.Text = $"cell {idx,3}   addr ${cellAddr:X4}   ({_currentSheet.CellWidthPixels}×{_currentSheet.CellHeightPixels} px){tileNote}";
 
         var sb = new StringBuilder();
         int bpc = _currentSheet.BytesPerCell;

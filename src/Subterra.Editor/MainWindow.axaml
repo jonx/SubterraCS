@@ -49,11 +49,12 @@
             </ScrollViewer>
             <Border Grid.Column="1" Background="#262626" Padding="8" BorderBrush="#404040" BorderThickness="1,0,0,0">
                 <StackPanel Spacing="8">
-                    <TextBlock Foreground="#C8C8C8" FontSize="14" FontWeight="Bold" Text="Preset addresses"/>
-                    <Button x:Name="PresetTitleString" Content="$F82B title string" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
-                    <Button x:Name="PresetTopRam"      Content="$6000 dense region"  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
-                    <Button x:Name="PresetE000"        Content="$E000 game data"     HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
-                    <Button x:Name="PresetUdg"         Content="UDG area ($FF58)"    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <TextBlock Foreground="#C8C8C8" FontSize="14" FontWeight="Bold" Text="Known asset banks"/>
+                    <Button x:Name="PresetTileBank"    Content="Tile bank ($B0F4, 8×8)"  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <Button x:Name="PresetIngameUdg"   Content="Cave UDGs ($E62B, 8×8)"  HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <Button x:Name="PresetMusic"       Content="Music? ($6000)"          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <Button x:Name="PresetTitleString" Content="Title string ($F82B)"    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
+                    <Button x:Name="PresetE000"        Content="$E000 game data"          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"/>
                     <TextBlock Foreground="#C8C8C8" FontSize="14" FontWeight="Bold" Margin="0,8,0,0" Text="Selected"/>
                     <TextBlock x:Name="HoverInfo" Foreground="#A0A0A0" FontFamily="Menlo,Consolas,monospace" Text="hover a sprite"/>
                     <TextBlock x:Name="HoverBytes" Foreground="#80B0FF" FontFamily="Menlo,Consolas,monospace" TextWrapping="Wrap"/>
