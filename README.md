@@ -1,144 +1,251 @@
 # Subterranean Stryker — Reverse Engineering & C# Port
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)](https://dotnet.microsoft.com/)
+[![Avalonia 12](https://img.shields.io/badge/Avalonia-12-883a99.svg)](https://avaloniaui.net/)
+
 A clean-room-ish reverse engineering project that takes the 1985 ZX
-Spectrum game **Subterranean Stryker** (Insight Software) and rebuilds
-it as a portable, cross-platform C# game with an accompanying
-asset/map viewer/editor.
+Spectrum game **Subterranean Stryker** (Insight Software — code by
+Mark Wilson & Peter Gough, music by Tim & Mike Follin) and rebuilds
+it as a portable, cross-platform C# program with a hand-written Z80
+emulator, a complete reverse-engineering toolkit, and an
+asset/sprite viewer.
 
-The project is being open-sourced; everything here — including the
-tools used to peel the game apart — is hand-written so that the
-provenance of every line of code is clear.
+Every line of code in this repository is hand-written — no
+third-party Spectrum emulator, no third-party Z80 disassembler, no
+third-party imaging library. The point isn't just to reach a
+working port; it's to make it possible for a single reader to
+follow every line of code from "load a snapshot" to "render the
+game".
 
-## Goals
+<p align="center">
+  <img src="renders/scr-substryk_20260527-224113.png" alt="Loading screen — submarine, explosion, INSIGHT logo, SUBTERRANEAN STRYKER title" width="384"/>
+</p>
 
-1. Recover the original game from its tape image and 48 K snapshot.
-2. Build the tooling we need to reverse engineer it (Z80 snapshot
-   loader, Z80 disassembler, sprite/map ripper, ...) from scratch.
-3. Document the reverse engineering process step by step so anyone
-   can follow along.
-4. Produce a faithful cross-platform C# re-implementation of the
-   game.
-5. Ship an asset/map viewer + editor so that the game can be modded
-   and extended.
+---
 
-## Status
+## What works today
 
-What works today:
+### A live, playable game
 
-* Hand-written **Z80 emulator** (full documented instruction set,
-  CB / ED / DD / FD / DD-CB / FD-CB prefixes, flag-correct ALU).
-* **Spectrum 48 host** (16 K ROM + 48 K RAM + ULA port `$FE`,
-  IM 0/1/2 interrupts at 50 Hz). 48 K ROM bundled with permission.
-* **`.z80` snapshot reader** (v1, v2, v3; RLE decompression).
-* **Spectrum screen decoder** → RGBA, plus a hand-rolled **PNG
-  writer** (and our own CRC-32) so the asset pipeline has zero
-  graphics dependencies.
-* **Z80 disassembler** with full prefix handling.
-* **Subterra.Game** — Avalonia 12 window playing the original game
-  cross-platform on macOS / Linux / Windows.
-* **Subterra.Editor** — Avalonia sprite scanner: type an address,
-  see decoded cells, hover for raw bytes, save sheets to `renders/`.
-* **`subterra` CLI** with 10+ subcommands for poking around the
-  binary, the live emulator, and RAM dumps.
-* **First asset extracted**: the in-game UDG terrain dictionary at
-  `$E62B` (21 × 8×8 cells of cave wall / dust / ground tiles).
-* **Master sprite tile bank**: every in-game 8×8 tile (~390 of them
-  — cave walls, trees, ships, humanoid figures, projectiles, the
-  HUD font, ...) lives flat at `$B0F4`, indexed by the sprite-draw
-  routine at `$DAF2`. Saved out as
-  [`assets/extracted/tiles-b0f4.bin`](assets/extracted/) and
-  visualised in [`renders/scan-$B0F4-8x8…`](renders/).
+A hand-written Z80 emulator, plus a 48 K Spectrum host (RAM + ROM +
+ULA), inside an Avalonia 12 window. The original 1985 binary boots,
+runs, and accepts input on macOS, Linux, and Windows.
 
-See [`docs/RE-LOG.md`](docs/RE-LOG.md) for the running notebook and
-[`docs/MEMORY-MAP.md`](docs/MEMORY-MAP.md) for every named address
-we've identified.
-
-## Layout
-
-```
-original/         original game files (tape image, snapshot, loading screen)
-src/              all hand-written code (snapshot loader, screen renderer,
-                  disassembler, emulator, game, editor — one .NET 10 solution)
-tools/            (reserved for future native helper scripts, if any)
-renders/          timestamped screenshots/asset dumps — kept forever as
-                  a visual changelog of what we've discovered
-docs/             reverse engineering log and design notes
-```
-
-## Playing it
+<p align="center">
+  <img src="renders/emu-substryk-f00030_20260527-225654.png" alt="Game's own title screen, BY MIKE FOLLIN, control select menu" width="256"/>
+  <img src="renders/emu-substryk-seq-f00280_20260527-225827.png" alt="Gameplay — surface scene with tree, terrain, HUD reading DEPTH 1 SCORE 000000 SHIELD FUEL RESCUED 00" width="256"/>
+  <img src="renders/emu-substryk-seq-f00400_20260527-225827.png" alt="Gameplay — enemies appearing in the sky over the same scene" width="256"/>
+</p>
 
 ```sh
 dotnet run --project src/Subterra.Game
 ```
 
-That opens an Avalonia window with our Z80 emulator running the
-original 1985 binary inside it. Controls (Spectrum keyboard layout
-— in the GUI just press the same letter on your laptop):
+* **Q / A** — climb / dive (the world only scrolls once you've
+  dived deep enough — it's *subterranean*)
+* **L** — move horizontally
+* **Enter** — fire
+* **1 / 2 / 3 / 4** on the title screen pick a control method
+  (KEYBOARD / Interface 2 / Kempston / Cursor)
+* **Esc** quits
 
-* On the title screen, press **1** to pick the KEYBOARD control
-  option (the game also offers Interface 2 / Kempston / Cursor on
-  2 / 3 / 4 — those work too, just use different keys).
-* In game:
-  * **Q** — climb (up)
-  * **A** — dive (down)
-  * **L** — move horizontally
-  * **Enter** — fire
-* **Esc** quits the window.
+### A complete reverse-engineering toolkit
 
-Tip: the game is *subterranean* — the world only starts scrolling
-once you have dived deep enough. Hold **A** for about two seconds
-to start descending; you'll see DEPTH tick up and the cave roll
-past.
+A `subterra` CLI with 12 sub-commands covering snapshot decoding,
+Z80 disassembly, memory inspection, opcode-pattern search, live
+emulator runs with scripted key input, RAM dumps, sprite extraction,
+and instruction-level execution tracing. The full reference lives in
+[**docs/TOOLS.md**](docs/TOOLS.md). Highlights:
 
-## Quick start
+* `render-snapshot` and `render-scr` decode Spectrum screens to PNG.
+* `disasm` reads any region of a snapshot as Z80 mnemonics.
+* `find-bytes` greps for an opcode pattern with wildcards.
+* `run-emu` boots the game in the emulator, scripts key presses by
+  frame number, and saves the final screen and RAM dump.
+* `scrwrite-trace` logs every screen-memory write during a single
+  gameplay frame, with PC, address, byte value, and `(x, y)`.
+* `sprite-scan` interprets a memory region as a grid of 8 × 8 (or
+  any size) cells and writes a contact-sheet PNG for each window.
 
-```sh
-dotnet build SubterraneanStryker.slnx
+### Two asset banks already extracted
 
-# render the loading screen and the title-screen snapshot to renders/
-dotnet run --project src/Subterra.Tools -- render-scr original/dumps/SCRSHOT/SUBSTRYK.SCR
-dotnet run --project src/Subterra.Tools -- render-snapshot original/dumps/SUBSTRYK.Z80
+<p align="center">
+  <img src="renders/scan-%24E62B-8x8_20260528-001405.png" alt="21 UDG cave-terrain tiles at address E62B" width="416"/><br/>
+  <em>The 21 cave-terrain UDGs at <code>$E62B</code> (8 × 8 each).</em>
+</p>
 
-# dump the 48K RAM image from the snapshot
-dotnet run --project src/Subterra.Tools -- unz80 \
-    original/dumps/SUBSTRYK.Z80 build/substryk-ram.bin
+<p align="center">
+  <img src="renders/scan-%24B0F4-8x8_20260527-234538.png" alt="Master sprite tile bank at B0F4 — ~390 tiles, including cave walls, trees, buildings, humanoid figures (RESCUED people), projectiles, and HUD letters F U E L plus digits" width="580"/><br/>
+  <em>The master 8 × 8 sprite tile bank at <code>$B0F4</code>
+  (≈ 390 tiles, decoded with <code>subterra sprite-scan</code>).
+  Cave walls, trees, buildings, the "RESCUED" people figures,
+  projectiles, and the HUD font (you can spot F-U-E-L in there).</em>
+</p>
 
-# boot the game in our own emulator, save its post-game RAM
-dotnet run --project src/Subterra.Tools -- run-emu \
-    original/rom/48k.rom original/dumps/SUBSTRYK.Z80 600 \
-    -keys=5-10:SPACE,40-50:1,200-500:A \
-    -ram=build/post-game.bin
-
-# extract the in-game UDG cave tiles from that dump
-dotnet run --project src/Subterra.Tools -- sprite-scan \
-    build/post-game.bin E62B E700 8x8 -cols=8 -count=21 -scale=6
-
-# get all subcommands
-dotnet run --project src/Subterra.Tools -- --help
-```
-
-## Editing assets
+### An interactive asset viewer
 
 ```sh
 dotnet run --project src/Subterra.Editor
 ```
 
-Opens the asset viewer with the bundled snapshot pre-loaded. The
-preset buttons jump to known interesting addresses (title text,
-UDG area, dense code region). Adjust the cell width / height / count
-/ columns to interpret memory as sprite cells; hover any cell to
-see its address and bytes; click **Save PNG** to drop a contact
-sheet into `renders/`.
+Avalonia GUI that auto-loads either the bundled snapshot or a
+post-game RAM dump and lets you scroll through memory at any cell
+size. Preset buttons jump to the tile bank, UDGs, music data, etc.
+Hovering a cell shows its address and raw bytes; "Save PNG" writes a
+clean contact sheet into `renders/`.
+
+---
+
+## How it was built
+
+The story of the reverse engineering — every dead end included — is
+in [**docs/RE-LOG.md**](docs/RE-LOG.md). The lookup table of every
+named address we've identified is in
+[**docs/MEMORY-MAP.md**](docs/MEMORY-MAP.md). The two are kept in
+lockstep; every "found new routine" commit touches both.
+
+A few highlights from the journey:
+
+* **The first bug** wasn't in the emulator — it was in the
+  Spectrum's interleaved bitmap-address arithmetic, which I got
+  wrong on the first try and the title text rendered vertically
+  replicated. The fix lives in
+  [`SpectrumScreen.BitmapAddress`](src/Subterra.Spectrum/SpectrumScreen.cs).
+* **The "ship doesn't move" mystery** was a misunderstanding of the
+  game's controls, not a CPU bug. The main loop gates on
+  `($E584) ≥ 117` (player altitude), and you have to *dive* before
+  the world starts scrolling. Found by walking back from the gate
+  with `subterra find-bytes` and `subterra emu-peek` —
+  see [RE-LOG §10](docs/RE-LOG.md).
+* **The master tile bank at `$B0F4`** was found by tracing back
+  from `LD DE,$4000` (the routine writing the *screen* address) to
+  the inner draw helper at `$DAF2`, where the indirection
+  `index → $B0F4 + index*8` jumped out. See
+  [RE-LOG §14](docs/RE-LOG.md).
+* **Flicker and colour clash are by design.** Subterranean Stryker
+  draws its moving sprites with an XOR routine at `$E1DE` — same
+  call erases and draws, with a gap in between. And colour is
+  stored in 32×24 attribute cells, so a sprite passing near an
+  enemy briefly shares its 8×8 colour. Both are intrinsic
+  Spectrum-hardware behaviour, faithfully reproduced. See
+  [RE-LOG §12](docs/RE-LOG.md).
+
+---
+
+## Repository layout
+
+```
+original/        original 1985 game files + 48 K Spectrum ROM
+  tape/          the .tzx tape image
+  dumps/         the .z80 snapshot + SCR loading screen
+  rom/           48k.rom (with provenance note)
+src/             everything we wrote, one .NET 10 solution
+  Subterra.Spectrum/   snapshot loader, Z80 CPU, ULA, screen, PNG
+  Subterra.Assets/     SpriteSheet decoder, RenderedImage
+  Subterra.Tools/      the `subterra` CLI — 12 sub-commands
+  Subterra.Game/       Avalonia window — playable emulator
+  Subterra.Editor/     Avalonia asset viewer
+docs/
+  RE-LOG.md      the running notebook (read top-to-bottom)
+  MEMORY-MAP.md  every named address, organised by RAM region
+  TOOLS.md       every tool with what / why / how-to
+assets/extracted/
+  tiles-b0f4.bin first standalone asset file (3 KB tile bank)
+renders/         timestamped PNG history of every render the
+                 project has ever produced — kept forever as a
+                 visual changelog
+```
+
+---
+
+## Quick-start
+
+Requires **.NET 10 SDK**. No other tooling required.
+
+```sh
+# 1. Build the whole solution
+dotnet build SubterraneanStryker.slnx
+
+# 2. Play the original game in our emulator
+dotnet run --project src/Subterra.Game
+
+# 3. Browse memory / assets with the GUI viewer
+dotnet run --project src/Subterra.Editor
+
+# 4. Use the CLI — print all available commands
+dotnet run --project src/Subterra.Tools -- --help
+
+# Examples of CLI use ------------------------------------------------
+
+# Render the original loading screen
+dotnet run --project src/Subterra.Tools -- \
+    render-scr original/dumps/SCRSHOT/SUBSTRYK.SCR
+
+# Render the snapshot's screen memory (= title screen)
+dotnet run --project src/Subterra.Tools -- \
+    render-snapshot original/dumps/SUBSTRYK.Z80
+
+# Disassemble the main game entry point
+dotnet run --project src/Subterra.Tools -- \
+    disasm original/dumps/SUBSTRYK.Z80 F5FD 30
+
+# Boot the game, drive it via scripted keys, dump RAM for the Editor
+dotnet run --project src/Subterra.Tools -- \
+    run-emu original/rom/48k.rom original/dumps/SUBSTRYK.Z80 600 \
+    -keys=5-10:SPACE,40-50:1,200-500:A \
+    -ram=build/post-game.bin
+
+# Extract the in-game UDG cave tiles from the RAM dump
+dotnet run --project src/Subterra.Tools -- \
+    sprite-scan build/post-game.bin E62B E700 8x8 \
+    -cols=8 -count=21 -scale=6
+```
+
+See [docs/TOOLS.md](docs/TOOLS.md) for the full reference of every
+CLI command, every public class in the runtime library, and every
+GUI feature.
+
+---
+
+## Roadmap
+
+Known open follow-ups, parked rather than blocking:
+
+* **Sprite composition tables.** The `$B0F4` tile bank is the
+  *vocabulary*; each enemy sprite is composed from a small list of
+  tile indices. `subterra scrwrite-trace` already captures the byte
+  stream — next step is to walk the streams across a frame and
+  match them against the bank to label each game object.
+* **Map / level data viewer.** Once we know the level format, add
+  a "map view" tab to `Subterra.Editor` that lets you scroll a
+  level and edit individual tile cells.
+* **Spectrum beeper audio.** Capture toggles of bit 4 of port
+  `$FE`, convert to PCM samples, and pipe through Avalonia audio so
+  Tim Follin's title tune is preserved.
+* **Native game logic.** Eventually replace the emulator core with
+  a hand-written C# implementation of each game routine, using the
+  extracted asset files. The emulator stays in the repo as a
+  reference and for any routines we don't fully understand yet.
+
+---
 
 ## Legal
 
-The original 1985 game is © Insight Software. The tape image and
-snapshot under [`original/`](original/) are widely mirrored across
-preservation archives (World of Spectrum, Spectrum Computing).
-Nothing in this repository is sold, and the binaries are kept here
-only for the purpose of reverse engineering and historical
-preservation. Insight Software (or any current rights holder) can
-ask for the binaries to be removed at any time.
+The original 1985 game is © Insight Software. The tape image, the
+snapshot, and the loading screen under [`original/`](original/) are
+widely mirrored across preservation archives (World of Spectrum,
+Spectrum Computing). Nothing here is sold, and the binaries are kept
+only for reverse engineering and historical preservation. Insight
+Software (or any current rights holder) can ask for the binaries to
+be removed at any time.
 
-All hand-written code (tools, C# port, editor) is licensed under the
-MIT License — see [`LICENSE`](LICENSE).
+The 48 K Spectrum ROM under [`original/rom/`](original/rom/) is
+© Amstrad plc, redistributed under [Amstrad's 1999 permission grant
+for non-commercial use](original/rom/README.md).
+
+All hand-written code (tools, runtime library, GUI apps,
+documentation) is licensed under the MIT License —
+see [`LICENSE`](LICENSE).
+
+— John Knipper, `<code@jkn.me>`

@@ -145,6 +145,10 @@ we keep a complete visual history; never overwrite.
 Two PNG artefacts come out of the early pipeline and live in
 [`renders/`](../renders/):
 
+<p align="center">
+  <img src="../renders/scr-substryk_20260527-224113.png" width="320" alt="Loading screen with the sub, explosion, INSIGHT logo and the SUBTERRANEAN STRYKER title"/>
+</p>
+
 * The original `.scr` loading screen — the iconic sub & explosion
   with the "INSIGHT" credit and "SUBTERRANEAN STRYKER" title.
 * The first 6 912 bytes of the snapshot's RAM, decoded with the same
@@ -285,6 +289,18 @@ next try.
 
 ## 9. Z80 emulator
 
+<p align="center">
+  <img src="../renders/emu-substryk-f00030_20260527-225654.png" width="240" alt="Game title screen showing BY MIKE FOLLIN and the four control options"/>
+  <img src="../renders/emu-substryk-seq-f00280_20260527-225827.png" width="240" alt="In-game scene with HUD, tree silhouette, terrain"/>
+</p>
+
+*Left: the game's own title screen, reached after we let the
+snapshot run for ~30 frames with SPACE pressed.  Right: actual
+gameplay — fully drawn HUD with DEPTH / SCORE / SHIELD / FUEL / RESCUED,
+green terrain, and the player ship in the centre — after we held "1"
+to choose the keyboard control option. Both are screenshots from
+**our own emulator**, no original Spectrum involved.*
+
 `src/Subterra.Spectrum/Z80/Z80Cpu.cs` is a hand-written, dependency-free
 Z80 emulator covering the documented instruction set in full:
 
@@ -411,6 +427,10 @@ are part of what makes the game look like itself.
 
 ## 13. First extracted asset
 
+<p align="center">
+  <img src="../renders/scan-%24E62B-8x8_20260528-001405.png" width="416" alt="21 8x8 UDG cave-terrain tiles extracted from address E62B"/>
+</p>
+
 The game keeps its in-game UDGs at `$E62B`. `MainEntry` does
 `LD HL,$E62B; LD ($5C7B),HL` early on, pointing the Spectrum
 system's UDG-base sysvar at the game's own glyph table (21 cells of
@@ -424,6 +444,17 @@ post-game RAM dump → SpriteSheet decoder → timestamped PNG in
 `renders/`.
 
 ## 14. Unravelling the sprite system backwards from the screen writes
+
+<p align="center">
+  <img src="../renders/scan-%24B0F4-8x8_20260527-234538.png" width="580" alt="Master 8x8 sprite tile bank at B0F4 — about 390 tiles including cave walls, trees, buildings, humanoid figures, projectiles, the HUD font"/>
+</p>
+
+*The master 8 × 8 sprite tile bank at <code>$B0F4</code> — every
+in-game graphic the XOR-draw routine ever displays comes from a
+slice of these ~390 tiles. You can spot the cave walls and drips at
+the top, then trees and surface buildings, then the "RESCUED"
+humanoid figures, then projectiles and HUD glyphs (F, U, E, L and
+the digits are all in there somewhere).*
 
 The UDGs at `$E62B` are only used for a small set of static
 terrain glyphs; the *real* sprite content (the player sub, every
