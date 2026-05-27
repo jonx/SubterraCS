@@ -29,6 +29,7 @@ internal static class Program
             "scrwrite-trace"    => ScreenWriteTraceCommand.Run(rest),
             "entity-bank"       => EntityBankCommand.Run(rest),
             "player-dump"       => PlayerDumpCommand.Run(rest),
+            "extract-all"       => ExtractAllCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };

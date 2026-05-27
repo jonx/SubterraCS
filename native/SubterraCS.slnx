@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SubterraCS.Core/SubterraCS.Core.csproj" />
+  <Project Path="SubterraCS.Game/SubterraCS.Game.csproj" />
+  <Project Path="SubterraCS.Platform/SubterraCS.Platform.csproj" />
+</Solution>
