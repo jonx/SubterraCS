@@ -44,18 +44,23 @@ dotnet run --project src/Subterra.Game
 ```
 
 That opens an Avalonia window with our Z80 emulator running the
-original 1985 binary inside it. Controls:
+original 1985 binary inside it. Controls (Spectrum keyboard layout
+— in the GUI just press the same letter on your laptop):
 
-* **A** / **Q** — dive / climb the submarine
-* **Space** — fire
-* **Enter** — confirm menus
-* **1 / 2 / 3 / 4** — pick a control option on the title screen
-  (the game asks for KEYBOARD / Interface 2 / Kempston / Cursor)
-* **Esc** — quit
+* On the title screen, press **1** to pick the KEYBOARD control
+  option (the game also offers Interface 2 / Kempston / Cursor on
+  2 / 3 / 4 — those work too, just use different keys).
+* In game:
+  * **Q** — climb (up)
+  * **A** — dive (down)
+  * **L** — move horizontally
+  * **Enter** — fire
+* **Esc** quits the window.
 
-Tip: the game is *subterranean* — the world only scrolls once you
-have dived deep enough. Hold **A** for about two seconds to start
-descending; you'll see DEPTH tick up and the cave roll past.
+Tip: the game is *subterranean* — the world only starts scrolling
+once you have dived deep enough. Hold **A** for about two seconds
+to start descending; you'll see DEPTH tick up and the cave roll
+past.
 
 ## Quick start
 

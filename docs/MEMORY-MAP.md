@@ -48,9 +48,25 @@ RANDOMIZE USR 62973. See [RE-LOG.md §7](RE-LOG.md).
 
 ## RAM ($E45F)  — current frame's player input flags
 
-Bit 3 = DOWN pressed, bit 4 = UP pressed (after the keyboard-scan
-routine at `$D918` collates rows). The vertical-movement routine at
-`$D95D` reads this each frame.
+The selected control method (set up by the title-screen menu via
+the dispatch table at `$F741` / `$E461`) writes a packed bitmask
+into `($E45F)` each frame:
+
+| Bit | KEYBOARD option (the one the user picked) |
+| --- | ----------------------------------------- |
+| 0   | Enter — FIRE                              |
+| 1   | L — horizontal move                       |
+| 2   | row 0 (CAPS/Z/X/C/V) — ?                  |
+| 3   | row 1 (A/S/D/F/G) — DOWN                  |
+| 4   | row 2 (Q/W/E/R/T) — UP                    |
+| 5   | row 0 again — ?                           |
+
+The vertical-movement routine at `$D95D` consumes bits 3 and 4 to
+update player altitude (`$E584`).
+
+`($E461)` is a 16-bit pointer to the currently-selected input
+handler routine; the input dispatcher at `$D8F0` does
+`LD HL,($E461); JP (HL)`.
 
 ## RAM ($E583)  — game state lock
 
