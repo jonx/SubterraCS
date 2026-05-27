@@ -208,6 +208,76 @@ GUI feature.
 
 ---
 
+## Generated files (what's in the repo vs what you build locally)
+
+A few intermediate files appear in commands and in the Editor's
+auto-load path but are *not* committed — they're cheap to
+regenerate, and pinning them in git would just create churn. Here's
+exactly where each one comes from.
+
+### `build/post-game.bin` — 48 K RAM dump captured mid-gameplay
+
+The boot-time snapshot (`original/dumps/SUBSTRYK.Z80`) captures the
+game *waiting on PAUSE 0*, before its own initialisation has run.
+That means the master tile bank at `$B0F4` and the in-game UDGs at
+`$E62B` are not yet populated. To see those banks we have to run the
+game past its init code and dump RAM at that point.
+
+```sh
+mkdir -p build
+dotnet run --project src/Subterra.Tools -- \
+    run-emu original/rom/48k.rom original/dumps/SUBSTRYK.Z80 600 \
+    -keys=5-10:SPACE,40-50:1,200-500:A \
+    -ram=build/post-game.bin
+```
+
+Reading the `-keys=` line: press **SPACE** during frames 5..10 (to
+break out of `PAUSE 0` on the boot screen), press **1** during
+frames 40..50 (to pick the KEYBOARD control option), then press
+**A** for frames 200..500 (to dive deep enough that the level
+starts scrolling). After 600 frames we save the full 48 K of
+Spectrum RAM as a flat binary, `build/post-game.bin`.
+
+The Editor (`dotnet run --project src/Subterra.Editor`) checks for
+this file at start-up and uses it if present, so the **Tile bank
+($B0F4)** and **Cave UDGs ($E62B)** preset buttons render real
+content. If the file is missing, the Editor falls back to the boot
+snapshot — those banks just look like zeros.
+
+### `assets/extracted/tiles-b0f4.bin` — 3 KB master tile bank
+
+A 3 072-byte slice of the post-game RAM dump containing the master
+8 × 8 tile sheet at `$B0F4..$BCF3`. Committed (small, useful), but
+you can regenerate it from the RAM dump above with:
+
+```sh
+dd if=build/post-game.bin of=assets/extracted/tiles-b0f4.bin \
+   bs=1 skip=$((0xB0F4 - 0x4000)) count=3072
+```
+
+### `renders/*.png` — visual changelog
+
+Every PNG rendered by *any* tool in the project goes here, with a
+timestamp suffix so the directory acts as a history. Examples:
+
+* `subterra render-scr file.scr` → `renders/scr-<name>_<ts>.png`
+* `subterra render-snapshot file.z80` → `renders/snapshot-<name>_<ts>.png`
+* `subterra run-emu ...` → `renders/emu-<name>-f<NNNNN>_<ts>.png`
+  (and one per `-stride` frame if you ask for a sequence)
+* `subterra sprite-scan ...` → `renders/scan-$<addr>-<WxH>_<ts>.png`
+* The Editor's **Save PNG** button → `renders/sprites-$<addr>-...`
+
+These *are* committed — they're the project's visual changelog,
+intentionally kept so a reader can scroll back and see how the
+understanding of an asset evolved.
+
+### `bin/` and `obj/` — .NET build output
+
+Gitignored, fully regenerable via `dotnet build`. You should never
+need to look in here.
+
+---
+
 ## Roadmap
 
 Known open follow-ups, parked rather than blocking:
@@ -229,6 +299,71 @@ Known open follow-ups, parked rather than blocking:
   reference and for any routines we don't fully understand yet.
 
 ---
+
+## Acknowledgements
+
+This project sits squarely on top of forty years of work by other
+people. Every choice we got to make — what to extract, where to
+look, which opcode is which, what a flag bit means — was already
+documented somewhere, by someone who didn't have to. **None of this
+would have been possible without them**, and it feels important to
+name a few groups explicitly:
+
+**The original team.** *Mark Wilson* and *Peter Gough* wrote
+Subterranean Stryker; *Tim* and *Mike Follin* wrote its music.
+Tearing apart somebody's 1985 Z80 code 40 years later only makes
+sense if you keep in mind that real people designed it, with real
+constraints, and real cleverness. Some of the tricks we re-discovered
+(the three parallel draw paths, the chunky 2×2 XOR sprites, the
+`($5C36)`-points-to-ROM-font HUD font, the level-page scroll
+gate at `$E584`) are small jewels of mid-80s programmer thinking.
+
+**Sinclair Research, Amstrad, Sky-In-One Ltd.** The ZX Spectrum is
+forty years old and still legible because Amstrad
+[granted permission](original/rom/README.md) in 1999 for the 48 K /
+128 K ROMs to be freely redistributed for non-commercial use. Our
+emulator boots from that ROM, unmodified.
+
+**Zilog**, for publishing the *Z80 CPU User Manual*. Every flag
+edge case in our `Z80Cpu` traces back to a paragraph in that book —
+flag-correct ALU, the family of CB / ED / DD / FD prefixes, the
+auxiliary registers, the IM 0 / 1 / 2 modes.
+
+**The Spectrum preservation community**, in particular *World of
+Spectrum* (worldofspectrum.org and worldofspectrum.net), *Spectrum
+Computing* (spectrumcomputing.co.uk), *Everygamegoing*, the *Sinclair
+Wiki* (sinclair.wiki.zxnet.co.uk), *Philip Kendall*, and the MDFS
+ROM-images mirror. They are the reason a 1985 cassette and its
+loading screen are still available in 2026 in pristine, documented
+form. The `original/` directory of this repository is borrowed from
+their work; we will take any of it down if asked.
+
+**The .z80 snapshot format**, designed by *Gerton Lunter* for the
+original Z80 emulator and adopted as a de-facto preservation
+standard. Our `Z80SnapshotReader` follows the spec he documented
+(via the community-mirrored `z80.txt`) — v1, v2 and v3 forms.
+
+**Decades of Spectrum hardware lore.** The interleaved bitmap
+address layout, the 32 × 24 attribute grid + colour-clash, the
+ULA's port `$FE` keyboard half-row encoding, the FRAMES counter at
+`$5C78`, the UDG pointer at `$5C7B`, the 50 Hz interrupt timing,
+the printer-buffer / system-variables / channel-area layout — all
+of these are knowledge that exists because someone, somewhere,
+once wrote it down and kept it findable. Sites like Sinclair Wiki
+and the various Spectrum FAQs collected on Usenet and re-mirrored
+ever since are the substrate this project floats on.
+
+**Every author of every previous Z80 emulator and disassembler.**
+We deliberately didn't read other Spectrum-emulator source code
+while writing ours — not because they're bad, but because the
+project's premise is "do it ourselves so we understand it". But
+their *existence*, and the years of bug reports and test cases they
+generated, set the bar for what "correct" means and gave us the
+oracle we needed when our emulator misbehaved.
+
+If any of the above are reading this and feel under-credited or
+mis-attributed, please open an issue — getting the acknowledgements
+right matters.
 
 ## Legal
 

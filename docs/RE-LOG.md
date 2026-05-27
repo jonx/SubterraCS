@@ -9,6 +9,24 @@ understand *how* we got to the C# port — not just the conclusions.
 
 ---
 
+## 0. Standing on shoulders
+
+Before any of the technical notes below: this log is only possible
+because of forty years of accumulated work by other people. The
+Zilog Z80 User Manual provides every flag and opcode our emulator
+implements; the Spectrum's hardware quirks (interleaved bitmap,
+attribute clash, ULA port `$FE`, the 50 Hz interrupt) are
+collectively documented by the World of Spectrum, Spectrum Computing
+and Sinclair Wiki communities; the `.z80` snapshot format is Gerton
+Lunter's; the binaries under `original/` are mirrored by the
+Spectrum preservation community; the 48 K ROM image is bundled by
+permission of Amstrad. And the game itself was written by Mark
+Wilson, Peter Gough, Tim Follin and Mike Follin in 1985. The
+[`README`](../README.md#acknowledgements) names them properly.
+
+The convention in this log going forward: when a section borrows
+heavily from a specific outside source we cite it inline.
+
 ## 1. The target
 
 - **Game**: Subterranean Stryker
