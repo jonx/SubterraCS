@@ -828,3 +828,176 @@ lesson:
    facts that would have collapsed the whole problem. RE-LOG
    isn't just a write-only journal; it's a tool, and I should
    consult it before generating new tools.
+
+## 18. The level "design" is 192 bytes
+
+I expected to find cave maps somewhere — tile arrays describing
+the underground topology of each level. There aren't any. The
+investigation went:
+
+1. The world advances when the player altitude `$E584` hits `$75`.
+   The scroll routine `$F6F2` runs.
+2. `$F6F2` increments `($E587)` mod 6 — so **there are 6 levels**,
+   and they cycle.
+3. Per level it dereferences three tables:
+   * `$E56D + level*2` → 16-bit sprite-table pointer →
+     `$B0F4 / $60F4 / $70F4 / $80F4 / $90F4 / $A0F4`
+   * `$E57C + level*1` → 1-byte "speed/colour modifier" →
+     `07 04 03 06 02 01`
+   * `$E58B + level*2` → 16-bit second pointer
+4. Then it `LDIR`-copies 32 bytes from `$E69D + level*32` to
+   `$E75D..$E77C`. **That's the level data.**
+
+The 32-byte block is 8 entries × 4 bytes = (timer-lo, timer-hi,
+entity-type, flags). Walked each frame by `$EF02`, which
+decrements timers and spawns the indicated entity-type from the
+`$F5A0` table when each reaches zero.
+
+So the game's "world" is **procedurally composed from timed
+entity spawns**. The cave walls you see aren't drawn from a map
+— they're a stream of stalactites, falling rocks, and other
+sprites the entity system was already drawing. The player dives
+through a probability cloud.
+
+Total level-design footprint: **6 × 32 + 6 × 2 + 6 + 6 × 2 = 222
+bytes for the entire game's content**. That's the kind of design
+constraint that defines a 1985 Spectrum game: 48 K total RAM, the
+ROM eats 16 K, the screen eats another 7 K, the BASIC loader and
+sysvars carve out more — what's left has to fit code, sprites,
+*and* level design. The Follins, Wilson and Gough's solution was
+"no maps, just rhythm".
+
+This is also good news for the C# port: extracting and re-running
+the level format takes essentially zero additional work beyond
+what we already have.
+
+## 19. Tim Follin on the beeper
+
+The music data turned out to live at `$5E88` (just above CLEAR'd
+RAMTOP), and the player at `$FA32`. Both were findable with a
+single `subterra find-bytes "D3 FE"` — that's `OUT ($FE),A`, the
+opcode that drives the Spectrum's only sound output. The
+interesting matches were the ones in a tight `LD A,$10` /
+`LD A,$00` ping-pong:
+
+```
+FA4A  LD A,$00; OUT ($FE),A     ; bit 4 low (speaker idle)
+FA4E  LD B,D; DJNZ $FA4F         ; D = period control
+FA51  LD A,$10; OUT ($FE),A     ; bit 4 high (speaker pulse)
+FA55  LD B,E; DJNZ $FA56         ; E = period control
+```
+
+That's a square-wave generator. The pitch is determined by the
+total `D + E` busy-wait cycles per pulse pair; the duty cycle by
+their ratio. The next few instructions do `INC E; DEC D` (and the
+inverse on the way back) which **slides the duty cycle while
+keeping the total fixed** — i.e. the perceived pitch stays
+constant but the timbre sweeps. The Follin brothers used this
+trick to make a single channel sound like multiple simultaneous
+notes; it's their signature on dozens of 8-bit games.
+
+The data feeding it is a flat array of 16-bit period values
+starting at `$5E88`. No score / channel / instrument metadata —
+just notes. The variation comes from the player's pitch-slide
+geometry, not from the data.
+
+The routine is called from the title screen (`$F64E`, `$F65D`).
+Whether it's *also* called during gameplay (or only on the title
+sequence) is an open question — we never heard the music in our
+Avalonia Game window because audio output isn't hooked up yet.
+
+## 20. The main game loop, phase by phase
+
+For documentation completeness — `$D7FB` looped 50 Hz runs the
+following twelve calls every frame, plus a 13th wraparound to
+the top:
+
+```
+$F868   Pre-step gate          (altitude ≥ $75 → scroll page)
+$D827   Scroll counter
+$D8C2   Input snapshot + dispatch
+$DCAC   Player sprite stage    (copy directional frame to buffer)
+$DC5D   Player attribute paint
+$F1A5   Entity dispatcher      (4-frame time-slice + entity draws)
+$D9C8   Horizontal-move logic  (L key, attribute strip paint)
+$DCF5   *Player draw (XOR)*    ← source of the flicker
+$DFAF   Effect tick            (explosions / particles aging)
+$E248   Dual coordinate transform
+$E8FD   Projectile + fire pass
+$DE2A   Workers / rescue pass
+$EF02   Spawn-schedule executor (the level heartbeat)
+$E046   HUD draw
+        JR $D7FB
+```
+
+Per the doc-hygiene rule, every entry above has a corresponding
+short entry in [MEMORY-MAP.md](MEMORY-MAP.md). The phase names
+are educated guesses based on which addresses they read and
+write; nothing is by inspection of behaviour yet. They will
+sharpen as we keep watching the live emulator.
+
+## 21. A complete picture
+
+After §1-§20, the game's architecture is essentially known. Here
+it is in one diagram, source addresses inline:
+
+```
+                                  ┌──────────────────────────────────┐
+                                  │  BASIC loader $5CCB              │
+                                  │  CLEAR 24199 → RAMTOP = $5E87    │
+                                  │  LOAD ""CODE → screen ($4000)    │
+                                  │  RANDOMIZE USR $6EBE (pre-game)  │
+                                  │  PAUSE 0; RANDOMIZE USR $F5FD    │
+                                  └──────────────┬───────────────────┘
+                                                 │
+                              ┌──────────────────▼────────────────────┐
+                              │  Title screen $F5FD (BY MIKE FOLLIN)  │
+                              │  Plays music from $5E88 via $FA32     │
+                              │  Reads keys 1..4 → install handler    │
+                              └──────────────────┬────────────────────┘
+                                                 │
+                              ┌──────────────────▼────────────────────┐
+                              │       Main game loop $D7FB-$D826      │
+                              │ ┌─────────────────────────────────┐   │
+                              │ │ $F868   pre-step gate ($E584>?) │   │
+                              │ │ $D827   scroll counter          │   │
+                              │ │ $D8C2   input snapshot          │   │
+                              │ │ $DCAC   player sprite stage     │   │
+                              │ │ $DC5D   player attr paint       │   │
+                              │ │ $F1A5   ENTITY DISPATCHER       │───┼──→ enemies, hazards, decor
+                              │ │ $D9C8   horizontal-move         │   │   (16+ types in $F5A0)
+                              │ │ $DCF5   PLAYER DRAW (XOR)       │───┼──→ flicker source
+                              │ │ $DFAF   effect tick             │   │
+                              │ │ $E248   coords                  │   │
+                              │ │ $E8FD   projectiles + fire      │   │
+                              │ │ $DE2A   rescue pickup           │   │
+                              │ │ $EF02   spawn-sched executor    │───┼──→ next enemy from
+                              │ │ $E046   HUD draw                │   │   level table $E69D
+                              │ └─────────────────────────────────┘   │
+                              └──────────────────┬────────────────────┘
+                                                 │ (player altitude hits $75)
+                                                 ▼
+                              ┌────────────────────────────────────────┐
+                              │     Scroll-page  $F6F2                  │
+                              │  level = (level+1) mod 6                │
+                              │  reload sprite ptr from $E56D            │
+                              │  reload speed/colour from $E57C          │
+                              │  copy 32-byte spawn schedule $E69D→$E75D │
+                              └────────────────────────────────────────┘
+
+   Data flow                                  Code drawing the picture
+   ─────────────                              ────────────────────────
+   $5E88   ── Follin music notes          ──→ $FA32   (beeper)
+   $B0F4   ── master tile bank (~390×8B) ──→ $DAF2   (entity tile blit)
+   $B8F4+  ── 16 entity sprite banks      ──→ $F2BC   (entity 16×16 blit)
+   $E62B   ── 21 UDG cave tiles           ──→ ROM RST 10 + UDG sysvar
+   $E63B   ── player sprite (R+L+effects) ──→ $DCF5   (player XOR draw)
+   $E69D   ── 6 × 32-byte spawn schedules ──→ $EF02   (level heartbeat)
+   $E881   ── 8 × 4 bullet/particle list  ──→ $E199   (single-byte XOR)
+   $3C00   ── Spectrum ROM font           ──→ $E03D   (HUD overwrite)
+   $F5A0   ── entity-type table           ──→ $F1F0   (type → bank lookup)
+```
+
+Everything below the dashed line is a piece of data; everything
+above is a piece of code. Twenty addresses, give or take, span
+the entire game. That's the whole machine.

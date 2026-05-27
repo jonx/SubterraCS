@@ -295,6 +295,28 @@ need to look in here.
 
 ---
 
+## Is a full C# port realistic?
+
+Yes — **two to three weeks of focused work**, given everything we
+already have. See [`docs/FEASIBILITY.md`](docs/FEASIBILITY.md) for
+the honest breakdown:
+
+* The game's data is ~15 KB total: master tile bank (3 KB),
+  entity sprite banks (8 KB), music data (4 KB), level schedules
+  (192 B), tables (~200 B more). All extracted.
+* The game's code is ~10 KB, with every major routine mapped in
+  [`docs/MEMORY-MAP.md`](docs/MEMORY-MAP.md).
+* The **level "design" is 192 bytes** — 6 levels × 32 bytes per
+  level (8 timed enemy spawns). No tile maps, no compressed
+  terrain. The cave is procedurally composed by the entity
+  system as you dive.
+
+The largest remaining work is the 16+ per-enemy AI behaviours;
+everything else (renderer, blitters, dispatcher, player, audio)
+is straightforward and well-mapped. The Z80 emulator we already
+have stays in the repo as the reference oracle for parallel-run
+verification during the port.
+
 ## Roadmap
 
 Known open follow-ups, parked rather than blocking:

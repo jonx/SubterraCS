@@ -98,7 +98,123 @@ add per frame. With $E585 = 1 we add 1/frame.
 
 Word-sized; indexes into a level table.
 
-## RAM ($6000–$60xx) — Follin music data (best guess)
+## RAM ($5E88–$~$6FFF) — Follin music data + player routine
+
+The music data lives **above CLEAR'd RAMTOP at `$5E88`** — a long
+stream of 16-bit little-endian period values (one note per pair).
+The player routine at `$FA32` is a hand-tight Spectrum beeper
+driver:
+
+```
+FA32  LD IX,$5E88      ; music data base
+FA36  LD HL,$FF51      ; working buffer
+FA39  LD ($FF54),HL
+FA3C  DI               ; precise timing — interrupts off
+FA3D  LD L,(IX+$00)    ; period lo
+FA40  LD H,(IX+$01)    ; period hi
+FA43  INC IX; INC IX   ; next note
+FA47  LD DE,$00FF      ; pulse counter
+FA4A  LD A,$00; OUT ($FE),A   ; speaker low
+FA4E  LD B,D; DJNZ $FA4F      ; delay
+FA51  LD A,$10; OUT ($FE),A   ; speaker high (bit 4)
+FA55  LD B,E; DJNZ $FA56      ; delay
+... INC E; DEC D pitch-glide ...
+```
+
+That `INC E; DEC D` pair is the **Follin sweep trick** — by slowly
+shifting the proportion of pulse-low to pulse-high time, the
+Follins gave a single channel a pitch glide that sounded like
+multiple notes. Called from the title screen at `$F64E` and
+`$F65D`.
+
+The earlier hex dump of `$6000` (`96 00 E6 00 1E 00 5E 01 …`) is
+mid-stream music data — *not* a separate font. Apologies to my
+earlier self.
+
+## RAM ($E56D–$E580) — per-level sprite-table pointer
+
+A 6-entry table of 16-bit pointers, one per level (0..5). Decoded:
+
+| Level | Sprite ptr |
+| ----- | ---------- |
+| 0     | `$B0F4`    ← the master tile bank |
+| 1     | `$60F4`    |
+| 2     | `$70F4`    |
+| 3     | `$80F4`    |
+| 4     | `$90F4`    |
+| 5     | `$A0F4`    |
+
+Read by `$E2C6` and stored into `$E579` (the active sprite
+composition table pointer).
+
+## RAM ($E57C–$E582) — per-level "speed/colour byte"
+
+6 bytes, one per level: `07 04 03 06 02 01`. Stored into `$E57B`,
+which the rest of the engine uses as an attribute / animation
+multiplier.
+
+## RAM ($E58B–$E596) — per-level second pointer
+
+6 more 16-bit pointers (purpose: TBD — probably the level-specific
+particle / projectile bank).
+
+## RAM ($E69D–$E75C) — per-level enemy-spawn schedule
+
+**The level "design".** A 6-entry × 32-bytes-per-level table. Each
+32-byte block is 8 entries × 4 bytes:
+
+| Byte | Meaning |
+| ---- | ------- |
+| +0   | Spawn timer (lo) |
+| +1   | Spawn timer (hi) |
+| +2   | Entity-type index (into `$F5A0` table) |
+| +3   | Flags (bit 5/7 used by the executor at `$EF02`) |
+
+The level loader at `$F6F2` copies the active block to
+**`$E75D..$E77C`** (32 bytes), where the spawn-executor at
+`$EF02` walks the 8 entries each frame, decrements the timer,
+and spawns when it reaches zero. This is the entire level
+format. The visible cave is *not* a pre-drawn map — it's
+**procedurally composed** from timed entity spawns (stalactites,
+falling rocks, lava, enemies, mine carts, …) drawn through the
+entity system documented above.
+
+That's why the game data is so compact: 6 levels × 32 bytes =
+**192 bytes of level design**, plus the per-level pointer
+tables, plus the sprite banks. No tile maps, no compressed
+levels, no streamed terrain.
+
+## RAM ($E75D–$E77C) — live spawn-executor state (32 bytes)
+
+The per-level schedule from `$E69D + level*32`, copied here at
+level start. Walked each frame by `$EF02`.
+
+## RAM ($FA32–$FA9x) — Follin beeper player routine
+
+See the `$5E88` entry. Entry point `$FA32`; uses the data at IX
+($5E88) as a stream of (period-lo, period-hi) pairs. The pitch-
+slide is the (INC E ; DEC D) loop.
+
+## Main game loop ($D7FB–$D826) — phase-by-phase
+
+The 12 calls in order, with what each phase does:
+
+| Address | Phase                              | Notes |
+| ------- | ---------------------------------- | ----- |
+| `$F868` | Pre-step gate                     | Returns immediately unless player altitude `$E584 ≥ $75` and game-state lock `$E583 == 0`. Once open, advances the world via `JP $F6F2`. |
+| `$D827` | Scroll counter update             | Maintains `$EE74` against the current level index. Drives the vertical-scroll animation. |
+| `$D8C2` | Input snapshot + dispatch         | Copies current player state to backup vars (`$E45B`, `$E45C`), then `CALL $D8F0` — the input dispatcher that fans out via `($E461)` to the active control method. |
+| `$DCAC` | Player sprite stage               | Calls `$E3F4` to copy the new directional frame into the working buffer at `$E8A9`; then handles altitude-mod-8 logic. |
+| `$DC5D` | Player attribute paint           | Walks IX = `$E8F1` (the 4-quadrant address table again, sister of `$E8C9`), writing the level-coloured attribute byte (from `$E57B`) into each cell the player occupies. |
+| `$F1A5` | **Entity dispatcher**            | 4-frame time-slicer (`$F593`) → walks the active entity list (`$F1B9`/`$F1BB`), draws each via `$F1EF` (which decodes type from `$F5A0` table and blits 32 bytes through `$F2BC`). |
+| `$D9C8` | Horizontal-move logic            | Reads `$E45F` bit 1 (the "L" key), updates horizontal position, then paints the colour strip at `$5801` (attribute row 0) with the player's level colour. |
+| `$DCF5` | **Player draw (XOR)**            | The dedicated player drawer — see its own MEMORY-MAP entry above. The source of the in-game ship flicker. |
+| `$DFAF` | "Effect" tick                    | Two `CALL $EB62` invocations with `$EE76` — almost certainly the explosion / particle ageing tick. |
+| `$E248` | Dual coordinate transform        | Calls `$E25E` twice to map both old and new `(altitude, frame)` pairs into screen-byte addresses. Used to compute the player's footprint for collision / scroll. |
+| `$E8FD` | Compound bullet/projectile pass  | Chains 6 sub-calls (`$E213`, `$E920`, `$EC10`, `$E213`, `$ED00`, `$DD4D`) — the projectile / fire-button handler. |
+| `$DE2A` | Workers / rescue pass            | Walks IX = `$E46B` for 4 entries (8 bytes apart? — table TBD), tests bit 7. Together with `$E45F` bit 0 (fire key) this is almost certainly the **rescue-pickup mechanic**. |
+| `$EF02` | **Spawn-schedule executor**      | Walks the 8-entry list at `$E75D`, decrements per-entry timers, spawns the indicated entity when each timer rolls over. The heartbeat of the level. |
+| `$E046` | HUD draw                         | Renders SCORE / FUEL / SHIELD / DEPTH / RESCUED via the ROM-font copy at `$E03D`. |
 
 A hex dump shows neat repeating *word* patterns at `$6000`:
 
