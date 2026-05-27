@@ -237,6 +237,89 @@ Spectrum bitmap address via the screen-row → high-byte table at
 `$E80F`. The two `SRL E` × 3 shifts divide by 8 to convert pixel
 coordinates into character cells.
 
+## RAM ($E63B–$E66B)  — **the player Stryker's sprite source**
+
+Two 16-byte directional frames of the player's craft, used by the
+dedicated XOR-draw at `$DCF5`:
+
+| Address | Contents |
+| ------- | -------- |
+| `$E63B` | 16 bytes — Stryker pointing *right* (eight scanlines × 2 columns = top half only; the lower half of the 16×16 buffer is intentionally blank — the ship is 16 × 8 pixels) |
+| `$E64B` | 16 bytes — Stryker pointing *left*  |
+| `$E65B+` | Effect / explosion / damage frames (checkerboard `55 AA …`-style patterns) |
+
+The direction is selected by `($E586) BIT 0`. The frame is copied
+into the working buffer at `$E8A9` each cycle by the routine at
+`$E3F4`:
+
+```
+E3F4  LD HL,$E8A9; LD DE,$E8AA; LD BC,$001F
+E3FD  LD (HL),$00; LDIR                       ; clear 32-byte sprite buffer
+E401  LD DE,$E8A9
+E404  LD HL,$E63B                              ; source = player bank
+E407  LD BC,$0000
+E40A  LD A,($E586); BIT 0,A
+E40F  JR NZ,$E413
+E411  LD C,$10                                  ; if facing-flag set, advance to $E64B
+E413  ADD HL,BC; LD C,$10; LDIR                 ; copy 16 bytes into the buffer
+```
+
+So the Stryker is **not** in the entity table at `$F5A0`. The
+player has its own purpose-built draw path at `$DCF5` and its own
+source-frame bank at `$E63B`. This is the routine that produces
+the flicker we documented in [RE-LOG §12](RE-LOG.md): each frame
+it XOR-redraws the ship in place, which means the ship is
+*absent* in the framebuffer for exactly the window between the
+erase pass and the redraw pass.
+
+## RAM ($E8A9–$E8C8)  — player working sprite buffer (32 bytes)
+
+Holds the current frame of the player sprite that `$DCF5` is
+about to XOR onto the screen. Only the top 16 bytes (TL + TR
+quadrants) are populated for the standard side-view ship; the
+lower 16 bytes are intentionally zero. Replaced each cycle from
+the `$E63B` bank by the routine at `$E3F4`.
+
+## RAM ($E8C9–$E8D0)  — player 4-quadrant screen-address array
+
+Four little-endian 16-bit screen addresses (TL / TR / BL / BR)
+that `$DCF5` reads via IX to figure out where on the bitmap the
+sprite should be XOR'd. Updated by the input/movement code as the
+player flies around.
+
+## RAM ($DCF5–$DD49)  — **player XOR sprite drawer**
+
+The custom draw routine for the Stryker:
+
+```
+DCF5  LD IX,$E8C9      ; the four screen addresses
+DCF9  LD DE,$E8A9      ; the 32 sprite bytes
+...
+DD17  LD C,$04         ; four columns
+DD19  LD H,(IX+$01); LD L,(IX+$00)
+DD1F  LD B,$08         ; eight rows per column
+DD21  LD A,(DE)
+DD22  AND A; JR Z,$DD2E                ; skip transparent rows
+DD25  INC (HL); DEC (HL); JR Z,$DD2C   ; "is this screen byte zero?"
+DD29  EX AF,AF'; SCF; EX AF,AF'        ; flag "we wrote ink here"
+DD2C  XOR (HL); LD (HL),A              ; XOR-draw
+DD2E  INC H; INC DE
+DD30  DJNZ $DD21
+DD32  INC IX; INC IX
+DD36  DEC C; JP NZ,$DD19
+DD3A  EX AF,AF'; CALL C,$DD4A          ; if any pixel landed, post-process
+DD3E  LD BC,$0028; LD HL,$E8A9; LD DE,$E8D1; LDIR
+                                       ; copy current sprite to "previous" buffer
+                                       ; so next frame's XOR-erase has the right pattern
+```
+
+The four-iteration column loop is what makes the player a 16 × 16
+sprite (the `INC IX; INC IX` advances the screen-address pointer
+between columns); the inner loop draws an 8-row column. Note the
+shadow-A trick: the shadow carry flag is set whenever any
+non-transparent byte was actually drawn, then `$DD4A` is invoked
+to do attribute / collision handling.
+
 ## RAM ($F5A0–$F5DF)  — entity-type table (4 bytes × ~16 types)
 
 The master lookup that connects an entity *kind* to its sprite
@@ -252,17 +335,29 @@ First entries decoded from `build/post-game.bin`:
 
 | Type | Sprite ptr | Frames | Attr | Decoded contents (from `entity-bank` PNG) |
 | ---- | ---------- | ------ | ---- | ----------------------------------------- |
-| 0    | `$B8F4`    | 16     | `$43` bright magenta | **The player submarine** — side view, drill, descent / explode frames |
-| 1    | `$BAF4`    | 16     | `$42` bright red     | Lava / molten droplets, ascend & fall |
+| 0    | `$B8F4`    | 16     | `$43` bright magenta | **Workers' digging-tool animation** (shovel/pickaxe heads swung mid-air, dirt particles scattered). Originally mis-identified as the player — that was wrong; the player has its own draw path. The rescued workers swing tools as their idle animation. |
+| 1    | `$BAF4`    | 16     | `$42` bright red     | Lava / molten droplets — rising & falling frames |
 | 2    | `$BCF4`    | 16     | `$43` bright magenta | Cave-roof stalactite formations |
 | 3    | `$BEF4`    | 16     | `$44` bright green   | Falling rocks / cave debris |
-| 4    | `$C0F4`    | 16     | `$43` bright magenta | (TBD) |
-| 5    | `$C2F4`    | 8      | `$46` bright yellow  | (TBD) |
-| 6    | `$C354`    | 5      | `$02` red            | (TBD — note the unusual 5-frame count and the offset that isn't `…F4`) |
+| 4    | `$C0F4`    | 16     | `$43` bright magenta | Magenta flying drones / beetles |
+| 5    | `$C2F4`    | 8      | `$46` bright yellow  | Yellow mine cart / train carriages |
+| 6    | `$C354`    | 5      | `$02` red            | Red wagons (note: 5 frames, unusual offset `…54` not `…F4`) |
+| 7    | `$C3F4`    | 16     | `$45` bright cyan    | Cyan dust / sparks / debris cloud |
+| 8    | `$C5F4`    | 16     | `$46` bright yellow  | Yellow drill-tip explosion / impact cloud |
+| 9    | `$C7F4`    | 8      | `$45` bright cyan    | Cyan flame / liquid drips |
+| 10   | `$C8F4`    | 8      | `$45` bright cyan    | Cyan branching trees / roots |
+| 11   | `$C9F4`    | 8      | `$44` bright green   | Green spider/octopus creatures |
+| 12   | `$CAF4`    | 16     | `$45` bright cyan    | Cyan bubbles emerging / popping |
+| 13   | `$CCF4`    | 16     | `$01` blue           | Blue radial pattern (force-field?) |
+| 14   | `$CEF4`    | 16     | `$43` bright magenta | Magenta tubes / pipe segments |
+| 15   | `$D0F4`    | 16     | `$46` bright yellow  | Yellow bow-tie / interlocking shapes |
+| 16   | `$D2F4`    | 16     | `$45` bright cyan    | Cyan robot-style figures |
 | …    | up to slot 22 (`$D6F4`) before the table fizzles into other purposes |
 
 So the game has a clean **type → bank → 16 animation frames**
-indirection. Adding a new enemy is just an entry in this table.
+indirection for monsters, decor, and effects. **The player Stryker is
+not in this table** — see `$E63B` above for its source bank and
+`$DCF5` for its dedicated draw routine.
 
 ## RAM (entity sprite banks at $B8F4 onwards)
 

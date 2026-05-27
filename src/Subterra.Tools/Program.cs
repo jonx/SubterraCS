@@ -28,6 +28,7 @@ internal static class Program
             "tile-trace"        => TileTraceCommand.Run(rest),
             "scrwrite-trace"    => ScreenWriteTraceCommand.Run(rest),
             "entity-bank"       => EntityBankCommand.Run(rest),
+            "player-dump"       => PlayerDumpCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };

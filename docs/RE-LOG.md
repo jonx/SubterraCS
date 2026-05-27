@@ -677,3 +677,108 @@ This was *exactly* the "unravel backwards from the screen writes"
 strategy the user suggested in [§14](#14-unravelling-the-sprite-system-backwards-from-the-screen-writes)
 — traced one extra layer further with `scrwrite-trace`'s PC
 histogram + targeted disassembly + memory peeks.
+
+## 17. The player Stryker has its own draw path
+
+I got ahead of myself in §16. When the first entity-type bank
+rendered as 16 frames of a magenta vertical "T-shape with debris",
+I jumped to "submarine with a drill on top, mid-descent" and put
+that in the README. The user pushed back: *"are you sure this is a
+submarine and not just the shovels of the workers?"* — and the
+moment I looked again the shapes were obviously **shovel /
+pickaxe heads swung mid-air, with dirt particles around them**.
+Type 0 is the rescued workers' digging animation, not the player.
+
+Then a second nudge: *"none of those are the ship, it's the
+monsters mostly or the decor with lava and bubbles and such"*.
+Rendering types 1-16 confirmed it: every single one is an enemy,
+hazard, or decoration. So where *is* the player?
+
+A third nudge from the user closed the loop: *"you said earlier
+that you confirmed the ship blinking was by design, so you were
+probably not far from where the ship is?"*. Right — back in §12
+and §14 we narrowed the *visible* flicker down to XOR drawing.
+The entity system in §16 uses **overwrite** through `$F2BC` — so
+those sprites *don't* flicker. The flickering thing must be a
+*different* XOR drawer.
+
+A quick `find-bytes "AE 77"` (XOR with HL ; LD (HL),A — the
+core XOR-draw instruction pair) over the in-game code range
+turned up another, separate XOR draw routine at `$DCF5`. Its
+setup is the smoking gun:
+
+```
+DCF5  LD IX,$E8C9      ; four screen addresses for the four quadrants
+DCF9  LD DE,$E8A9      ; 32-byte sprite buffer
+```
+
+Two new RAM addresses to look at. `$E8C9` decodes as four 16-bit
+screen addresses — exactly the 2×2 layout for a 16-pixel-wide
+sprite. `$E8A9` is the sprite buffer itself. **Drawn with XOR. So
+this is the thing that flickers.**
+
+What's in the buffer right now? `subterra hex build/post-game.bin
+E8A9 32`:
+
+```
+E8A9  78 7C 7F 3F 3F FC 78 07
+E8B1  00 00 0C F2 FB 1F FE F0
+E8B9  00 00 00 00 00 00 00 00
+E8C1  00 00 00 00 00 00 00 00
+```
+
+The first 16 bytes are an obvious sprite; the next 16 are zero.
+That means the player ship is rendered as 16 × 8 pixels (top
+half of a 16 × 16 buffer), and you see the actual shape rendered
+via `QuadrantSpriteRenderer.RenderRgba` as a *pink horizontal
+spacecraft with a nose, cockpit and tail*. That's the Stryker.
+
+One more layer to find: where do those 16 bytes originate? `LD
+DE,$E8A9` is the *destination* of a copy in setup code. Two
+`find-bytes` later we land at `$E3F4`:
+
+```
+E3F4  LD HL,$E8A9; LDIR …                ; zero the buffer
+E401  LD DE,$E8A9
+E404  LD HL,$E63B                         ; ← source
+E40A  LD A,($E586); BIT 0,A
+E40F  JR NZ,$E413
+E411  LD C,$10                            ; if facing-flag set, +$10
+E413  ADD HL,BC; LD C,$10; LDIR           ; copy 16 bytes in
+```
+
+So the actual **player sprite bank lives at `$E63B`**, with two
+directional frames of 16 bytes each:
+
+* `$E63B` — Stryker pointing **right**
+* `$E64B` — Stryker pointing **left**
+
+Selected by `($E586) BIT 0` (the player facing direction). After
+those two frames come some explosion / hit effect frames at
+`$E65B+` (the `55 AA …` checkerboard patterns).
+
+Rendered side by side, the two frames are clearly the player's
+craft — mirror images, with a pink hull, a cockpit bump, and a
+small tail. Saved as `renders/player-frame-right_…` and
+`renders/player-frame-left_…`. And **because they're drawn with
+XOR, the in-game flicker the user observed is a direct,
+deterministic consequence of this code path** — exactly the
+prediction §12 made.
+
+Lessons for future-me, recorded so I don't repeat them:
+
+1. **Don't trust the first interpretation of a sprite without
+   correlating it back to the live screen.** Type 0 looked like
+   "something pointy, magenta, animated frames" — that pattern
+   could fit a submarine *or* a swung pickaxe. I should have
+   compared its pixel shape against an actual gameplay
+   screenshot before naming it.
+2. **The player is a special case in most arcade ports.** The
+   player tends to get its own dedicated draw routine because it
+   has unique requirements (orientation flag, dedicated screen
+   buffer, collision flag, etc.). When a generic entity table
+   doesn't include something prominent, look for a custom path.
+3. **The user is the oracle.** Two short prompts ("are you sure
+   it's not the shovels?" / "you confirmed the blinking was by
+   design") pointed me at exactly the right place in three steps.
+   When the user nudges, take the nudge.

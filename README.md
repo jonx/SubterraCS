@@ -71,14 +71,29 @@ and instruction-level execution tracing. The full reference lives in
 ### Three asset banks already extracted
 
 <p align="center">
-  <img src="renders/entity-type00_20260528-003543.png" alt="Player submarine sprite — 16 animation frames in bright magenta, including side-view, drilling, descent, and explosion frames" width="640"/><br/>
-  <em>The 16-frame animation bank for the player submarine
-  (entity type 0 at <code>$B8F4</code>, bright magenta).
-  Top row: side view, drilling, descent. Bottom row: rotation
-  and explosion frames. Extracted by
-  <code>subterra entity-bank build/post-game.bin all</code> —
-  see <a href="docs/RE-LOG.md#16-cracking-the-entity-system">RE-LOG §16</a>
-  for the full chain of reasoning.</em>
+  <img src="renders/player-frame-right_20260528-005418.png" alt="Player Stryker, right-facing direction frame, pink sprite" width="180"/>
+  &nbsp;&nbsp;
+  <img src="renders/player-frame-left_20260528-005418.png" alt="Player Stryker, left-facing direction frame, mirror image" width="180"/>
+  <br/>
+  <em>The <strong>player Stryker</strong> — two 16-byte directional
+  frames (right and left), 16 × 8 pixels each, sourced from
+  <code>$E63B</code> / <code>$E64B</code> and drawn by the
+  dedicated XOR routine at <code>$DCF5</code>. The XOR drawing is
+  exactly why the ship flickers in-game — same call erases and
+  redraws, with a gap in between. See
+  <a href="docs/RE-LOG.md#17-the-player-stryker-has-its-own-draw-path">RE-LOG §17</a>.</em>
+</p>
+
+<p align="center">
+  <img src="renders/entity-type00_20260528-003543.png" alt="16 animation frames of pickaxe / shovel heads being swung mid-air with dirt particles flying around, bright magenta" width="500"/><br/>
+  <em>Entity type 0 at <code>$B8F4</code> — turns out this is the
+  <strong>workers' digging-tool animation</strong> (pickaxe / shovel
+  heads swung in 16 frames, with dirt particles), <em>not</em> the
+  player. The whole entity-type table at <code>$F5A0</code> is full
+  of monsters and decor (lava, stalactites, falling rocks, spiders,
+  bubbles, mine carts, …); the Stryker has its own dedicated draw
+  path. We mis-identified type 0 as the player at first; the user
+  corrected us — see <a href="docs/RE-LOG.md#17-the-player-stryker-has-its-own-draw-path">RE-LOG §17</a>.</em>
 </p>
 
 ### Two more asset banks already extracted

@@ -290,6 +290,28 @@ dotnet run --project src/Subterra.Tools -- \
     -keys=5-10:SPACE,40-50:1,200-300:A
 ```
 
+### `player-dump <file.bin|file.z80>`
+
+**What:** reads the player Stryker's three pieces — the live
+sprite buffer at `$E8A9`, the four screen addresses at `$E8C9`,
+and the source-frame bank at `$E63B` / `$E64B` — and writes three
+PNGs to `renders/`: the live (mid-XOR) sprite, the right-facing
+source frame, and the left-facing source frame. Also prints the
+raw bytes per row in ASCII art for the truly curious.
+
+**Why:** to confirm we found the *actual* player sprite. RE-LOG
+§17 records the embarrassing detour: I first thought entity
+type 0 was the player, the user noticed it was the workers'
+pickaxes instead, and the real player turned out to live in a
+completely separate code path (XOR draw at `$DCF5`, sprite
+source at `$E63B`).
+
+**How:**
+```sh
+dotnet run --project src/Subterra.Tools -- \
+    player-dump build/post-game.bin
+```
+
 ### `entity-bank <file.z80|file.bin> [hexAddr] [frames] [-cols=N] [-scale=N]`
 
 **What:** renders an *entity-type sprite bank* — 16 frames × 32 bytes
