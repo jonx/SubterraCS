@@ -1089,3 +1089,153 @@ What we deliberately *didn't* port:
 The result is a complete, standalone, emulator-free game in
 ~3500 lines of C# (Core + Platform + Game), driven by 12 KB of
 assets extracted from the 1985 tape. End-to-end, it plays.
+
+## 23. The §22 "complete port" was a re-imagining, not a port
+
+User feedback caught what §22 wasn't honest about: the visual is
+nothing like the original. The original at depth 1 has a clean
+green hillside silhouette with a tree, a left-stacked HUD
+(DEPTH / SCORE / SHIELD / FUEL) with multi-colour stripe bars on
+the right, and **free-flight + rescue** gameplay — no "dive to
+go deeper" mechanic. The user pointed at
+[`renders/emu-substryk-f00400_20260527-225827.png`](../renders/)
+as the target, and at
+[`renders/native-headless-f00350_20260528-015603.png`](../renders/)
+as "complete shit". They were right.
+
+What was wrong with §22:
+* Cave walls hemming the player in — invented. The original is an
+  open playfield.
+* "Dive to advance level" — invented. The original is free flight;
+  levels progress when every worker is rescued.
+* HUD as a bottom strip — wrong layout. The original stacks the
+  labels left-side.
+* Hand-built `MiniFont` for HUD — the original prints through
+  `RST 10` using the ROM font at `$3C00`.
+* My "title screen" was a generated banner. The original draws a
+  procedural multi-coloured "SUBTERRANEAN STRYKER" banner plus
+  the "SELECT CONTROL OPTION TO BEGIN" menu with four numbered
+  options.
+
+The native port was not a port. It was a Spectrum-flavoured
+shoot-em-up.
+
+## 24. Resetting to a real port — what we actually traced
+
+Switched to the proper RE workflow: run the emulator, peek
+memory, disasm the relevant routine, port it. So far traced:
+
+* **`$F6F2` — level-load entry** (called when player advances).
+  Increments `($E587)` (current level) mod 6, reads the per-level
+  speed/colour byte from `$E57C+level`, then chains nine helpers
+  before returning. The helpers are the actual level-init work.
+
+* **`$E319` — copy per-level "init data"**. Reads 32 bytes from
+  `$E48D + level*32` (so a 6 × 32 = 192-byte table for the six
+  levels), copies them to `$E597`. Format of the 32-byte block is
+  unclear yet — values like `36 38 80 00 5E 60 A0 00 7E 40 80 00`
+  look like (x, y, ?, 0) records but the high-bit pattern doesn't
+  match the spawn-schedule flags. Then calls **`$F1BC`** which
+  reads the entity count for this level from `$F2E2 + level` (one
+  byte) and the entity-list pointer from `$F594 + level*2`. The
+  per-level entity counts are `06 0A 09 0D 12 19` — 6, 10, 9, 13,
+  18, 25 entities for levels 0..5.
+
+* **`$E2C6` — load per-level pointers**. Reads `$E56D + level*2`
+  into `($E579)` (the active sprite-composition base) and
+  `$E58B + level*2` into `($E589)` (purpose still TBD). The
+  composition pointers are `$B0F4, $60F4, $70F4, $80F4, $90F4,
+  $A0F4` — same as the boot snapshot. For level 0 the active
+  composition base IS the master tile bank at `$B0F4`.
+
+* **`$E2E5` — copy spawn schedule**. Already in MEMORY-MAP §$E69D
+  but now disasm-confirmed: copies 32 bytes from
+  `$E69D + level*32` to `$E75D`.
+
+* **`$E347` — clear and re-paint HUD chrome**. Calls `$E3CE` to
+  clear the bottom half of the screen (writes `$00` to `$5000..
+  $57FF` and the level colour byte from `$E57B` to `$5800..
+  $5AFF`). Opens print channel 2, then walks an `$FF`-terminated
+  string table at **`$E785`** through `RST 10`. The table is the
+  *literal* HUD layout:
+
+  ```
+  E785  10 06 11 00 16 10 00              ; INK 6 (yellow), PAPER 0, AT 16,0
+  E78C  "DEPTH :" 0D                       ; row 16
+  E794  "SCORE :"                          ; row 17
+  E79B  16 11 16 "RESCUED:" 0D             ; AT 17,22 then "RESCUED:" then newline
+  E7A7  "SHIELD:" 10 00 11 00 20
+  E7B3  10 02 90 90 90 90 90              ; INK 2 (red), 5 × char $90 (filled block)
+  E7BA  10 03 90 90 90 90 90              ; INK 3 (magenta), 5 blocks
+  E7C1  10 06 90 90 90 90 90              ; INK 6 (yellow), 5 blocks
+  E7C8  10 05 90 90 90 90 90              ; INK 5 (cyan), 5 blocks
+  E7CF  10 04 90 90 90 90 0D              ; INK 4 (green), 4 blocks
+  E7D6  11 00 10 06 "FUEL  :"              ; row 19
+  E7E1  11 00 10 00 20 10 02 90 90 90 90 90
+        ...                                ; same stripe pattern for FUEL
+  ```
+
+  So the HUD is **24 cells wide** of multi-colour 8×8 filled
+  blocks: 5 red + 5 magenta + 5 yellow + 5 cyan + 4 green for
+  each of SHIELD and FUEL. The colour stripes change as the
+  value drains because the game overwrites the trailing blocks
+  with PAPER 0 (black).
+
+* **`$E104` — sprite-composition walker** (presumed level-paint).
+  Reads `($E579) + $1000`, walks 4096 bytes *backwards* down to
+  `($E579)`. For each non-zero byte, calls `$E127` which uses
+  `$E1E4` to compute a screen address from `(B, C)` and writes
+  `OR (HL); LD (HL),A` — i.e. paints sprite bytes into the bitmap.
+
+  For level 0 the composition base is `$B0F4`, which is the
+  master tile bank. For level 1 it's `$60F4` — which is EMPTY in
+  the mid-gameplay RAM dump.
+
+  Either the routine doesn't paint scenery the way I read it, or
+  the data at `$60F4..$70F3` is built up at runtime by a path I
+  haven't traced. The emulator-peeked attributes show row 0..15
+  uniformly green-on-black at frame 100 (top half of play area)
+  and yellow-on-black at the HUD rows — the *visible* hill shape
+  emerges later as entities accumulate.
+
+* **`$F594` — per-level entity-list pointer table**. 12 bytes (6
+  × 2). Decoded: `$F2E8, $F2EB, $F33B, $F383, $F3EB, $F47B`. The
+  pointers for levels 0→1 are only 3 bytes apart, which rules
+  out a uniform 8-byte-per-entity stride. The records must be
+  variable-length, probably tagged.
+
+## 25. The honest punch-list
+
+What's truly correct in the native port today:
+
+* `SUBSTRYK.SCR` boot splash — pixel-perfect (it's a literal
+  copy of the cassette's screen file).
+* Title menu — captured Spectrum SCREEN$ from running the
+  emulator past BASIC PAUSE to frame 80. Pixel-perfect.
+* Per-level spawn schedules from `$E69D` — bytes correct, just
+  re-scaled because we run a straight 50 Hz decrement vs. the
+  original's `$EF02` multi-pass slicer.
+* Player sprite — correct bytes from `$E63B`/`$E64B`, drawn via
+  the XOR primitive ported from `$DCF5`.
+* Entity 16×16 quadrant blit — correct port of `$F2BC`.
+* Single-byte bullet XOR — correct port of `$E1DE`.
+
+What is *not* correct:
+
+* Per-level **scenery** — the hill silhouette, tree, surface
+  decor. The native port draws a placeholder pattern from
+  master-tile-bank tiles. The real composition routine and its
+  data table location are not fully understood.
+* Per-level **static entity placement** — `$F2E8`+ table records
+  remain undecoded.
+* HUD draw — correct labels in the right shape but rendered with
+  my own `MiniFont`, not by `RST 10` through ROM `$3C00`. The
+  stripe-bar palette and column layout match `$E785`.
+* Per-type entity AI — table-driven approximations in
+  `EntityAI.cs`, not byte-for-byte ports of `$F1A5`'s per-type
+  subroutines.
+
+The pixel-perfect-by-emulation path is available via
+`src/Subterra.Spectrum` if we want a working game today; the
+hand-port path requires a step-by-step emu-trace + replace
+workflow over multiple sessions.

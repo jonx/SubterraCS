@@ -619,3 +619,67 @@ calculator stack but moves it out of the way of its own data.
 | `$F5FD`  | MainEntry        | Real game entry. Sets up screen, prints title, polls keyboard. |
 | `$F82B`  | TitleStringTable | `AT 8,8 INK 0 PAPER 0 "BY  MIKE FOLLIN"` then UDG decorations, `$FF`-terminated. |
 | `$FF57`  | Flag57           | First touch in `MainEntry`: `RES 1,(HL)` clears bit 1 of `$FF57`. Purpose TBD. |
+
+## RAM ($E785–$E7FF) — HUD layout string table
+
+The bytestream the HUD-painter at `$E347` walks via `RST 10` to
+draw the bottom-strip chrome. Spectrum control codes inline with
+literal characters and `$90` filled-block characters:
+
+```
+E785  10 06 11 00 16 10 00              ; INK 6 (yellow), PAPER 0, AT 16,0
+E78C  "DEPTH :" 0D                       ; row 16 + newline
+E794  "SCORE :"                          ; row 17
+E79B  16 11 16 "RESCUED:" 0D             ; AT 17,22 — "RESCUED:" anchor
+E7A7  "SHIELD:" 10 00 11 00 20            ; row 18, INK 0 PAPER 0, gap
+E7B3  10 02 90×5  10 03 90×5  10 06 90×5  10 05 90×5  10 04 90×4 0D
+      ; SHIELD stripe bar: 5 red + 5 magenta + 5 yellow + 5 cyan + 4 green
+      ; = 24 cells × 8px = full width
+E7D6  11 00 10 06 "FUEL  :" 11 00 10 00 20
+      10 02 90×5  10 03 90×5  10 06 90×5  10 05 90×5  10 04 90×?
+      ; same stripe pattern for FUEL on row 19
+E7FE  $FF                                ; terminator
+```
+
+The bars *deplete* by the game overwriting trailing cells with
+the PAPER-0 attribute, which turns INK-X-on-PAPER-0 cells into
+INK-0-on-PAPER-0 → invisible. So full strength = rainbow, drain
+from the right.
+
+## RAM ($E48D–$E54C) — per-level "init data" (192 bytes)
+
+Six 32-byte blocks, one per level. `$E319` copies the active
+level's block to `$E597`. Format unclear; records appear to be
+4-byte groups like `36 38 80 00 / 5E 60 A0 00 / 7E 40 80 00`
+which look position-like (x, y, ?, 0). Not the same as the
+spawn schedule at `$E69D`. Purpose TBD.
+
+## RAM ($F2E2–$F2E7) — per-level entity count
+
+6 bytes, one per level. Decoded from
+`build/post-game.bin`: `06 0A 09 0D 12 19` — 6, 10, 9, 13, 18, 25
+entities for levels 0..5. Read by `$F1BC` and stored in `($F1BB)`
+as the active count.
+
+## RAM ($F594–$F59F) — per-level entity-list pointer
+
+12 bytes (6 × 2). Decoded: `$F2E8, $F2EB, $F33B, $F383, $F3EB,
+$F47B`. The first two pointers are only 3 bytes apart, so the
+entity records are NOT a uniform 8-byte stride. Variable-length
+or tagged format, format TBD. Read by `$F1BC` and stored in
+`($F1B9)` as the active entity-list base.
+
+## Code ($E104) — sprite-composition walker (level paint?)
+
+Reads `HL = ($E579) + $1000`, then walks 4096 bytes *backwards*
+to `($E579)`. For each non-zero byte calls `$E127` which uses
+`$E1E4` to compute a screen address from a `(B, C)` pair and
+ORs the byte into the bitmap. The inner loop counter C runs
+through all 256 values; the outer loop B runs 16 times. The
+screen row used for drawing is `$20 - (B<<1)` so it covers
+rows 0, 2, 4, ..., 30 — i.e. an entire screen vertically.
+
+Either this is the per-level scenery painter or something
+adjacent to it; the source data at `$60F4..$70F3` (level 1) is
+empty in our mid-gameplay RAM dump, suggesting the buffer is
+built up by another path at level-load time. TBD.

@@ -6,14 +6,51 @@ in this repo but is its own .NET 10 solution
 (`native/SubterraCS.slnx`) with no references back into the
 emulator-based one.
 
-## Status — fully playable
+## Status — work in progress, not a port yet
 
-The native port is **feature-complete**: title screen, the original
-six levels, infinite procedural levels after that, every entity
-type with its own AI, rescue mechanic, shield/fuel/lives tracking,
-death and game-over flow, sound effects, and Follin music
-playback. End-to-end gameplay runs without the emulator anywhere
-in sight.
+> **An earlier README claimed this was "feature-complete". It isn't.**
+> The user pointed at a real emulator screenshot vs. the native
+> render and the gap is obvious: the original is open-sky free
+> flight + rescue gameplay with a clean hand-drawn hill silhouette
+> and left-stacked HUD; my earlier passes invented cave walls,
+> a "dive to advance" mechanic, and a bottom-strip HUD that have
+> nothing to do with the original. See
+> [`docs/RE-LOG.md`](../docs/RE-LOG.md) §23 for the honest stocktake
+> and §24 for what we've actually traced so far.
+
+What IS correct today
+---------------------
+* **Boot splash** — `SUBSTRYK.SCR` from the cassette, displayed
+  pixel-perfect.
+* **Title menu** — captured Spectrum SCREEN$ from running the
+  emulator past BASIC PAUSE; pixel-perfect.
+* **Gameplay model** — free flight, A/Q vertical + L horizontal,
+  no diving. Level completes when all rescuable workers picked up.
+* **Asset loading + game loop architecture** — assets → splash
+  → title → `LoadLevel(n)` → play → level complete / death.
+* **Player sprite + bullet + entity 16×16 quadrant blit** —
+  faithful ports of `$DCF5`, `$E1DE`, `$F2BC`.
+* **Per-level spawn schedules** — bytes from `$E69D` used
+  verbatim (re-scaled timers because we run at straight 50 Hz
+  vs. the original's multi-pass slicer).
+
+What is NOT correct yet
+-----------------------
+* **Per-level scenery** — the hill silhouette, tree, surface
+  decor. The native port draws a placeholder pattern from the
+  master tile bank. The real composition routine and its data
+  table location are not fully understood (RE-LOG §24 documents
+  what we DID trace: `$F6F2 → $E319 → $E2C6 → $E2E5 → $E347 →
+  ...`).
+* **HUD draw** — labels in the right shape but rendered with
+  `MiniFont`, not by `RST 10` through the ROM font at `$3C00`.
+  The stripe-bar palette and column count match `$E785`.
+* **Per-type entity AI** — table-driven approximations in
+  `EntityAI.cs`, not byte-for-byte ports of `$F1A5`'s per-type
+  subroutines.
+* **Static entity placement** — workers and other per-level
+  fixed entities are not loaded from the `$F2E8`+ records yet
+  because the records are variable-length and undecoded.
 
 * **Renderer**: Spectrum-style 256 × 192 1-bit bitmap + 32 × 24
   attribute grid, decoded to RGBA. All four blitters from
