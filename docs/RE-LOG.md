@@ -1239,3 +1239,113 @@ The pixel-perfect-by-emulation path is available via
 `src/Subterra.Spectrum` if we want a working game today; the
 hand-port path requires a step-by-step emu-trace + replace
 workflow over multiple sessions.
+
+## 26. The scenery IS the entity system
+
+While building the `diff-frame` workflow (RE-LOG §27, below) we
+went looking for where the bottom grass strip lives. At frame
+100 of in-game play the emulator's bitmap rows 20..23
+($5000..$57FF region, y=160..191) hold a complex 32-column
+pixel pattern — clearly tile-composed, with telltale every-
+other-scanline-doubled bytes that scream "rendered with
+double-height".
+
+We dumped those 1 KB of bitmap, extracted the unique 4-byte
+patterns per column, and searched for them in:
+
+* The live mid-gameplay RAM dump (`build/at-frame100.bin`).
+* The original boot snapshot RAM (`build/boot-ram.bin`).
+* The master tile bank at `$B0F4..$BFFF`, at every byte offset
+  (not just tile-aligned).
+
+Zero matches anywhere. The data is not stored verbatim — neither
+as a per-level "scenery layout" table nor as preset tile-index
+arrays.
+
+The conclusion took embarrassingly long to land: **the scenery
+isn't drawn at level-load.** It's drawn by the entity system,
+over time, as decor entities (likely types 10 "vine/tree",
+11 "creature", 14 "pipe", and the small humanoid workers at
+type 0) spawn and either move or persist long enough to
+accumulate into a recognisable silhouette. Each entity XORs its
+sprite into the bitmap; left alone, the bitmap fills with green
+silhouette pixels. This is exactly what MEMORY-MAP §$E69D
+already documented as "the cave is procedurally composed by the
+entity system" — we just didn't take that literally enough.
+
+Implication for the native port: to reproduce the original's
+green hillside-with-tree silhouette, we don't need a scenery
+painter or a per-level layout table.  We need:
+
+1. The hazard schedule from `$E69D` running at the right cadence
+   so the *right entity types* spawn (already correct in the
+   port — the schedules are loaded verbatim).
+2. Per-type AI faithful enough that decor entities (10, 14, …)
+   stay put and accumulate the way they do in the original
+   (only approximated in the port today via `EntityAI.cs`).
+3. The sprite-blit primitive `$F2BC` to draw 16×16 entities
+   into the bitmap (already correctly ported as
+   `Blitters.DrawSprite16x16`).
+
+In short, the path to a matching scenery is to **make the entity
+AI exact**, not to build a scenery painter. That's the real
+shape of the remaining port work.
+
+## 27. The diff-frame workflow
+
+Built `src/Subterra.Tools/DiffFrameCommand.cs`. The native
+headless mode now also writes a `.png.rgba` sidecar (raw RGBA
+bytes) so external tools can read the framebuffer without a
+PNG decoder. The diff command:
+
+1. Runs the cassette inside our Z80 emulator for N frames with
+   a given key spec.
+2. Runs the native C# port in `--headless` mode for the same N
+   frames, with a (possibly different) key spec to drive its
+   state machine through splash → title → play.
+3. Composes a 3-panel PNG into `renders/`:
+   *emulator | native | red-on-diff*.
+4. Prints the pixel-diff count and percentage to stdout.
+
+Usage:
+
+```
+dotnet run --project src/Subterra.Tools -- diff-frame \
+    original/rom/48k.rom original/dumps/SUBSTRYK.Z80 100 \
+    -keys=5-10:SPACE,40-50:1 \
+    -native-keys=0-30:FIRE \
+    -seed=1
+```
+
+First baseline measurement: **22.47% pixel diff** at frame 100.
+
+After porting the HUD layout from the `$E785` string table
+(see §24) and removing the hill-silhouette placeholder from
+the native's `DrawLevelScenery`: **12.91%**.
+
+The remaining gap at frame 100 is entirely in the bottom
+4 char-rows — the procedural scenery problem from §26.
+
+## 28. The space ship correction
+
+We had `dive` / `diving` scattered through the codebase and
+docs. The user corrected us in plain terms: *"stop using
+diving, it's a SPACE SHIP, it goes up down left and right!!!"*.
+Purged the terminology across:
+
+* `native/SubterraCS.Core/GameInput.cs` — comment on `Down`.
+* `native/SubterraCS.Core/SoundEffects.cs` — `SfxKind.Dive`
+  renamed to `SfxKind.Thrust`.
+* `native/SubterraCS.Core/World.cs` — class docstring rewritten.
+* `native/SubterraCS.Core/ProceduralGenerator.cs` — comment.
+* `native/README.md` — controls section, status table, audio
+  voice list.
+* `README.md` (root) — controls section, smoke-test instructions,
+  feasibility blurb.
+
+The Stryker is a space ship with free flight in all four
+directions; a level advances on rescuing all workers, not on
+hitting an altitude gate. (`$E584` altitude in the original IS
+used by the page-advance gate, but that's an *implementation
+detail* of how the original game moves the player between
+levels, not a player-facing "dive" mechanic.)
