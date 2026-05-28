@@ -1349,3 +1349,128 @@ hitting an altitude gate. (`$E584` altitude in the original IS
 used by the page-advance gate, but that's an *implementation
 detail* of how the original game moves the player between
 levels, not a player-facing "dive" mechanic.)
+
+## 29. Pick one thing and port it properly — the HUD
+
+Per the user's "be systematic, don't invent" directive, dropped
+shallow guessing and traced the HUD end-to-end. Every byte in
+the final port is justified by a specific address peek or disasm.
+
+### Where the bars actually come from
+
+Empirical test that broke my earlier assumption: dumped the
+first SHIELD-bar cell's bitmap at frame 60 (just after level-
+load) AND at frame 100. At frame 60 the cell reads <c>88 80 00
+00 00 00 80 88</c>; at frame 100 it reads <c>88 80 FF FF FF FF
+80 88</c>.  Same UDG-A cell, but the middle 4 scanlines went
+from `$00` to `$FF` between the two frames.
+
+So the bars are NOT a "full bar minus drain". They start EMPTY
+(UDG-A corners only) and get filled by a per-frame routine.
+
+### The per-frame HUD updater at $E046
+
+```
+E046  LD HL,$5027; LD ($E45D),HL          ; print position = SCORE row
+E04C  LD HL,($E459); CALL $DFF6            ; print score (6 digits)
+E052  XOR A; CALL $E01E
+E056  LD HL,$503D; LD ($E45D),HL          ; print position = RESCUED row
+E05C  LD HL,($E469); LD H,$00; CALL $E009  ; print rescued count
+E064  LD HL,$5007; LD ($E45D),HL          ; print position = DEPTH row
+E06A  LD A,($E587); CALL $E01E             ; print depth
+... (~50 bytes of attribute-flash work for the top bands) ...
+E0AB  LD HL,$5247; LD A,($E464); CALL $E0BE  ; draw SHIELD bar
+E0B4  LD HL,$5267; LD A,($E466); CALL $E0BE  ; draw FUEL bar
+```
+
+### The bar driver at $E0BE
+
+```
+E0BE  NOP
+E0BF  CP $60                  ; max value = 96
+E0C1  RET Z                   ; if full, nothing to do
+E0C2  RET NC                  ; clamp upper bound
+E0C3  LD E,A; SRL E; SRL E    ; E = value / 4
+E0C8  INC E; DEC E; JR Z,$E0CF
+E0CC  LD D,$00; ADD HL,DE     ; advance HL by (value/4) bytes (one byte = one bar column)
+E0CF  LD C,$FF; CALL $E0F1    ; write $FF to 4 middle scanlines at HL
+E0D4  LD C,$00; INC HL; CALL $E0F1   ; write $00 at HL+1
+E0DA  EX DE,HL; LD HL,$E0EC; AND $03; ...; LD C,(HL)
+E0E6  EX DE,HL; CALL $E0F1    ; partial-fill at HL+? using $E0EC table
+```
+
+The cell-paint inner loop at `$E0F1`:
+
+```
+E0F1  PUSH HL; LD (HL),C; INC H; LD (HL),C; INC H; LD (HL),C; INC H; LD (HL),C; POP HL; RET
+```
+
+`INC H` is the Spectrum interleave trick — within an 8-line char
+band, advancing the high byte of the bitmap pointer moves down
+one pixel row.  So this writes byte `C` to four consecutive
+scanlines of the same column.
+
+### The partial-fill table at $E0EC
+
+```
+$E0EC:  00 C0 F0 FC  FF E5 71 24
+```
+
+The first four entries (`$00, $C0, $F0, $FC`) are the masks for
+the boundary cell — bit patterns showing 0, 2, 4, or 6 left-
+aligned pixels.  Combined with the 24-cell bar and `value/4`
+boundary, this gives 24 × 4 = 96 quanta of resolution.  Each cell
+holds 4 units; the partial cell shows the remainder as 0/2/4/6
+of 8 pixels.
+
+### The UDG-A frame at $E62B
+
+The bar's "corner brackets" come from UDG A:
+
+```
+$E62B:  88 80 00 00 00 00 80 88
+```
+
+Verified unchanged between boot snapshot and mid-gameplay RAM
+(was paranoid the game might redefine it; it doesn't).
+
+### The HUD label layout from $E785
+
+Already documented in §24.  Walked by `$E347` at level-load via
+RST 10 with CHARS set to `$3C00` so the labels render in the
+Spectrum ROM font.
+
+### Native-port port
+
+`Hud.cs` and the new `RomFont.cs` now reproduce every byte:
+
+* `BarCells = 24`, `BarMaxValue = 96`, `QuantaPerCell = 4` — the
+  range comes from the `CP $60` and double `SRL E` in `$E0BE`.
+* `UdgA = { 0x88, 0x80, 0x00, 0x00, 0x00, 0x00, 0x80, 0x88 }` —
+  the verified bytes from `$E62B`.
+* `PartialMask = { 0x00, 0xC0, 0xF0, 0xFC }` — first four bytes
+  of `$E0EC`.
+* `StripeAttr` — 5+5+5+5+4 runs of bright red / magenta / yellow
+  / cyan / green, exact INK codes from the `$E785` INK control
+  bytes.
+* `RomFont` loads the 768 bytes at `$3D00..$3FFF` from
+  `assets/extracted/rom-font.bin` (extracted via `dd` from the
+  48K ROM) and exposes a `Draw(fb, x, y, s, attr)` helper that
+  blits each char's 8 scanlines.
+* `DrawBar` writes UDG-A corners + middle = `$FF` (full),
+  `$00` (empty), or the partial-mask byte at the boundary cell.
+
+### Measured impact
+
+`diff-frame ... 100 -keys=5-10:SPACE,40-50:1 -native-keys=0-30:FIRE -seed=1`
+
+| Before | After bar geometry | After ROM font |
+| ------ | ------------------ | -------------- |
+| 22.47% | 10.66%             | **9.63%**      |
+
+The remaining diff at frame 100 is concentrated in: (a) the bottom
+grass strip (procedural decor — §26), (b) workers walking through
+the HUD row (the original draws them on top — they're a per-level
+static placement we haven't decoded yet), and (c) the player ship
+position because game-state alignment between emu and native is
+not exact frame-for-frame.

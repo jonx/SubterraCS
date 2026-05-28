@@ -42,6 +42,7 @@ public sealed class World
     // Per-game cassette assets ----------------------------------------
     public byte[] SplashScr { get; set; } = Array.Empty<byte>();
     public byte[] TitleMenuScr { get; set; } = Array.Empty<byte>();
+    public RomFont? RomFont { get; set; }
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
     // beyond that we hand off to the procedural generator so the game

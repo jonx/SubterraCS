@@ -19,6 +19,7 @@ public sealed class Assets
     public SpawnSchedule[] OriginalLevelSchedules { get; }
     public byte[] SplashScr { get; }
     public byte[] TitleMenuScr { get; }
+    public RomFont RomFont { get; }
 
     public Assets(string assetsDir)
     {
@@ -41,6 +42,11 @@ public sealed class Assets
         // Per-level scenery is NOT captured — that's drawn at runtime.
         SplashScr   = LoadOptionalScr(assetsDir, "splash-scr.bin");
         TitleMenuScr = LoadOptionalScr(assetsDir, "title-menu-scr.bin");
+
+        // Spectrum ROM font ($3D00..$3FFF, 768 bytes), used by the
+        // original HUD-print path through RST 10.  Required for
+        // byte-identical HUD text.
+        RomFont = RomFont.Load(Path.Combine(assetsDir, "rom-font.bin"));
     }
 
     private static byte[] LoadOptionalScr(string dir, string name)
