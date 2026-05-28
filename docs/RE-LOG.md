@@ -1812,3 +1812,54 @@ muted until we figure out the activation path.
 Best overall diff: **3.55%** at f120, down from 22.47%
 baseline — an **84% reduction** through systematic per-routine
 porting with no inventing.
+
+## 35. Schedule disable + Stryker visibility quirks
+
+Disabled my `TickHazardSchedule` — it was spawning entities at
+random x positions with timer scales the original doesn't use.
+With it off, the diff shrunk further:
+
+| Frame | With schedule | Without schedule |
+| ----- | ------------- | ---------------- |
+| 100   | 4.74%         | 4.74%            |
+| 120   | 3.91%         | 3.89%            |
+| 125   | 3.51%         | 3.44%            |
+| 130   | 3.39%         | **3.23%**        |
+| 150   | 4.16%         | 3.80%            |
+| 200   | 11.00%        | 10.59%           |
+
+New session best: **3.23%** at f130.  22.47% → 3.23% = **85.6%
+reduction** over the session.
+
+### Strange Stryker visibility
+
+Probed the player's screen area (cols 14..18, y=0..15) across
+many frames.  The player is INVISIBLE in the emu at f80..f200
+but VISIBLE at f300+.  Same $E8C9 quadrant addresses
+($400F/$4010/$402F/$4030) across all frames; same altitude
+(0); same facing flag.
+
+Two candidate explanations:
+
+* XOR-flicker artefact — the player's drawing pass XORs into
+  the bitmap; at certain capture moments the bitmap may have
+  the player XOR'd off.
+* Player-not-yet-activated — the original's draw pass may have
+  a startup delay or pre-step gate that doesn't paint the
+  player until conditions are met.
+
+Either way the impact on the diff is small (~16 pixels) so
+not a priority.
+
+### Big next diff source: the green hillside
+
+At f200 the diff jumps to 10.59% because the EMULATOR has
+drawn a GREEN HILLSIDE WITH A TREE across the play area — the
+silhouette landscape we'd previously assumed was static
+scenery.  My port shows none of it.
+
+This silhouette is almost certainly the result of decor
+entities accumulating via the spawn schedule + entity
+dispatcher.  Porting it properly needs the real `$EF02`
+executor and faithful per-type AI.  That's the next big chunk
+of RE work.
