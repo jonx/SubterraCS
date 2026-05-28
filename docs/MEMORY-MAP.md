@@ -669,6 +669,98 @@ entity records are NOT a uniform 8-byte stride. Variable-length
 or tagged format, format TBD. Read by `$F1BC` and stored in
 `($F1B9)` as the active entity-list base.
 
+## RAM ($E463) — hit accumulator
+
+Initialized to `$FF`.  Each damage hit calls `$DDC4` which SUBs
+`$40` from this byte.  Only on underflow does `$E464` (visible
+shield) DEC by 1 — giving the player ~4 hits per visible bar
+notch.  Verified at f100: `$E463 = $FF` (no hits yet).
+
+## RAM ($E464) — player shield, 0..$5F
+
+The shield bar's source value.  Range 0..`$5F` (0..95) — capped at
+`$5F` by `$E0BE` (the bar paint routine has `CP $60; RET Z`).  When
+DECremented to 0 in `$DDC4`, `$E464` is floored at 1 and the death
+routine fires (`JP $DBC8`).  Verified at f100: `$E464 = $1E` (mid
+bar-fill animation).  At f300: `$E464 = $5F` (full bar).
+
+## RAM ($E466) — player fuel, 0..$5F
+
+Same range as shield.  Decremented continuously by a routine we
+haven't fully traced yet (likely `$D8E8` / `$E465..$E466` chain
+visible in the `$D8C3` block).  At zero, fuel-exhaustion triggers
+death the same way the shield does.
+
+## RAM ($E588) — lives counter
+
+The lives count, **including the currently-active ship**.  Starts
+at `$05` (5 lives) per the cassette's initial state.  `$D8A8`
+reads this after each death animation: `LD A,($E588); DEC A; JR
+NZ,$D8B8` — if DEC produces 0 (i.e. `$E588 == 1`) it calls
+`$F974` (game-over).  The HUD draws `lives - 1` ship icons in the
+top-right (positions cols 21, 24, 27, 30), so at game start there
+are 4 icons + 1 active = 5 lives total.
+
+The actual `$E588` DECrement site is TBD — `$D8A8` reads but
+doesn't write.
+
+## Code ($DDC4) — hit sound + shield decrement
+
+```
+DDC4..DDCB  speaker low/silent/high      ; "TICK" sound
+DDCD..DDD5  $E463 -= $40                  ; drain accumulator
+            RET NC                        ; no underflow → just a "tick"
+DDD6..DDDA  $E464 -= 1                    ; shield DEC
+            RET NZ                        ; still alive
+DDDE..DDE2  $E464 = 1                     ; floor at 1
+            JP $DBC8                      ; death
+```
+
+Called on every damage-causing collision.  See
+[`disasm/death.md`](disasm/death.md) for the full annotated trace.
+
+## Code ($DBC8) — death/explosion animation
+
+Four passes of `$DBDA` (8-particle attribute-flash anim) bracketing
+a screen-dim sound `$DC43`, then `JP $D8A8` (lives check + stack
+restore).  Each `$DBDA` pass:
+
+1. Copy 32-byte particle seed table from `$E861` to live scratch
+   at `$E881`.
+2. Override each particle's Y with `$BF - altitude` (`$E584`).
+3. 64 iterations of: paint cell attribute with `$E57B` (level
+   colour), step (`x += dx`, `y += dy`), paint white `$07`.
+
+The effect runs entirely in the attribute file — the bitmap is
+untouched.  See [`disasm/death.md`](disasm/death.md).
+
+## Code ($DC43) — descending whine + screen wipe
+
+Calls `$DC4E` 8 times, each iteration doing `SRL (HL)` over the
+entire bitmap `$4000..$5000`.  Net effect: the screen fades to
+black one bit-shift at a time, accompanied by a busy-wait
+descending-pitch beep.
+
+## RAM ($E861) — death-particle seed table
+
+32 bytes, 8 records × 4 bytes (x, y, dx, dy).  Copied wholesale
+to `$E881` by `$DBDA` then the Y bytes are overridden.  The X
+bytes seed the burst pattern (8 outward directions).
+
+## RAM ($E881) — death-particle live scratch
+
+8 × 4-byte particle records, overwritten from the `$E861` seed
+table at the start of each `$DBDA` pass.
+
+## Code ($D8A8) — post-death restore + lives check
+
+```
+D8A8..D8AD  RES bits 0,1 of $5C91          ; clear keyboard state
+D8AF..D8B3  test $E588 - 1 == 0
+D8B5        CALL $F974                     ; game over (if 0)
+D8B8..D8BF  restore SP from $E457 and RET  ; unwind to game-loop
+```
+
 ## Code ($E104) — sprite-composition walker (level paint?)
 
 Reads `HL = ($E579) + $1000`, then walks 4096 bytes *backwards*

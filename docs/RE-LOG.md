@@ -2184,3 +2184,130 @@ frames under 3.5%.
   becomes visible at f232+ (via XOR flicker pattern); my port
   is suppressed entirely.  Plus the `$EF02` schedule and
   `$F1A5` entity dispatcher haven't been faithfully ported.
+
+## 40. Ship life cycle: movement, page advance, death, HUD ranges
+
+User pushback after §39: the ship's behaviour was off in several
+ways at once.  Controls didn't feel right, the level didn't scroll
+with the ship, the HUD values (fuel/life) didn't match the game's
+internal range, and the explosion was a sprite spawn instead of
+the original's attribute-flash particles.
+
+Plan: stop guessing.  Disassemble the actual routines.
+
+### Disassembled routines
+
+- **`$D95D` — vertical movement.**  UP/DOWN don't move the ship
+  on screen; they update **altitude** (`$E584`, 0..`$78`) with an
+  acceleration counter (`$E585`).  Each frame a direction is held
+  the counter increments (capped at 7); the effective per-frame
+  altitude delta is `(speed_shift >> 1) | 1`.  On direction
+  reversal or neutral the counter resets to 1.
+
+- **`$D9C8` — horizontal.**  The L key (single bit of `$E45F`)
+  toggles `FacingLeft` via `DirectionState` bit 0.  When the key
+  is *not* pressed it repaints the top attribute strip with the
+  level colour — left as future work.
+
+- **`$F868` — pre-step gate.**  Before running the per-frame
+  step, returns if `$E583 != 0`, returns if altitude < `$75`,
+  returns if the level-complete flag at `$E77D+level` is zero.
+  Otherwise adds 1000 to the score and calls `$F6F2` to advance
+  to the next level.  **So the player is fixed on screen** — the
+  ship sprite is XOR-blitted at quadrant address `$E8C9` = pixel
+  (120, 0), and "going down" means the altitude register grows
+  until the page flips.
+
+- **`$DCF5` — player draw.**  XOR-blits the sprite from `$E8A9`
+  (live frame buffer) at four quadrant addresses in `$E8C9`,
+  then mirrors to `$E8D1` (the "previous" buffer used to erase
+  on the next frame).  Verifies fixed-on-screen behaviour: the
+  player position is data in `$E8C9`, not a variable.
+
+- **`$DDC4` — hit sound + shield decrement.**  Plays 32 cycles of
+  speaker toggle (low → silent → high), then **drains `$E463` by
+  `$40`**; only on the underflow does `$E464` (visible shield)
+  DEC by 1.  This is the "~4 hits per bar notch" feel.  On shield
+  zero, floors `$E464` at 1 and `JP $DBC8`.
+
+- **`$DBC8` — death/explosion animation.**  Four passes of
+  `$DBDA` bracketing a screen-dim sound at `$DC43`.  Each pass:
+  copy 32-byte particle seeds from `$E861` into live scratch at
+  `$E881`, override each particle's Y with `$BF - altitude`, then
+  run 64 iterations of "paint attribute cell colour C → step (x
+  += dx, y += dy) → paint colour $07 white".  The whole thing
+  lives in the ATTRIBUTE FILE (`$58xx`) — the bitmap is untouched.
+  Smart trick: zero bitmap state to clean up, just attribute
+  flashes that revert on the next normal attribute paint.
+
+- **`$DC43` — descending whine.**  Repeatedly calls `$DC4E`
+  which does `SRL (HL)` across every byte of the bitmap
+  (`$4000..$5000`) — fades the screen to black one bit at a
+  time, 8 iterations.
+
+- **`$D8A8` — post-death restore + lives check.**  After death
+  animation finishes: clears system flags at `$5C91`, reads
+  `$E588` (lives), DECs in register, if zero calls `$F974` (game
+  over screen), then restores SP from `$E457` and returns.
+  `$E588` is the lives counter and starts at **5** (verified by
+  inspecting `build/at-f100.bin` byte `$E588 - $4000` = `$05`).
+
+All decoded in [`docs/disasm/death.md`](disasm/death.md).
+
+### Port changes
+
+- **Ship is fixed on screen.**  Removed input-driven `PlayerY`
+  movement.  Added `Altitude`, `SpeedShift`, `DirectionState`
+  fields mirroring `$E584`, `$E585`, `$E586`.  Page advance at
+  altitude `$78` calls `LoadLevel((Depth+1) > 5 ? 1 : Depth+1)`.
+
+- **Shield/Fuel in native 0..`$5F` range.**  Previously stored
+  as 0..100 and rescaled at the HUD; now stored 0..95 directly,
+  matching `$E464`/`$E466`.  Added `BarMax = 0x5F` constant.
+  Pickups grant whole-bar units; damage hits drain the new
+  `HitAccum` field by `$40` and only DEC `Shield` on underflow
+  (port of `$DDC4`).
+
+- **Lives starts at 5, HUD draws lives-1 icons.**  Matches the
+  emu byte `$E588 = $05` and the 4 ship icons we see in the HUD
+  top-right at f80 onwards.
+
+- **Explosion ported to attribute particles.**  New `Explosion`
+  class: 8 particles, 64 anim frames, each frame paints the
+  cell's attribute with level colour then white — exactly the
+  pattern from `$DBC8` / `$E199`.  Bitmap untouched.
+
+- **Splash screen no longer auto-advances.**  The previous
+  `StateTicks > 250` auto-advance was breaking diff-frame:
+  with no key input the emu sits on splash forever, but our
+  port jumped to Title at ~f250, producing 29006-pixel
+  divergence from f281 onwards.  Now: FIRE-only advance,
+  matching the original cassette's behaviour.
+
+### Diff at the end of this work
+
+| Frame | Diff |
+| ----- | ---- |
+| f50   | 0.00% |
+| f100  | 0.00% |
+| f200  | 0.00% |
+| f300  | 0.00% |
+| f400  | 0.00% |
+
+All zero because the diff-frame harness has no key input and
+both sides correctly sit on the splash screen.  Need a new
+harness pass that drives `FIRE` to test gameplay frames.
+
+### Remaining ship-cycle work
+
+- **Continuous scroll with altitude.**  In the original, as
+  altitude increases the displayed scenery scrolls.  Mechanism
+  not yet decoded — `$EE74` (set to 1 at level-load by `$F6F2`)
+  is probably the scroll counter.
+
+- **Lives DEC.**  `$D8A8` reads `$E588` but doesn't write it.
+  Where does the actual lives DEC happen?  Possibly inside
+  `$F974` or further upstream from `$DBC8`'s entry.
+
+- **Continuous fuel drain.**  The original drains `$E466` (fuel)
+  on some schedule we haven't traced yet.

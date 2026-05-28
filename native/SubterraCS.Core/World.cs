@@ -46,6 +46,7 @@ public sealed class World
     public LevelEntities? LevelEntities { get; set; }
     public MiniMap MiniMap { get; set; } = new();
     public readonly LevelScroll Scroll = new();
+    public readonly Explosion Explosion = new();
     private bool _levelPainted;
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
@@ -91,10 +92,21 @@ public sealed class World
     public int BarFillOverride = -1;
     public bool FacingLeft;
     public int Score;
-    public int Fuel = 100;
-    public int Shield = 100;
+    // Fuel and Shield use the native game range 0..$5F (0..95), matching
+    // the original's $E466 and $E464.  The HUD's 24-cell bar represents
+    // exactly this range (4 quanta per cell × 24 = 96, capped at $5F).
+    public const int BarMax = 0x5F;       // 95 — original's $E464/$E466 cap
+    public int Fuel = BarMax;
+    public int Shield = BarMax;
+    /// <summary>$E463 — hit accumulator.  Each collision SUBs $40; on
+    /// underflow, <see cref="Shield"/> DECrements.  This gives ~4 hits
+    /// per bar notch — port of $DDC4's logic.</summary>
+    public int HitAccum = 0xFF;
     public int Rescued;
-    public int Lives = 3;
+    /// <summary>$E588 — lives counter (game-over when DEC reaches 0,
+    /// i.e. lives transitions 1 → 0).  Verified by inspecting
+    /// build/at-f100.bin: $E588 = 5 at game start.</summary>
+    public int Lives = 5;
     public bool Invincible;
     public int InvincibleTicks;
 
@@ -174,7 +186,13 @@ public sealed class World
 
     private void TickSplash(GameInput input)
     {
-        if ((input.Fire && StateTicks > 15) || StateTicks > 250)
+        // The original cassette sits on the splash screen indefinitely
+        // until the user presses FIRE.  Match that — our previous
+        // 250-tick auto-advance was breaking the diff-frame harness
+        // (the emu has no input so it stays on splash, but our port
+        // jumped to Title at ~f250, producing a huge state-mismatch
+        // diff from f281 onwards).
+        if (input.Fire && StateTicks > 15)
             EnterState(GameState.Title);
     }
 
@@ -190,7 +208,12 @@ public sealed class World
 
     private void TickDying()
     {
-        if (StateTicks < 40) return;
+        Explosion.Tick();
+        // Hold for the explosion's full 64-frame run, then game-over
+        // or respawn.  Port of $DBC8 (which runs 4 × 64 anim iters
+        // then JP $D8A8); we run a single 64-iter pass.
+        if (StateTicks < Explosion.AnimFrames) return;
+        Explosion.Reset();
         if (Lives <= 0)
         {
             EnterState(GameState.GameOver);
@@ -346,20 +369,30 @@ public sealed class World
             if (!Invincible && AabbHit(e.X, e.Y, PlayerX, PlayerY, 12))
             {
                 var rule = EntityAI.Collision(kind);
-                Shield = Math.Clamp(Shield + rule.ShieldDelta, 0, 100);
-                Fuel = Math.Clamp(Fuel + rule.FuelDelta, 0, 100);
-                Score += rule.ScoreOnContact;
-                Rescued += rule.RescuedDelta;
-                if (rule.ConsumedOnContact) e.Alive = false;
+                // Port of $DDC4: damage hits drain the HitAccum by $40;
+                // only on underflow does the visible Shield decrement.
                 if (rule.ShieldDelta < 0)
                 {
+                    HitAccum -= 0x40;
+                    if (HitAccum < 0)
+                    {
+                        HitAccum &= 0xFF;
+                        Shield = Math.Max(0, Shield - 1);
+                    }
                     Sfx.Trigger(SfxKind.Damage);
                     SetInvincible(20);
                 }
-                else if (rule.ShieldDelta > 0 || rule.RescuedDelta > 0)
+                else
                 {
-                    Sfx.Trigger(SfxKind.Pickup);
+                    // Pickups still grant whole-bar units.
+                    Shield = Math.Clamp(Shield + rule.ShieldDelta, 0, BarMax);
+                    if (rule.ShieldDelta > 0 || rule.RescuedDelta > 0)
+                        Sfx.Trigger(SfxKind.Pickup);
                 }
+                Fuel = Math.Clamp(Fuel + rule.FuelDelta, 0, BarMax);
+                Score += rule.ScoreOnContact;
+                Rescued += rule.RescuedDelta;
+                if (rule.ConsumedOnContact) e.Alive = false;
                 if (Shield <= 0 || Fuel <= 0) { TriggerDeath(); return; }
             }
         }
@@ -444,9 +477,12 @@ public sealed class World
         Lives--;
         EnterState(GameState.Dying);
         Sfx.Trigger(SfxKind.Explode);
-        SpawnExplosionAt(PlayerX, PlayerY);
-        SpawnExplosionAt(PlayerX + 8, PlayerY - 4);
-        SpawnExplosionAt(PlayerX - 8, PlayerY + 4);
+        // Port of $DBC8: attribute-particle explosion at the player's
+        // current screen position.  The original seeds Y from $E584
+        // ($BF - altitude); since our player sprite is fixed at
+        // (PlayerX, PlayerY) we just use those.  Level colour (the
+        // original's $E57B) drives the first paint of the alternation.
+        Explosion.Trigger(PlayerX, PlayerY, 0x44);
     }
 
     private void SpawnExplosionAt(int x, int y)
@@ -474,15 +510,16 @@ public sealed class World
                 e.Alive = false;
         }
         PlayerX = FixedPlayerX; PlayerY = FixedPlayerY; Altitude = 0; SpeedShift = 1; DirectionState = 0;
-        Shield = 100;
-        Fuel = Math.Max(50, Fuel);
+        Shield = BarMax;
+        Fuel = Math.Max(BarMax / 2, Fuel);
+        HitAccum = 0xFF;
         SetInvincible(100);
         EnterState(GameState.Playing);
     }
 
     private void StartNewGame()
     {
-        Lives = 3;
+        Lives = 5;
         Score = 0;
         Rescued = 0;
         // The original's $E587 starts at 0 but $F6F2 INC's it before
@@ -506,8 +543,9 @@ public sealed class World
         foreach (var e in Entities) e.Alive = false;
         foreach (var b in Bullets) b.Alive = false;
         PlayerX = FixedPlayerX; PlayerY = FixedPlayerY; Altitude = 0; SpeedShift = 1; DirectionState = 0;
-        Shield = 100;
-        Fuel = Math.Min(100, Fuel + 25);
+        Shield = BarMax;
+        Fuel = Math.Min(BarMax, Fuel + (BarMax / 4));
+        HitAccum = 0xFF;
         SetInvincible(60);
         // Switch the active mini-map buffer to this level's packed
         // bytes (port of the original's $E579 ← $E56D[level*2] step).
@@ -731,6 +769,11 @@ public sealed class World
         }
 
         Hud.Draw(fb, this);
+
+        // Death-explosion attribute particles draw LAST so they overlay
+        // the HUD chrome (matches the original's $DBC8 timing where
+        // particles paint the attribute file directly).
+        Explosion.Draw(fb);
 
         // Mini-map at the bottom strip (y=160..191) — port of $E104.
         // The emu's mini-map paints incrementally between f50 and f80

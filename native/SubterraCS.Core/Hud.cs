@@ -116,30 +116,39 @@ public static class Hud
         DrawText(fb, font, 22 * 8, 136, $"RESCUED:{world.Rescued:D2}", 0x46);
 
         // Row 18: "SHIELD:" + bar
+        // Both Shield and Fuel are in the game's native 0..$5F range
+        // (same as the original's $E464/$E466), so the value passes
+        // straight to DrawBar without rescaling.
         DrawText(fb, font, 0, 144, "SHIELD:", 0x46);
         int shieldBarValue = world.BarFillOverride >= 0
             ? world.BarFillOverride
-            : ScaleToBar(world.Shield);
+            : world.Shield;
         DrawBar(fb, 7 * 8, 144, shieldBarValue);
 
         // Row 19: "FUEL  :" + bar
         DrawText(fb, font, 0, 152, "FUEL  :", 0x46);
         int fuelBarValue = world.BarFillOverride >= 0
             ? world.BarFillOverride
-            : ScaleToBar(world.Fuel);
+            : world.Fuel;
         DrawBar(fb, 7 * 8, 152, fuelBarValue);
 
-        // Lives display — port of the emu's HUD top-right: 4 small
-        // 16x8 Stryker icons at row 16 cols 21, 24, 27, 30.  The
-        // bytes match the in-game sprite ($E63B) EXCEPT scanline 0
+        // Lives display — port of the emu's HUD top-right: up to 4
+        // small 16×8 Stryker icons at row 16 cols 21, 24, 27, 30.
+        // Bytes match the in-game sprite ($E63B) EXCEPT scanline 0
         // has the left/right column bytes swapped (sprite[0] goes
         // to the right column, sprite[8]=0 stays at left).  Verified
         // by byte-for-byte comparison at f80 cols 21..22 y=128..135.
+        //
+        // Original semantics: $E588 holds total lives including current
+        // (5 at game start), and the HUD draws lives-1 icons (= the 4
+        // "spare lives" sitting at the top-right).  Cap at 4 icons since
+        // there are only 4 slots in the HUD chrome.
         if (world.PlayerSpriteRight.Length >= 16)
         {
             ReadOnlySpan<int> livesCols = stackalloc int[] { 21, 24, 27, 30 };
-            foreach (var c in livesCols)
-                DrawLifeIcon(fb, c * 8, 128, world.PlayerSpriteRight);
+            int iconCount = Math.Clamp(world.Lives - 1, 0, 4);
+            for (int i = 0; i < iconCount; i++)
+                DrawLifeIcon(fb, livesCols[i] * 8, 128, world.PlayerSpriteRight);
         }
 
         // Bottom decor strip (rows 20..23) — green-on-black attribute strip
@@ -184,18 +193,6 @@ public static class Hud
         if (font is not null) font.Draw(fb, x, y, s, attr);
         else MiniFont.Draw(fb, x, y, s, attr);
     }
-
-    /// <summary>
-    /// Convert a 0..100 percentage (used through the rest of the World)
-    /// into the 0..95 game-internal range.  The original caps at $5F
-    /// (95), not $60 (96) — $E446 sets the bars to $5F after the fill
-    /// animation, and $E0BE has CP $60; RET Z which makes 96 a no-op
-    /// (the bar stays at whatever it was before).  Matches the emu's
-    /// observed full-bar state where 23 cells are $FF and cell 23 has
-    /// a partial mask.
-    /// </summary>
-    private static int ScaleToBar(int value0to100)
-        => Math.Clamp(value0to100 * 95 / 100, 0, 95);
 
     /// <summary>
     /// Draw a 24-cell bar starting at (<paramref name="x"/>, <paramref name="y"/>)

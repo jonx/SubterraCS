@@ -18,7 +18,6 @@ internal static class DisasmCommand
             return 2;
         }
 
-        var snap = Z80SnapshotReader.Load(args[0]);
         ushort addr = ushort.Parse(args[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         int count = int.Parse(args[2], CultureInfo.InvariantCulture);
 
@@ -27,7 +26,18 @@ internal static class DisasmCommand
         // will read zeros (NOP), which is fine for our purposes — we
         // only ever disassemble game code that lives in RAM anyway.
         var memory = new byte[0x10000];
-        Array.Copy(snap.Ram48K, 0, memory, 0x4000, snap.Ram48K.Length);
+        // Accept either a .z80 snapshot OR a raw 48K RAM dump (49152
+        // bytes covering $4000..$FFFF — the at-fNNN.bin captures).
+        var raw = File.ReadAllBytes(args[0]);
+        if (raw.Length == 49152)
+        {
+            Array.Copy(raw, 0, memory, 0x4000, 49152);
+        }
+        else
+        {
+            var snap = Z80SnapshotReader.Load(args[0]);
+            Array.Copy(snap.Ram48K, 0, memory, 0x4000, snap.Ram48K.Length);
+        }
 
         var lines = Z80Disassembler.DecodeRange(addr, memory, count);
         TextWriter writer = args.Length == 4

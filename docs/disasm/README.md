@@ -23,9 +23,7 @@ routine's *code*.
 | [level-paint.md](level-paint.md) | `$DB1A` outer paint loop + `$DB7A` scroll-up + `$DAF2` tile blit + `$E104` mini-map walker | **done** |
 | [hud.md](hud.md) | `$E046` per-frame HUD updater + `$E0BE` bar driver + `$E0F1` cell paint + `$E785` print-stream table | **done** |
 | [entities.md](entities.md) | `$F1A5` dispatcher + `$F1EF` per-entity draw + `$F2BC` 16×16 blit + `$F1BC` per-level loader | partial |
-| [particles.md](particles.md) | `$E199` particle draw + `$DC11` particle update + `$DBC8` / `$DBDA` particle render-and-step | partial |
-| [player.md](player.md) | `$DCF5` player XOR draw + `$E3F4` player sprite stage + `$D8F0` input dispatcher | partial |
-| [main-loop.md](main-loop.md) | `$D7FB`-`$D826` main game loop, phase by phase | partial |
+| [death.md](death.md) | `$DDC4` hit sound + shield-- + `$DBC8` death animation + `$DBDA` 8-particle paint + `$DC43` screen-dim + `$D8A8` lives check | **done** |
 
 ## Conventions
 
