@@ -695,6 +695,50 @@ their X against `($E583) + $0F`.
 This is distinct from the `$F2EB`-style records (fixed playfield
 decor; see [`disasm/entities.md`](disasm/entities.md)).
 
+## RAM ($EE9E–$EEC1) — enemy ship live table
+
+6 slots × 6 bytes.  Spawned dynamically by `$EBB2`, ticked by
+`$ED01`.  Each record:
+
+| Offset | Meaning |
+| ------ | ------- |
+| +0     | X (world byte position 0..255) |
+| +1     | Y (pixel) |
+| +2     | DX (-1, 0, +1) — aim toward player at spawn |
+| +3     | DY (-1, 0, +1) — aim toward player at spawn |
+| +4     | Status (bit 7 = alive; bit 5 = blink toggle) |
+| +5     | Lifetime counter (DEC per tick; expire at 0) |
+
+Empty across all `at-fXXX.bin` idle snapshots (no input); 2
+records alive in `at-down-f310.bin` (player held DOWN).
+
+Drawn as **single-byte attribute flashes** at the resolved
+screen address (no 16×16 sprite); blink toggle inverts the
+attribute every frame.  See
+[`disasm/enemies.md`](disasm/enemies.md).
+
+## Code ($EBB2) — enemy ship spawn
+
+Random-rate spawner: `LD A,R; AND $0F; CP B(level); RET NC`.
+~1/16 chance at level 1, ~5/16 at level 5.  Finds the first
+free slot in `$EE9E` and writes (X, Y, DX-sign, DY-sign,
+alive, lifetime).  Spawn coordinates come from HL, set by the
+caller (TBD).
+
+## Code ($ED01) — enemy ship per-frame tick
+
+For each alive slot in `$EE9E`: erase last position with level
+colour, decrement lifetime (expire on 0), `X += DX`, `Y += DY`
+(expire on negative Y), test scenery collision (`$EB62`), test
+horizontal-range (`$ED8A`), paint new position bright white,
+test player collision (`$EDC0`).
+
+## Code ($EDC0) — enemy hits player
+
+Compares enemy's screen address `($EE78)` against the 4 player
+quadrant addresses in `$E8C9`.  On match: `CALL $DD4A` — fires
+the hit-sound + shield-decrement + possible-death chain.
+
 ## Code ($DB06) — world-scroll cursor update
 
 ```

@@ -27,6 +27,7 @@ routine's *code*.
 | [scroll-horizontal.md](scroll-horizontal.md) | `$D9C8` L-key handler + `$DA23` scroll-left + `$DA62` scroll-right + `$DAA9` fresh-column paint | **done** |
 | [laser.md](laser.md) | `$DE41` fire-key handler + `$DEF0..$DF1B` per-frame beam tail-recede | **done** |
 | [collision.md](collision.md) | `$DD4A` collision walker + `$DD8C` / `$DDAA` per-entity 8×8 box check | partial |
+| [enemies.md](enemies.md) | `$EE9E` enemy-ship table + `$EBB2` spawn + `$ED01` tick + `$EDC0` player-collide | **done** |
 
 ## Conventions
 
