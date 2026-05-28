@@ -172,10 +172,12 @@ public sealed class EnemyShips
             }
 
             // $EAB2 range gate: ships outside the 32-byte scroll window
-            // get ticked but invisible — match the original's behaviour.
+            // are NOT drawn (so their playfield sprite is hidden) but
+            // their MOVEMENT keeps ticking so the mini-map dot moves
+            // continuously.  (Earlier port skipped tick for off-screen
+            // ships → dots stalled.)
             int offset = (s.X - scrollCursor) & 0xFF;
             bool inWindow = offset < 0x20;
-            if (!inWindow) continue;
 
             // $EB00 animation step: bit 5 of the Sub byte = Y direction.
             // Counter bounces between $04 and $70.
@@ -183,7 +185,24 @@ public sealed class EnemyShips
             int newY = s.Y + dy;
             if (newY >= 0x70) { newY = 0x70; s.Sub &= 0xDF; }       // hit top → flip down
             else if (newY <= 0x04) { newY = 0x04; s.Sub |= 0x20; }  // hit bottom → flip up
-            s.Y = (byte)newY;
+            // Scenery probe on Y movement too — flip direction on wall.
+            if (levelTiles != null && levelTiles.Length >= 4096)
+            {
+                int row = (newY >> 3) & 0x0F;
+                byte tile = levelTiles[row * 256 + s.X];
+                if (tile != 0)
+                {
+                    s.Sub ^= 0x20;        // reverse Y direction, don't move
+                }
+                else
+                {
+                    s.Y = (byte)newY;
+                }
+            }
+            else
+            {
+                s.Y = (byte)newY;
+            }
 
             // Bit 6 of Sub = X direction.  Move 1 byte per cycle.
             int dx = (s.Sub & 0x40) != 0 ? +1 : -1;
@@ -210,18 +229,17 @@ public sealed class EnemyShips
                 s.X = (byte)newX;
             }
 
+            // Fire-bullet + collision only apply when ship is in the
+            // visible window (= player can actually see/interact).
+            if (!inWindow) continue;
+
             // $EB99 fire-bullet gate: random gated by level.
-            // (the original also checks the slot's sub-byte; we use the
-            // status bits 0..6 as a "fire cooldown" timer instead.)
             if (rng.Next(0, 16) < level)
             {
                 bullets.TrySpawnAt(s.X, s.Y, playerByteX, playerY);
             }
 
-            // Port of $EB7A: ship-vs-player collision.  Original tests
-            // by SCREEN ADDRESS match against $E8C9; we test by world-X
-            // match within a small Y window since our ship coords are
-            // already in world-space.
+            // Port of $EB7A: ship-vs-player collision.
             if (s.X == playerByteX && Math.Abs(s.Y - playerY) < 16)
             {
                 LastTickHits |= (1 << i);

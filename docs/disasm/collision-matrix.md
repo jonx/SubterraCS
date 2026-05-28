@@ -17,6 +17,32 @@ files where each routine is fully traced.
 † = my reading; boss probably uses `$EDC0`-style address-match
 since `$EC4C` calls `$E9AC` for draw (same as ships).
 
+## Investigation note — System A entities ARE NOT damage sources
+
+Per the cassette's `$DD4D` collision walker:
+```
+DD4D  LD HL,($E583); ADD A,$0F; LD ($EE76),HL  ; player position cache
+DD58  test BOSS at $EE7D via $DD8C
+DD65  iterate 7 SHIPS at $E597 via $DD8C
+DD79  iterate 6 BULLETS at $EE9E via $DDAA
+DD8B  RET
+```
+
+`$DD4D` only tests SHIPS, BULLETS, and the BOSS — not System A
+entities at `$F2EB+`.  So in the original, **decor entities
+(trees, pipes, even electric arcs) do NOT damage the player on
+contact via this routine**.
+
+The electric arc's damage in the original probably comes via
+a DIFFERENT mechanism — possibly the `$DCF5` player draw's
+XOR-collision-flag (= when the player sprite XORs into a non-zero
+bitmap pixel, sets a flag that fires `$DD4A`).  Arcs would set
+bits in the bitmap; player flying through would XOR-collide.
+
+The C# port extends `EntityAI.Kind.ElectricArc` with explicit
+`CollisionRule(-15, 0, 0, 0, false)` to give the arc its
+"door-blocker" damage role.
+
 ## Detailed traces
 
 ### Player-vs-ENEMY-SHIP — `$EB7A`

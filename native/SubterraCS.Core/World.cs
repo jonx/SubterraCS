@@ -497,6 +497,9 @@ public sealed class World
                 continue;
             }
             if (!e.Visible) continue;
+            // Electric arc deactivates once all workers rescued
+            // (matches the door-unlock chain in $F252).
+            if (e.TypeId == 0x12 && Workers.RemainingThisLevel == 0) continue;
             // Port of $DD8C collision test: entity X within ±1 byte
             // (8 px) AND |entity.Y - player.Y| < 8 px.  Both sprites
             // are 16×16; e.X/e.Y is the entity sprite's TOP-LEFT;
@@ -1020,10 +1023,16 @@ public sealed class World
         // by Scroll.PaintLevel — port of $DB1A) into the framebuffer.
         Scroll.Blit(fb);
 
+        bool levelCleared = Workers.RemainingThisLevel == 0;
         foreach (var e in Entities)
         {
             if (!e.Alive || !e.Visible) continue;
             if (e.TypeId < 0 || e.TypeId >= EntityTypes.Types.Length) continue;
+            // Electric arc (type $12 = 18) blocks the door UNTIL all
+            // workers are rescued — port of $F252 CP $07 chain: arc
+            // sprite swaps to "off" state when $E77D[level] bit 0 is
+            // set.  We just hide it entirely once cleared.
+            if (e.TypeId == 0x12 && levelCleared) continue;
             var type = EntityTypes.Types[e.TypeId];
             var sprite = EntityBank.Frame(type.SpritePointer, e.Frame);
             if (sprite.IsEmpty) continue;
@@ -1094,6 +1103,21 @@ public sealed class World
         }
         EnemyShipTable.DrawMiniMapDots(fb, ScrollOffsetX);
         Workers.DrawMiniMapDots(fb);
+
+        // Player mini-map dot — port of $E248 / $E25E (player position
+        // → mini-map row 161+altitude/4, column = scroll+16).
+        // OR-paint with bright cyan attribute so it stands out.
+        {
+            int playerMiniX = (ScrollOffsetX + 0x10) & 0xFF;
+            int playerMiniY = 0xA1 + (PlayerY >> 2);
+            if (playerMiniY >= 160 && playerMiniY < 192)
+            {
+                int addr = Framebuffer.BitmapAddress(playerMiniX, playerMiniY);
+                byte bit = (byte)(0x80 >> (playerMiniX & 7));
+                fb.Bitmap[addr] |= bit;
+                fb.Attributes[Framebuffer.AttributeAddress(playerMiniX, playerMiniY)] = 0x45;  // bright cyan
+            }
+        }
 
         // Death-explosion attribute particles draw LAST so they overlay
         // the HUD chrome (matches the original's $DBC8 timing where

@@ -32,6 +32,7 @@ public static class EntityAI
         Pipe,          // type 14 — static pipe segment, blocks bullets
         Bowtie,        // type 15 — drifts in a sine pattern
         Robot,         // type 16 — chases horizontally only
+        ElectricArc,   // type 18 ($12) — door guard, drains shield, blocks until rescued
         Generic,       // fallback
     }
 
@@ -54,6 +55,7 @@ public static class EntityAI
         14 => Kind.Pipe,
         15 => Kind.Bowtie,
         16 => Kind.Robot,
+        18 => Kind.ElectricArc,
         _  => Kind.Generic,
     };
 
@@ -84,6 +86,7 @@ public static class EntityAI
         Kind.ForceField  => new CollisionRule(-4,   0,    0,  0, false),
         Kind.Bowtie      => new CollisionRule(-6,   0,    0,  0, true),
         Kind.Robot       => new CollisionRule(-10,  0,    0,  0, true),
+        Kind.ElectricArc => new CollisionRule(-15,  0,    0,  0, false),  // stays, drains shield
         _                => new CollisionRule(-5,   0,    0,  0, true),
     };
 
