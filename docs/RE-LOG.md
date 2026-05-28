@@ -1001,3 +1001,91 @@ it is in one diagram, source addresses inline:
 Everything below the dashed line is a piece of data; everything
 above is a piece of code. Twenty addresses, give or take, span
 the entire game. That's the whole machine.
+
+## 22. Closing the loop — the native port is a real game now
+
+The previous milestone (§21 / `native/`) gave us a *demonstrator*:
+the cave drew, the ship flew, the procedural generator dripped
+entities downward. Playable in the way an early prototype is
+playable. Not a game.
+
+This pass closes the gap. The native port now plays the **whole
+game**:
+
+* **Original level data is used first.** The six 32-byte schedules
+  at `$E69D` are loaded verbatim by
+  `OriginalLevels.Load("level-schedules-e69d.bin")`. We re-scale
+  the raw 16-bit countdowns (the original ran a multi-pass slicer
+  at `$EF02`; we tick once per 50 Hz frame) but the entity
+  *types* and *flag bits* are exactly Mike Follin's 1985 mix.
+  Pages 0..5 are the cassette; page 6+ falls through to the
+  `ProceduralGenerator` for infinite play.
+* **Each entity type has its own AI.** `EntityAI.cs` is a table-
+  driven dispatcher matching every type id we decoded in
+  MEMORY-MAP §`$F5A0`: workers walk along the cave floor and are
+  *rescuable*; stalactites cling, wobble, then drop; rocks drift;
+  drones and robots fly across at fixed altitude; mine carts and
+  wagons roll along the floor; bubbles rise and grant a fuel
+  trickle; the force-field bobs vertically; the creature does a
+  slow chase in X; the bow-tie sine-drifts; etc. The original
+  game's per-type subroutines are scattered across the entity
+  dispatcher at `$F1A5`; we don't replicate them line-for-line
+  but we honour the *archetype* each type plays in the
+  composition.
+* **Real collision rules.** A per-kind `CollisionRule` table
+  decides what happens when the player touches each entity:
+  workers heal +5 shield + 50 score + 1 rescued; bubbles give
+  +2 fuel; lava and mine-carts do serious damage; vines and
+  pipes are pass-through. Bullets respect `IsBulletProof` (you
+  cannot shoot the workers — same rule the original had,
+  enforced via the type-3 flag bit on `$F5A0`).
+* **Full game-state machine.** `World.State` cycles through
+  Title → Playing → Dying → GameOver → Playing. The title screen
+  draws "SUBTERRANEAN STRYKER / NATIVE C# PORT / BY MIKE FOLLIN
+  1985 / RE-PORT 2026" with a blinking PRESS FIRE prompt; the
+  game-over screen shows DEPTH / SCORE / RESCUED and the same
+  blinking PRESS FIRE TO RETRY. Lives are tracked (3 to start)
+  and rendered as magenta chips on the bottom-right of the HUD.
+* **Cave walls.** `World.CaveHalfWidthAt(y)` is a sinusoid whose
+  period shrinks with depth, so deeper caves twist tighter. The
+  player takes graze damage when straying outside the safe
+  corridor — exactly the gameplay the cave-roof drops the
+  original used to gate horizontal movement.
+* **Sound effects.** `SfxQueue` is a Core-only one-shot queue;
+  the Platform layer drains it each frame into `BeeperSynth.Tone`.
+  Eight discrete voices: Fire, Hit, Explode, Pickup, Dive,
+  Damage, GameOver, LevelUp. The Core has zero audio dependency
+  — `World` only enqueues `SfxKind` values; the SDL2 runner is
+  the only thing that actually makes noise.
+* **Music playback.** `MusicPlayer` walks the 4 KB Follin music
+  stream (16-bit period pairs at `$5E88`), one note every 8
+  frames, mapping each period to a pleasant Hz via a normalising
+  divisor. Not bit-identical to the original `$FA32` Z80 driver
+  — that one used the pulse-width slide trick directly on the
+  speaker port — but it plays the same *notes* from the same
+  *data*. Music ticks only during Playing state; SFX preempt
+  in-flight notes.
+
+Verification: a 900-frame headless sweep (`--frames=900 --seed=11
+--keys=...`) reproduces the full life-cycle in renders/ — title
+screen at f1, gameplay through depths 0 and 1, game-over at f525,
+fresh restart at f675, another playthrough through f900. Lives
+chips visible bottom-right; HUD reflows correctly between states.
+
+What we deliberately *didn't* port:
+
+* **The exact Z80 sound driver.** `MusicPlayer` plays the data,
+  not the timing curve. Reproducing the Follin pulse-width slide
+  at sample-accurate rates would mean writing a Z80-cycle-
+  accurate beeper emulator — fun, not on the critical path.
+* **The original difficulty curve past page 6.** The cassette
+  loops the six pages indefinitely; we instead hand off to the
+  procedural generator so depth keeps climbing.
+* **The exact rescue scoring formula.** The original's `$DE2A`
+  rescue pass walks a 4-entry table at `$E46B` whose layout we
+  haven't fully decoded; we approximated with a flat +50 score
+  +1 rescued per worker grabbed.
+
+The result is a complete, standalone, emulator-free game in
+~3500 lines of C# (Core + Platform + Game), driven by 12 KB of
+assets extracted from the 1985 tape. End-to-end, it plays.

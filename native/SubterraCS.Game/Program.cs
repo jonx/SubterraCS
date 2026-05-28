@@ -39,7 +39,11 @@ internal static class Program
         var world = new World(
             assets.Tiles, assets.Udgs, assets.EntityBank, assets.EntityTypes,
             assets.PlayerSpriteRight, assets.PlayerSpriteLeft,
+            originalLevels: assets.OriginalLevelSchedules,
             seed: seed ?? Environment.TickCount);
+
+        // Pass music data through to whichever runner uses it.
+        Sdl2Runner.MusicData = assets.MusicData;
 
         if (headless)
         {

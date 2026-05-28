@@ -2,7 +2,9 @@ namespace SubterraCS.Core;
 
 /// <summary>
 /// One live entity in the game.  Same shape as the original's 8-byte
-/// slot at <c>($F1B9)</c>, but unwrapped into named fields.
+/// slot at <c>($F1B9)</c>, but unwrapped into named fields plus a few
+/// extras we need on top (HP, lifetime, cached MaxFrames) to drive the
+/// per-type AI table in <see cref="EntityAI"/>.
 /// </summary>
 public sealed class EntityInstance
 {
@@ -12,6 +14,9 @@ public sealed class EntityInstance
     public int Frame;        // 0..MaxFrames-1
     public int DX, DY;       // signed per-frame velocity
     public int FrameTick;    // counts up; advance frame when > threshold
+    public int AgeFrames;    // ticks since spawn — drives lifetimes / state
+    public int Hp;           // hits to destroy (1 for fragile decor)
+    public int MaxFrames;    // cached from EntityType for the AI tick path
     public bool Alive;
 }
 

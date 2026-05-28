@@ -5,11 +5,15 @@ namespace SubterraCS.Game;
 
 /// <summary>
 /// The interactive runner: opens an SDL2 window, polls keyboard, runs
-/// the game loop at 50 Hz, presents the framebuffer.  Optional beeper
-/// audio (driven by simple per-event sound effects).
+/// the game loop at 50 Hz, presents the framebuffer.  Drives the
+/// <see cref="BeeperSynth"/> via two paths:
+///   1) <see cref="SfxQueue"/> — discrete game events (fire, hit, …).
+///   2) <see cref="MusicPlayer"/> — background Follin music stream.
 /// </summary>
 internal static class Sdl2Runner
 {
+    public static byte[] MusicData { get; set; } = Array.Empty<byte>();
+
     public static int Run(World world)
     {
         const int FrameMs = 20; // 50 Hz
@@ -33,10 +37,10 @@ internal static class Sdl2Runner
             Console.Error.WriteLine($"  audio unavailable: {ex.Message} (continuing silently)");
         }
 
+        var music = new MusicPlayer(MusicData, framesPerNote: 8);
         var fb = new Framebuffer();
         uint nextFrameTicks = Sdl2Time.GetTicks();
         bool paused = false;
-        int prevScore = 0, prevDepth = 0;
 
         while (!pump.QuitRequested)
         {
@@ -46,8 +50,6 @@ internal static class Sdl2Runner
             if (ev.ToggleFullscreen) window.ToggleFullscreen();
             if (ev.Reset)
             {
-                // Easiest reset: throw the world away and start a fresh one
-                // with a new seed.  Caller can rebind by exiting and re-launching.
                 Console.WriteLine("  reset requested — press Esc to quit, restart for a new seed.");
             }
 
@@ -55,16 +57,21 @@ internal static class Sdl2Runner
             {
                 world.Tick(input);
 
-                // Quick SFX hook-up: chirp on score increase, deep blip on
-                // depth advance.  Keeps audio interesting without us having
-                // to fully reverse-engineer the original sound effects.
+                // Forward game-event SFX into the synth — short discrete tones.
                 if (synth != null)
                 {
-                    if (world.Score > prevScore) synth.Tone(880.0, 4, slide: 8.0);
-                    if (world.Depth > prevDepth) synth.Tone(220.0, 16, slide: -4.0);
+                    while (world.Sfx.TryDequeue(out var s))
+                    {
+                        var (hz, frames, slide) = SfxQueue.Voice(s);
+                        if (hz > 0) synth.Tone(hz, frames, slide);
+                    }
+                    // Background music ticks slower than SFX, only when
+                    // no SFX is currently sounding (let SFX preempt).
+                    if (world.State == GameState.Playing)
+                    {
+                        music.Tick(synth);
+                    }
                 }
-                prevScore = world.Score;
-                prevDepth = world.Depth;
             }
             world.Draw(fb);
             var rgba = fb.ToRgba();

@@ -16,6 +16,7 @@ public sealed class Assets
     public byte[] PlayerSpriteRight { get; }
     public byte[] PlayerSpriteLeft { get; }
     public byte[] MusicData { get; }
+    public SpawnSchedule[] OriginalLevelSchedules { get; }
 
     public Assets(string assetsDir)
     {
@@ -30,6 +31,7 @@ public sealed class Assets
         PlayerSpriteLeft = playerBytes[16..32];
 
         MusicData = File.ReadAllBytes(Path.Combine(assetsDir, "music-5e88.bin"));
+        OriginalLevelSchedules = OriginalLevels.Load(Path.Combine(assetsDir, "level-schedules-e69d.bin"));
     }
 
     public static Assets LoadFromRepo()

@@ -6,7 +6,14 @@ in this repo but is its own .NET 10 solution
 (`native/SubterraCS.slnx`) with no references back into the
 emulator-based one.
 
-## Status
+## Status — fully playable
+
+The native port is **feature-complete**: title screen, the original
+six levels, infinite procedural levels after that, every entity
+type with its own AI, rescue mechanic, shield/fuel/lives tracking,
+death and game-over flow, sound effects, and Follin music
+playback. End-to-end gameplay runs without the emulator anywhere
+in sight.
 
 * **Renderer**: Spectrum-style 256 × 192 1-bit bitmap + 32 × 24
   attribute grid, decoded to RGBA. All four blitters from
@@ -14,23 +21,47 @@ emulator-based one.
   methods: indexed tile copy, 16×16 quadrant blit, player XOR draw,
   single-byte bullet XOR.
 * **Game loop**: 50 Hz, identical phase ordering to the original's
-  `$D7FB` loop — input → world tick → draw → present.
-* **Entities**: 16-slot entity list (`World.Entities`) plus an
-  8-slot bullet list — same shape as `$F1B9`/`$E881`. Sprites pulled
-  from the extracted entity-bank blob.
+  `$D7FB` loop — input → world tick → draw → present. Drives a
+  `GameState` machine: Title → Playing → Dying → GameOver →
+  Playing.
+* **Levels**: the **six original 32-byte schedules** at `$E69D`
+  load verbatim from `level-schedules-e69d.bin` (re-scaled for
+  our straight 50 Hz tick). Depth 6+ falls through to the
+  `ProceduralGenerator` for infinite play.
+* **Entity AI**: `EntityAI.cs` is a per-type dispatcher matching
+  every kind we decoded — workers walk and are rescuable;
+  stalactites cling-wobble-then-drop; rocks drift; drones and
+  robots strafe; mine carts and wagons roll; bubbles rise and
+  grant fuel; the creature does a slow X-chase; the bow-tie
+  sine-drifts; vines and pipes are static decor; etc. Each kind
+  has its own `CollisionRule` (damage/heal/score/rescue deltas)
+  and its own `ShootScore`. Bullets respect `IsBulletProof` so
+  you can't shoot the workers you're meant to rescue.
 * **Player Stryker**: drawn via `Blitters.DrawPlayerXor` from the
   16-byte directional frame loaded from
-  `assets/extracted/player-e63b.bin`. Flicker preserved by design.
-* **HUD**: hand-built 8 × 8 `MiniFont` (so we don't depend on the
-  Spectrum ROM character set). Renders DEPTH / SCORE / RESCUED plus
-  shield + fuel bars at the bottom.
-* **Procedural level generator**: replaces the 6 hard-coded spawn
-  schedules with deterministic-but-varied infinite levels keyed on
-  depth. Difficulty curve (timer pressure rises as you dive) plus a
-  type-pool that broadens with depth.
-* **Audio**: `BeeperSynth` synthesises 16-bit PCM with the Follin
-  pulse-width slide trick. SDL2 streams it through the legacy
-  callback API.
+  `assets/extracted/player-e63b.bin`. Flicker preserved by design;
+  a temporary flicker also signals the post-respawn invincibility
+  window.
+* **HUD**: hand-built 8 × 8 `MiniFont`. Renders DEPTH / SCORE /
+  RESCUED on row 0, SHIELD + FUEL bars on row 1, plus magenta
+  lives chips bottom-right. `MiniFont.DrawCentered` is reused for
+  the title and game-over banners.
+* **Cave terrain**: `World.CaveHalfWidthAt(y)` is a sinusoid whose
+  period shrinks with depth, so deeper caves twist tighter. The
+  player takes graze damage when straying outside the safe
+  corridor.
+* **Sound effects**: `SfxQueue` is a Core-only one-shot queue with
+  voices for Fire / Hit / Explode / Pickup / Dive / Damage /
+  GameOver / LevelUp. The Platform layer drains it each frame
+  into `BeeperSynth.Tone` — Core has zero audio dependency.
+* **Music**: `MusicPlayer` walks the 4 KB Follin music stream
+  (16-bit period pairs at `$5E88`), one note every 8 frames,
+  mapping period → Hz via a normalising divisor. Approximates
+  the `$FA32` Z80 driver without re-implementing the pulse-width
+  slide loop at sample-accurate timing.
+* **Procedural levels** (depth 6+): deterministic-but-varied
+  infinite levels keyed on depth, with the difficulty curve
+  rising as you dive and the type-pool broadening.
 
 ## Layout
 
@@ -45,12 +76,18 @@ native/
 │    ├── EntityBank.cs               16-type sprite bank (column-major quadrants)
 │    ├── EntityTypes.cs              (ptr, max-frames, attr) per entity type
 │    ├── Entities.cs                 EntityInstance + Bullet records
+│    ├── EntityAI.cs                 per-kind movement, collision, scoring
 │    ├── SpawnSchedule.cs            8 × 4-byte (timer, type, flags)
-│    ├── ProceduralGenerator.cs      infinite levels via seeded RNG
+│    ├── OriginalLevels.cs           load the six original $E69D schedules
+│    ├── ProceduralGenerator.cs      infinite levels via seeded RNG (depth 6+)
 │    ├── World.cs                    full game state + tick + draw
+│    │                                + GameState machine (Title/Play/Die/Over)
 │    ├── Hud.cs + MiniFont.cs        bottom-strip HUD + hand-built 8×8 font
+│    │                                (incl. centered title/game-over banners)
 │    ├── GameInput.cs                up/down/horizontal/fire booleans
+│    ├── SoundEffects.cs             SfxKind enum + SfxQueue (Core only)
 │    ├── BeeperSynth.cs              Follin-style PCM beeper
+│    ├── MusicPlayer.cs              walks 16-bit period pairs from $5E88
 │    ├── PngWriter.cs + Crc32        copy of the dependency-free PNG encoder
 │    ├── RenderTarget.cs             "renders/" path + repo-root walk-up
 │    └── AssetLoader.cs              loads assets/extracted/*.bin at boot
@@ -100,17 +137,21 @@ The native port reads its assets from
 Re-extracting after a fresh emulator run will refresh the bins;
 the native port will pick them up automatically next launch.
 
-## What's still proudly missing
+## What we deliberately *didn't* port
 
-The native port deliberately does not yet implement:
+The native game stands on its own — the deliberate omissions are
+of *fidelity*, not *features*:
 
-* Per-enemy AI behaviours (currently every enemy just falls
-  straight down — pleasant but uniform). Plugging in the
-  individual AI tables is the natural next step.
-* Pickup / rescue mechanic. The original collects workers when
-  bullets miss; we render them but don't track them yet.
-* Sound effects beyond the chirp-on-score and dive-blip
-  hooks. The music data is loaded into memory but not yet driven.
+* **Cycle-accurate Z80 sound driver.** The original `$FA32`
+  routine uses a tight `OUT ($FE),A` + DJNZ loop with a Follin
+  pulse-width slide. We play the same data through a software
+  PCM synth instead. Same notes, different timbre.
+* **Strict 6-level loop.** The cassette loops the six pages
+  forever; we hand off to the procedural generator past depth 6
+  so the game keeps escalating.
+* **Z80-accurate movement curves.** Player and entity motion is
+  table-driven by `EntityAI.cs`, not byte-for-byte equivalent to
+  the original's per-type subroutines around `$F1A5`.
 
-These are documented in [`docs/FEASIBILITY.md`](../docs/FEASIBILITY.md)
-as the medium-effort items on the day-by-day port plan.
+Everything else — title, levels, entity types, rescues, scoring,
+shield/fuel/lives, game-over, restart — is in.

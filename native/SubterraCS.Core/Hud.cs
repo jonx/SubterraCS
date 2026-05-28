@@ -38,6 +38,16 @@ public static class Hud
 
         DrawBar(fb, 0,   176, "SH", world.Shield, 0x42);   // red(ish)
         DrawBar(fb, 128, 176, "FU", world.Fuel,   0x45);   // cyan
+
+        // Lives — drawn as small magenta squares on the bottom row's
+        // attribute strip so they don't crowd the bars.
+        Span<byte> chip = stackalloc byte[8];
+        for (int r = 1; r < 7; r++) chip[r] = 0x7E;
+        int lx = 232;
+        for (int i = 0; i < Math.Min(world.Lives, 3); i++)
+        {
+            Blitters.DrawTile8x8(fb, lx + i * 8, 184, chip, 0x43);  // bright magenta
+        }
     }
 
     private static void DrawBar(Framebuffer fb, int x, int y, string label, int value, byte attr)

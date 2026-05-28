@@ -16,6 +16,27 @@ public static class MiniFont
         return Glyphs.TryGetValue(ch, out var g) ? g : Empty;
     }
 
+    /// <summary>Draw a string starting at (x, y) using this font.</summary>
+    public static void Draw(Framebuffer fb, int x, int y, string s, byte attr)
+    {
+        foreach (var ch in s)
+        {
+            if (x >= Framebuffer.Width) return;
+            Blitters.DrawTile8x8(fb, x, y, Glyph(ch), attr);
+            x += 8;
+        }
+    }
+
+    /// <summary>Draw a string horizontally centered on row <paramref name="y"/>.</summary>
+    public static void DrawCentered(Framebuffer fb, int y, string s, byte attr)
+    {
+        int width = s.Length * 8;
+        int x = Math.Max(0, (Framebuffer.Width - width) / 2);
+        // Snap to the 8-pixel grid so attribute cells line up.
+        x &= ~7;
+        Draw(fb, x, y, s, attr);
+    }
+
     // Each glyph is 8 bytes — one byte per row, MSB on the left.
     private static readonly Dictionary<char, byte[]> Glyphs = new()
     {
