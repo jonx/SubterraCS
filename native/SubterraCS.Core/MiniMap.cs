@@ -90,7 +90,9 @@ public sealed class MiniMap
     public void DrawToPartial(Framebuffer fb, int rowsToDraw)
     {
         rowsToDraw = Math.Clamp(rowsToDraw, 0, Rows);
-        // Paint source rows (Rows - rowsToDraw) .. Rows-1.
+        // Bottom-up partial paint: paint source rows that map to
+        // bottom char rows first.  Source row N → screen row N*2.
+        // To paint bottom N char rows = bottom-most source rows.
         int firstRow = Rows - rowsToDraw;
         for (int row = firstRow; row < Rows; row++)
         {
@@ -121,8 +123,6 @@ public sealed class MiniMap
             if (screenY2 >= Framebuffer.Height) continue;
             for (int byteCol = 0; byteCol < 32; byteCol++)
             {
-                // Each "column" in the source = 8 source bytes = 8 pixels.
-                // Pack them as a single screen byte by ORing.
                 byte stamp = 0;
                 for (int b = 0; b < 8; b++)
                 {
