@@ -34,6 +34,7 @@ routine's *code*.
 | [input.md](input.md) | `$D8F0` dispatcher + 4 control schemes (`$D8F4` keyboard, `$F14E` Kempston, `$F177` Interface 2, `$F0F9` cursor, `$FB71` Sinclair) + `$E45F` bit layout | **done** |
 | [player.md](player.md) | Player physics + `$E3F4` sprite stage + `$DCAC` bank shift + `$DCF5` XOR draw + `$F868` page-advance gate | **done** |
 | [title-menu.md](title-menu.md) | `$F5FC` title loop + control-scheme selection + game-init | **done** |
+| [main-loop.md](main-loop.md) | `$D7FB..$D826` per-frame dispatch map + `$E8FD` sub-chain + state inventory | **done** |
 | [sound.md](sound.md) | `$FA0A` print-stream + `$5E88` Follin player + SFX entries (`$F8F9`, `$F90E`, `$F93A`) | partial |
 
 ## Conventions

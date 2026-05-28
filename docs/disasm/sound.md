@@ -52,6 +52,7 @@ Three known callers of `$FA0A` with hard-coded message tables:
 | `$F90E` | `$DFAF` fuel pickup | 9 bytes  | `$F919` | Fuel-pickup chime |
 | `$F93A` | `$E920` (path `$E97A`) | 13 bytes | `$F945` | Density warning? |
 | `$F8B4` | `$D879` fuel-low | 19 bytes | `$F8C5` | Fuel-low alert |
+| `$F8D8` | `$D88A` shield-low | 16 bytes | `$F8E9` | Shield-low alert |
 
 Each calls `CALL $F9F9` (probably "stop current SFX") before
 loading `HL = data ptr; B = length; JP $FA0A`.
