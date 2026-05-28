@@ -17,6 +17,8 @@ public sealed class Assets
     public byte[] PlayerSpriteLeft { get; }
     public byte[] MusicData { get; }
     public SpawnSchedule[] OriginalLevelSchedules { get; }
+    public byte[] SplashScr { get; }
+    public byte[] TitleMenuScr { get; }
 
     public Assets(string assetsDir)
     {
@@ -32,6 +34,19 @@ public sealed class Assets
 
         MusicData = File.ReadAllBytes(Path.Combine(assetsDir, "music-5e88.bin"));
         OriginalLevelSchedules = OriginalLevels.Load(Path.Combine(assetsDir, "level-schedules-e69d.bin"));
+
+        // Static cassette screens — the painted loading splash and the
+        // procedurally-drawn title menu.  These are captured from the
+        // running emulator (one-shot, not regenerated per frame).
+        // Per-level scenery is NOT captured — that's drawn at runtime.
+        SplashScr   = LoadOptionalScr(assetsDir, "splash-scr.bin");
+        TitleMenuScr = LoadOptionalScr(assetsDir, "title-menu-scr.bin");
+    }
+
+    private static byte[] LoadOptionalScr(string dir, string name)
+    {
+        var path = Path.Combine(dir, name);
+        return File.Exists(path) ? File.ReadAllBytes(path) : Array.Empty<byte>();
     }
 
     public static Assets LoadFromRepo()

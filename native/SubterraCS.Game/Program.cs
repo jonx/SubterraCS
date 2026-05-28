@@ -40,7 +40,11 @@ internal static class Program
             assets.Tiles, assets.Udgs, assets.EntityBank, assets.EntityTypes,
             assets.PlayerSpriteRight, assets.PlayerSpriteLeft,
             originalLevels: assets.OriginalLevelSchedules,
-            seed: seed ?? Environment.TickCount);
+            seed: seed ?? Environment.TickCount)
+        {
+            SplashScr = assets.SplashScr,
+            TitleMenuScr = assets.TitleMenuScr,
+        };
 
         // Pass music data through to whichever runner uses it.
         Sdl2Runner.MusicData = assets.MusicData;
