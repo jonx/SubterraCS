@@ -764,6 +764,102 @@ screen address (no 16×16 sprite); blink toggle inverts the
 attribute every frame.  See
 [`disasm/enemies.md`](disasm/enemies.md).
 
+## Code ($E920) — enemy-ship AI dispatcher
+
+Top-level per-frame ship AI.  See
+[`disasm/ship-ai.md`](disasm/ship-ai.md) for the full trace.
+
+- Every-other-frame skip via `$EE73` toggle.
+- 4-cycle counter `$E48B` advance.
+- Per slot (7 slots at `$E597`): draw via `$E9AC` ×2 if alive,
+  else (re-)init via `$EADE`.  Movement loop calls `$EB00` →
+  `$EB5B` (scenery + scroll-tick) → `$EB47` (reverse on hit).
+  Always end via `$EAA3` → `$EB99` (fire-bullet gate, falls into
+  `$EBB2`).
+
+## Code ($EADE / $EB00 / $EB3E / $EB47 / $EB52) — ship AI helpers
+
+`$EADE` randomizes the ship's 3 AI state bytes.  `$EB00` steps
+the animation/movement counter in `[$04..$70]` with direction
+reverses at the endpoints.  `$EB3E`/`$EB47`/`$EB52` are bit-
+toggle helpers that flip direction bits (5, 5+6, 6 respectively).
+
+## Code ($EB5B / $EB62) — scroll-tick + scenery probe
+
+`$EB5B` calls `$D827` to bump scroll progress, then falls into
+`$EB62` which probes the level scenery at the AI pointer's
+(X, Y).  Returns ZF=1 if the tile is 0 (open space).  Also used
+by `$DFAF` for the player's own wall collision.
+
+## Code ($EB7A) — enemy-ship-vs-player collision
+
+Walks `$E8C9` (player's 4 quadrant addresses) comparing each to
+HL (the ship's drawn screen address).  On match, calls `$DD4A`
+to fire the hit-sound + shield-decrement + possible-death chain.
+Symmetric to `$EDC0` for bullets.
+
+## Code ($EAB2 / $EABD) — range check + offset compute
+
+`$EAB2` returns CF=1 if a ship's `X - $E583 ≥ $20` (= outside the
+scroll window).  `$EABD` precomputes the IX (= `$E80F[char_row]`),
+DE adjusted, and A=pixel-offset for the next `$E9AC` blit.
+
+## Code ($EAA3 / $EB99) — fire-bullet gate
+
+Called at end of each ship's tick.  `$EB99` checks the slot's
+sub-byte (HL[+3]) — if non-zero, RET (no fire).  Random gate
+`LD A,R; AND $0F; CP level; RET NC` — fire-rate scales with level.
+On pass, falls through into `$EBB2` (the spawn into `$EE9E`).
+
+## Code ($E910) — RNG state mutation
+
+Reads `($EE7A)` as the current RNG state, mixes in `R` (Z80
+refresh register) and memory chain, stores back.  Used by `$E920`
+to seed per-ship behaviour each frame.
+
+## RAM ($EE7A) — ship AI RNG state (16-bit)
+
+Updated by `$E910` each cycle.
+
+## RAM ($EE7D..$EE8E) — boss live slot (20 bytes)
+
+| Offset | Meaning |
+| ------ | ------- |
+| $EE7D | X (world byte) |
+| $EE7E | Y |
+| $EE7F | AI state byte (cycled in $ECBD) |
+| $EE80 | Last X-direction sign |
+| $EE81 | Cycle counter (1..12) |
+| $EE82 | Alternate-frame toggle |
+| $EE83 | Kill count |
+| $EE84..$EE87 | Per-cycle speed table (rotated by $EE81) |
+| $EE8E..$EE91 | Mirrored state for next-frame draw |
+
+## Code ($EC4C) — boss tick body
+
+Movement + draw for the single boss slot.  Same `$EAB2` /
+`$EABD` / `$E9AC ×2` draw chain as ships, plus its own movement
+algorithm using `$EE81` to pick a per-cycle speed from `$EE84[]`
+and direction logic at `$ECA0..$ECCE` that chases the player.
+
+## Code ($DFAF) — player-scenery collision + fuel pickup
+
+Called from main loop at `$D813`.  Probes the level scenery at
+player position (= `$E583+15`, `$E584`) using `$EB62`.  If the
+tile is `$01` (= solid wall), JP `$DBC8` (death).
+
+Also checks `($E589)` for a worker/pickup target match — if
+the player is at the right (X, Y) AND fuel < `$5F`, calls
+`$F90E` (fuel sound) + `$E419` (refill animation).
+
+## Code ($DCAC) — player sprite bank-shifter
+
+Called from main loop at `$D804`.  Shifts the table at
+`$E8B0..$E8C8` (= 7 banks × 4 quadrant addresses) by one
+sub-position when `altitude & 7 != 0`.  Keeps the player's
+draw addresses coherent as altitude moves through fractional
+char-rows.
+
 ## Code ($EBB2) — enemy ship spawn
 
 Random-rate spawner: `LD A,R; AND $0F; CP B(level); RET NC`.

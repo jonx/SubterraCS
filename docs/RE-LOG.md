@@ -2715,3 +2715,47 @@ about are implemented:
   `$EC4C` tick not yet ported.
 
 Full inventory in [`docs/disasm/enemies.md`](disasm/enemies.md).
+
+## 49. Ship AI internals — `$E920` chain fully traced
+
+User reminder to keep disassembling and storing notes in
+`docs/disasm/`.  This pass digs through every routine in the
+`$E920` ship-AI tree:
+
+- **`$E920`** dispatcher: every-other-frame skip (`$EE73`),
+  4-cycle counter (`$E48B`), 7-slot iteration, per-cycle sprite
+  data ptr (`$E5DB + cycle*16`).  Pre-draw branch on alive bit,
+  movement loop, end-of-slot fire gate.
+- **`$EADE`** randomizes ship state bytes via R-register chain.
+- **`$EB00`** steps the AI counter in `[$04..$70]` with bit-5
+  flip at the boundaries (direction reverse).
+- **`$EB3E`/`$EB47`/`$EB52`** are 3 bit-toggle helpers that flip
+  X/Y/full direction bits in the slot record.
+- **`$EB5B`** ticks `$EE74` scroll-progress via `$D827`, then
+  falls into **`$EB62`** = scenery probe (read tile-index at
+  `($E579) + worldX + (Y/8)*256`; ZF=1 if open).
+- **`$EB7A`** = enemy-ship-vs-player collision (symmetric to
+  `$EDC0` for bullets); compares to `$E8C9` quadrants, fires
+  `$DD4A` on hit.
+- **`$EAB2`** = scroll-window range gate (`X - $E583 < $20`).
+- **`$EABD`** = blit setup (computes IX from `$E80F[char_row]`,
+  DE adjusted, A=pixel-offset for `$E9AC`).
+- **`$EAA3` → `$EB99`** = fire-bullet gate (random gated by
+  level), falls through to `$EBB2` spawn.
+- **`$E910`** = RNG mutation (`($EE7A) ← R + (HL chain)`).
+
+Plus the boss tick at **`$EC4C`** (re-uses `$EAB2`/`$EABD`/
+`$E9AC` from the ship machinery + its own movement algorithm
+using `$EE81`-rotated speed table at `$EE84..$EE87`).
+
+Two unrelated main-loop calls also traced:
+- **`$DFAF`** = player-vs-scenery probe (uses `$EB62`!  if tile
+  is `$01`, JP `$DBC8` = death).  Also handles fuel-pickup via
+  `($E589)` target check + `$F90E`/`$E419` refill.
+- **`$DCAC`** = player sprite bank-shifter (maintains the
+  `$E8B0..$E8C8` address table as altitude moves between
+  scanline-fractions of a char-row).
+
+Full annotated trace in
+[`docs/disasm/ship-ai.md`](disasm/ship-ai.md); MEMORY-MAP
+entries added for every newly-named address.
