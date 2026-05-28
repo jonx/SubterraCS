@@ -61,8 +61,28 @@ public sealed class World
     // quadrant address $400F = pixel (120, 0).  The Stryker sprite is
     // 16×16 so its centre is at (128, 8).  Verified by reading the
     // $E8C9 quadrant table from at-f100.bin.
-    public int PlayerX = 128;
-    public int PlayerY = 8;
+    // Player position is FIXED on screen at (120, 0) per the original's
+    // $E8C9 quadrant addresses.  Input doesn't move the ship on screen;
+    // it adjusts Altitude/level-scroll state instead.
+    public const int FixedPlayerX = 128;
+    public const int FixedPlayerY = 4;
+    public int PlayerX = FixedPlayerX;
+    public int PlayerY = FixedPlayerY;
+
+    /// <summary>$E584 — player altitude (0..$78 = 0..120).  UP decreases,
+    /// DOWN increases, neither resets the SpeedShift.  At $78 the level
+    /// page advances and altitude resets to 0 (port of $F868 / $F6F2
+    /// chain).</summary>
+    public int Altitude;
+
+    /// <summary>$E585 — acceleration counter.  Increments while holding
+    /// a vertical direction; resets to 1 on neutral.  Effective per-frame
+    /// altitude delta = (SpeedShift >> 1) | 1.</summary>
+    public int SpeedShift = 1;
+
+    /// <summary>$E586 — direction state byte.  Bit 0 = facing left.
+    /// Bit 1 = was-moving-down (used to detect direction reversal).</summary>
+    public int DirectionState;
 
     /// <summary>Bar-fill animation override.  When >= 0 the HUD bar
     /// drawer uses this instead of <see cref="Shield"/>/<see cref="Fuel"/>.
@@ -194,28 +214,66 @@ public sealed class World
 
     private void TickPlaying(GameInput input)
     {
-        // Free flight — A/Q move up/down, L flips facing and translates.
-        if (input.Down)
+        // ---- Vertical movement — port of $D95D ----
+        // Player Y on screen is FIXED; UP/DOWN adjust Altitude
+        // (= the original's $E584).  Acceleration: each frame the
+        // direction is held, SpeedShift increments (capped at 7);
+        // the actual altitude delta is (SpeedShift >> 1) | 1.
+        // When neutral: SpeedShift resets to 1.
+        if (input.Up)
         {
-            PlayerY = Math.Min(PlayfieldBottom - 8, PlayerY + 2);
-            Fuel = Math.Max(0, Fuel - 1);
+            // Direction-change detection: bit 1 of state tracks "was
+            // moving down" — clear on UP to reset acceleration.
+            if ((DirectionState & 2) != 0)
+            {
+                DirectionState &= ~2;
+                SpeedShift = 1;
+            }
+            int delta = (SpeedShift >> 1) | 1;
+            Altitude = Math.Max(0, Altitude - delta);
+            if ((SpeedShift & 0x08) == 0) SpeedShift++;
         }
-        else if (input.Up)
+        else if (input.Down)
         {
-            PlayerY = Math.Max(PlayfieldTop + 8, PlayerY - 2);
-            Fuel = Math.Max(0, Fuel - 1);
+            if ((DirectionState & 2) == 0)
+            {
+                DirectionState |= 2;
+                SpeedShift = 1;
+            }
+            int delta = (SpeedShift >> 1) | 1;
+            Altitude = Math.Min(0x78, Altitude + delta);
+            if ((SpeedShift & 0x08) == 0) SpeedShift++;
         }
+        else
+        {
+            SpeedShift = 1;
+        }
+
+        // ---- Horizontal — port of $D9C8 ----
+        // The L key (single bit) toggles or moves horizontally.  The
+        // original repaints the top attribute strip when not pressed;
+        // we just track facing.
         if (input.Horizontal)
         {
-            PlayerX += FacingLeft ? -2 : 2;
-            if (PlayerX < 16 || PlayerX > 232)
-            {
-                FacingLeft = !FacingLeft;
-                PlayerX = Math.Clamp(PlayerX, 16, 232);
-            }
-            Fuel = Math.Max(0, Fuel - 1);
+            FacingLeft = !FacingLeft;
+            DirectionState ^= 1;
         }
-        if ((_frameCounter & 31) == 0) Fuel = Math.Max(0, Fuel - 1);
+
+        // ---- Page-advance gate — port of $F868 → $F6F2 ----
+        // At altitude $78 the level page advances.  The original adds
+        // 1000 score and calls $F6F2 (which INCs $E587 mod 6 and
+        // re-runs the full level-load chain).
+        if (Altitude >= 0x78)
+        {
+            Score += 1000;
+            LoadLevel((Depth + 1) > 5 ? 1 : Depth + 1);
+            return;
+        }
+
+        // Fuel drain — only when actually thrusting.
+        if (input.Up || input.Down || input.Horizontal)
+            Fuel = Math.Max(0, Fuel - 1);
+        if ((_frameCounter & 63) == 0) Fuel = Math.Max(0, Fuel - 1);
 
         if (Fuel <= 0) { TriggerDeath(); return; }
 
@@ -415,7 +473,7 @@ public sealed class World
             if (e.Alive && EntityAI.For(e.TypeId) != EntityAI.Kind.Worker)
                 e.Alive = false;
         }
-        PlayerX = 128; PlayerY = 4;
+        PlayerX = FixedPlayerX; PlayerY = FixedPlayerY; Altitude = 0; SpeedShift = 1; DirectionState = 0;
         Shield = 100;
         Fuel = Math.Max(50, Fuel);
         SetInvincible(100);
@@ -447,7 +505,7 @@ public sealed class World
         Current = ScheduleForLevel(level);
         foreach (var e in Entities) e.Alive = false;
         foreach (var b in Bullets) b.Alive = false;
-        PlayerX = 128; PlayerY = 4;
+        PlayerX = FixedPlayerX; PlayerY = FixedPlayerY; Altitude = 0; SpeedShift = 1; DirectionState = 0;
         Shield = 100;
         Fuel = Math.Min(100, Fuel + 25);
         SetInvincible(60);
