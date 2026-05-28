@@ -30,6 +30,7 @@ internal static class Program
             "entity-bank"       => EntityBankCommand.Run(rest),
             "player-dump"       => PlayerDumpCommand.Run(rest),
             "extract-all"       => ExtractAllCommand.Run(rest),
+            "diff-frame"        => DiffFrameCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };
@@ -96,6 +97,15 @@ internal static class Program
             Bulk-render candidate sprite cells across a RAM range.
             Each addr/shape produces a contact sheet PNG in renders/.
               -cols=N, -count=N, -scale=N — sheet dimensions / zoom
+
+          diff-frame <48k.rom> <snapshot.z80> <frames>
+              [-keys=...] [-native-keys=...] [-seed=N]
+            Run the original game inside our Z80 emulator for <frames>
+            frames AND the native C# port (headless) for the same number
+            of frames using the same input.  Drops a 3-panel side-by-side
+            composite (emu | native | red-on-diff overlay) into renders/
+            and prints the pixel-diff count + percentage.  This is the
+            primary driver for the RE-and-port workflow.
         """);
         return 0;
     }

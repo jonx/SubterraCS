@@ -39,6 +39,9 @@ internal static class HeadlessTestRunner
                     "native-headless-f{0:D5}_{1}.png", f + 1, stamp);
                 var outPath = Path.Combine(dir, name);
                 PngWriter.WriteRgba(outPath, rgba, Framebuffer.Width, Framebuffer.Height);
+                // Also dump raw RGBA next to the PNG so external diff
+                // tools can read the framebuffer without decoding PNG.
+                File.WriteAllBytes(outPath + ".rgba", rgba);
                 Console.WriteLine($"    frame {f + 1,5}: depth={world.Depth} score={world.Score} shield={world.Shield} fuel={world.Fuel} entities={world.Alive} spawned={world.Spawned}  →  {Path.GetRelativePath(root, outPath)}");
                 snapshots++;
             }
