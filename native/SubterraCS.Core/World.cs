@@ -748,12 +748,20 @@ public sealed class World
         foreach (var b in Bullets)
         {
             if (b.Alive) continue;
-            // Initial b.X is set so that AFTER the first TickPlaying's
-            // `b.X += b.DX` advance, the visible head lands one byte
-            // past the appropriate edge of the 16-px-wide ship sprite
-            // (sprite spans pixels 120..135 with PlayerX=128).
-            // - Left target  = pixel 112 → initial = 112 - (-8) = 120
-            // - Right target = pixel 136 → initial = 136 -   8 = 128
+            // Initial b.X is set so AFTER TickPlaying's `b.X += b.DX`
+            // advance, the visible head lands at the byte ONE PAST the
+            // ship's edge — exactly what the original $DEAD/$DEBC does:
+            //   $DEAD  ADD HL,BC   ; BC = facing + 15
+            //   $DEBC  ADD HL,DE   ; DE = +1 if facing right, -1 if left
+            // From byte 0 of the scanline:
+            //   facing=1 (right): byte 0 + 16 + 1 = byte 17 = pixel 136
+            //   facing=0 (left):  byte 0 + 15 - 1 = byte 14 = pixel 112
+            // Ship sprite spans pixels 120..135 (bytes 15..16) so byte
+            // 14 (left) and byte 17 (right) are immediately adjacent.
+            //
+            // Compensate for the post-tick advance:
+            //   left target=112, dx=-8 → initial = 120 = PlayerX - 8
+            //   right target=136, dx=+8 → initial = 128 = PlayerX
             b.X = PlayerX + (FacingLeft ? -8 : 0);
             b.Y = PlayerY + 4;       // middle of the 8px-tall ship sprite
             b.DX = FacingLeft ? -8 : 8;   // 1 byte = 8 px per frame
@@ -842,15 +850,16 @@ public sealed class World
         foreach (var b in Bullets)
         {
             if (!b.Alive) continue;
-            // Draw the bolt at its current head (b.X) plus a 3-byte
-            // trail behind so the motion is clearly visible.  The
-            // trail uses the same color as the head (which itself
-            // was randomized per-shot in FireBullet — matches the
-            // original's $DEC3 LD A,R; AND $07 colour cycle).
+            // Draw the bolt with a trail capped to the number of bytes
+            // the bolt has actually traveled (= MaxLength - Length),
+            // so the trail never extends BEHIND the ship's fire-time
+            // position into the ship sprite.  The color is the per-
+            // shot random attribute from $DEC3.
             int dir = b.DX > 0 ? 1 : -1;
             int baseX = b.X & ~7;
-            const int TrailBytes = 4;
-            for (int i = 0; i < TrailBytes; i++)
+            const int MaxTrail = 4;
+            int trail = Math.Min(Bullet.MaxLength - b.Length, MaxTrail);
+            for (int i = 0; i < trail; i++)
             {
                 int x = baseX - i * 8 * dir;
                 if ((uint)x >= 256) continue;
