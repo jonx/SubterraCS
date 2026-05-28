@@ -44,6 +44,7 @@ public sealed class World
     public byte[] TitleMenuScr { get; set; } = Array.Empty<byte>();
     public RomFont? RomFont { get; set; }
     public LevelEntities? LevelEntities { get; set; }
+    public readonly MiniMap MiniMap = new();
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
     // beyond that we hand off to the procedural generator so the game
@@ -386,6 +387,7 @@ public sealed class World
         Shield = 100;
         Fuel = Math.Min(100, Fuel + 25);
         SetInvincible(60);
+        MiniMap.Clear();
         PlaceWorkersForLevel(level);
         EnterState(GameState.Playing);
     }
@@ -558,6 +560,9 @@ public sealed class World
     private void DrawPlaying(Framebuffer fb)
     {
         DrawLevelScenery(fb);
+
+        // Mini-map at the bottom strip (y=160..191) — port of $E104.
+        MiniMap.DrawTo(fb);
 
         foreach (var e in Entities)
         {

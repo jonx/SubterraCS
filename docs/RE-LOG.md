@@ -1552,3 +1552,63 @@ runs for level 0 because of the anomaly).  The pixel-diff
 number didn't move much (9.63% → 9.81% → 9.63%) because the
 per-entity sprite still has to be drawn by per-type AI that's
 not byte-faithful yet — that's the next port target.
+
+## 31. The bottom "grass strip" is actually a mini map
+
+User insight: *"what you might call the bottom grass is probably
+the mini map of the level, no?"*  Re-examined the bottom strip
+(y=160..191) with this lens and the structure snapped into focus.
+
+### What's verified
+
+* The bottom-strip BITMAP is identical at frames 100 and 1500
+  (stabilises once drawn).
+* The pattern is paired-scanlines (`XX XX YY YY ZZ ZZ …` per
+  column), the signature of a vertical 2× stretch.
+* `$60F4..$70F3` (the per-level "sprite-composition" pointer
+  target — `$E579` is set to `$60F4` during level 1) holds 4 KB
+  of data, 37% non-zero at frame 100.
+* That data is BYTE-IDENTICAL at frames 60 and 100 — populated
+  by some routine early in level-load, then static.
+* `$E104` is the walker I'd already half-decoded: it traverses
+  the 4 KB region backwards calling `$E127` (which OR-writes
+  pixels via `$E1E4` and the screen-row math
+  `B = $20 - (outer<<1)` giving 16 source rows that map to the
+  32-pixel-tall strip with 2× stretch).
+* 16 source rows × 256 source cols = 4096 source bytes — exact
+  match for the buffer size.
+
+### What's still hypothesis
+
+* Whether each source byte's VALUE matters (used as a pixel mask)
+  or only its *non-zero-ness* (used as a stamp marker). The
+  `$E127` code I disassembled reads `A` from the caller without
+  setting it, so the actual pixel byte written depends on the
+  caller's previous A value — still need to trace that.
+
+### What we got wrong before
+
+* The 272 bitmap-byte changes I observed in y=160..191 between
+  f60 and f100 are NOT driven by changes in `$60F4..$70F3`
+  (which is static).  They must come from a different source —
+  most likely entity sprites that happen to draw in the strip,
+  e.g. type 8 (explosion) which spawns at y=179 per the level-1
+  entity records.  So the bottom strip = static mini-map
+  background + transient entity sprite overlap.
+
+### Searches that came back empty
+
+* The chunk `A1 A4 A5 A8 …` at `$6309` (first non-zero region
+  of the mini-map buffer) appears nowhere else in the 48 K RAM
+  — so the buffer is not COPIED from a packed level asset.
+  Something in the level-load chain WRITES the bytes
+  computationally.  The exact routine is still TBD.
+
+### Port
+
+`MiniMap.cs` ships the buffer (4096 bytes) + walker + per-pixel
+stamp helper.  Wired into `World.Draw` and `World.LoadLevel`.
+Buffer stays empty until we trace the populator; renders a blank
+strip for now.  This sets up the right SHAPE so that as soon as
+we find what writes the bytes, plugging it in needs no
+plumbing.
