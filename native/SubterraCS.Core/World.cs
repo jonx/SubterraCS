@@ -355,7 +355,7 @@ public sealed class World
             if (e.Alive && EntityAI.For(e.TypeId) != EntityAI.Kind.Worker)
                 e.Alive = false;
         }
-        PlayerX = 128; PlayerY = 8;
+        PlayerX = 128; PlayerY = 4;
         Shield = 100;
         Fuel = Math.Max(50, Fuel);
         SetInvincible(100);
@@ -387,7 +387,7 @@ public sealed class World
         Current = ScheduleForLevel(level);
         foreach (var e in Entities) e.Alive = false;
         foreach (var b in Bullets) b.Alive = false;
-        PlayerX = 128; PlayerY = 8;
+        PlayerX = 128; PlayerY = 4;
         Shield = 100;
         Fuel = Math.Min(100, Fuel + 25);
         SetInvincible(60);
