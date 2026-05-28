@@ -110,14 +110,51 @@ to the active scratch at `$E75D`.  See MEMORY-MAP §`$E69D`.
 Decoded in [`hud.md`](hud.md) (top of file).  Walks the `$E785`
 string table through `RST 10`.
 
-## Helpers still TBD
+## More level-load helpers
 
-These are called from `$F6F2` but not yet decoded in this
-session.  Disasm + annotate as we hit them:
+### `$E29B` — clear all live entity tables
 
-| Address | Called at | Purpose |
-| ------- | --------- | ------- |
-| `$E29B` | `$F72B` | TBD |
-| `$F99F` | `$F72E` | TBD |
-| `$F891` | `$F734` | TBD |
-| `$DC5D` | `$F737` | Player attribute paint (documented elsewhere) |
+Called from `$F72B`.  Wipes the three dynamic tables and clears
+the locks:
+
+```
+E29B  XOR A
+E29C  LD HL,$E46B; LD DE,$E46C; LD BC,$001F; LDIR  ; clear $E46B..$E48A (player bullets)
+E2A8  LD HL,$E8D1; LD DE,$E8D2; LD BC,$001F; LDIR  ; clear $E8D1..$E8F0 (player undo buffer)
+E2B4  LD HL,$EE9E; LD DE,$EE9F; LD BC,$0023; LDIR  ; clear $EE9E..$EEC1 (enemy bullets)
+E2C0  LD ($E583),A                                    ; scroll cursor = 0
+E2C3  JP $E2FC                                        ; (extends to boss-flag clear)
+```
+
+`$E2FC..` continues to clear `$EE7C` (boss-active) plus
+`$E8A1..` (more state).  Effectively a "fresh start" wipe for
+all moving entities/projectiles when a new level loads.
+
+### `$F891` — clear specific HUD text areas
+
+Called from `$F734`.  Prints a 12-byte stream at `$F89C` that
+amounts to: `PAPER 0; AT 0,15; "  "; AT 1,15; "  "` — blanks
+two pairs of cells in the score/depth area (probably to clear
+stale digits before new ones print).
+
+### `$F99F` — per-level fanfare
+
+Called from `$F72E`.  Plays per-level music — full trace in
+[sound.md](sound.md).
+
+### `$DC5D` — player attribute paint
+
+Called from `$F737`.  Sets up the player's attribute pattern
+($43 = bright yellow on the player's quadrant cells).
+Documented inline at the top of [player.md](player.md).
+
+### `$E2C6` — per-level pointer load
+
+Called from `$F725` (already documented above):
+- `($E579) ← $E56D[level*2]` = level scenery base
+- `($E589) ← $E58B[level*2]` = secondary level pointer (pickup target?)
+
+### `$F8B4` — fuel-low warning SFX
+
+Called by `$D879` when fuel drops below `$20`.  Dispatches a
+19-byte alert at `$F8C5` via `$FA0A` — see [sound.md](sound.md).
