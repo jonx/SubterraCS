@@ -256,17 +256,23 @@ public sealed class World
             BarFillOverride = 0;
         }
 
-        // Animate the level scroll-in: one $DB1A iteration every
-        // ScrollFramesPerStep frames, starting at ScrollStartFrame.
-        // Matches the emulator's observed pace (16 rows painted
-        // between f140 and f200 = ~3.75 frames per row).
+        // Animate the level scroll-in: target 16 steps spread across
+        // 60 frames between f140 and f200 — matches the emulator's
+        // observed 3.75-frames-per-row average.  Rate-based: each
+        // frame compute the target step count; if it's ahead of the
+        // current count, advance.
         const int ScrollStartFrame = 140;
-        const int ScrollFramesPerStep = 4;
+        const int ScrollTotalFrames = 60;
         if (_frameCounter >= ScrollStartFrame && !Scroll.ScrollComplete
-            && (_frameCounter - ScrollStartFrame) % ScrollFramesPerStep == 0
             && MiniMap.Buffer.Length > 0)
         {
-            Scroll.ScrollOneStep(Tiles, MiniMap.Buffer);
+            int elapsed = _frameCounter - ScrollStartFrame;
+            int targetSteps = Math.Min(LevelScroll.CharRows,
+                elapsed * LevelScroll.CharRows / ScrollTotalFrames + 1);
+            while (Scroll.ScrolledRows < targetSteps && !Scroll.ScrollComplete)
+            {
+                Scroll.ScrollOneStep(Tiles, MiniMap.Buffer);
+            }
         }
 
         // Update every live entity.
