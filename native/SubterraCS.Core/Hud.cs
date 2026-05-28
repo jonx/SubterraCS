@@ -129,10 +129,18 @@ public static class Hud
             : ScaleToBar(world.Fuel);
         DrawBar(fb, 7 * 8, 152, fuelBarValue);
 
-        // Lives display — emu shows 4 small Stryker icons at row 16
-        // cols 21,24,27,30 with a slightly different byte arrangement
-        // than the in-game sprite (one-scanline shift/XOR pattern I
-        // haven't decoded yet).  Suppressed until I understand it.
+        // Lives display — port of the emu's HUD top-right: 4 small
+        // 16x8 Stryker icons at row 16 cols 21, 24, 27, 30.  The
+        // bytes match the in-game sprite ($E63B) EXCEPT scanline 0
+        // has the left/right column bytes swapped (sprite[0] goes
+        // to the right column, sprite[8]=0 stays at left).  Verified
+        // by byte-for-byte comparison at f80 cols 21..22 y=128..135.
+        if (world.PlayerSpriteRight.Length >= 16)
+        {
+            ReadOnlySpan<int> livesCols = stackalloc int[] { 21, 24, 27, 30 };
+            foreach (var c in livesCols)
+                DrawLifeIcon(fb, c * 8, 128, world.PlayerSpriteRight);
+        }
 
         // Bottom decor strip (rows 20..23) — green-on-black attribute strip
         // matching the emulator's $5A80..$5AFF.  Pixel content is procedural
@@ -142,25 +150,30 @@ public static class Hud
                 fb.Attributes[row * 32 + col] = 0x04;
     }
 
-    /// <summary>Draw a 16×8 Stryker icon (overwrite, not XOR) for
-    /// the lives display.  Matches the emu's byte arrangement:
-    /// cols swapped vs in-game (left col = sprite bytes 8..15,
-    /// right col = sprite bytes 0..7), top scanline blanked.</summary>
-    private static void DrawShipIcon(Framebuffer fb, int x, int y, byte[] sprite)
+    /// <summary>Draw a 16×8 Stryker icon (overwrite, not XOR).  The
+    /// bytes match the in-game player sprite ($E63B) except scanline
+    /// 0 has the left/right columns swapped.  See callsite comment.</summary>
+    private static void DrawLifeIcon(Framebuffer fb, int x, int y, byte[] sprite)
     {
         for (int sl = 0; sl < 8; sl++)
         {
-            byte leftByte  = sl == 0 ? (byte)0x00 : sprite[8 + sl];
-            byte rightByte = sl == 0 ? sprite[0]  : sprite[sl];
-            // Re-derive: at scanline 0 the right byte should also blank
-            // (emu shows just one pixel: 78 = 01111000).
-            if (sl == 0) { leftByte = 0x00; rightByte = sprite[0]; }
+            byte leftByte, rightByte;
+            if (sl == 0)
+            {
+                // Scanline 0 has columns swapped vs in-game.
+                leftByte  = sprite[8 + sl];   // = sprite[8] = $00
+                rightByte = sprite[sl];        // = sprite[0] = $78
+            }
+            else
+            {
+                leftByte  = sprite[sl];        // in-game arrangement
+                rightByte = sprite[8 + sl];
+            }
             fb.Bitmap[Framebuffer.BitmapAddress(x, y + sl)] = leftByte;
             if (x + 8 < Framebuffer.Width)
                 fb.Bitmap[Framebuffer.BitmapAddress(x + 8, y + sl)] = rightByte;
         }
-        fb.Attributes[Framebuffer.AttributeAddress(x,     y)] = 0x46;
-        fb.Attributes[Framebuffer.AttributeAddress(x + 8, y)] = 0x46;
+        // Attribute already $46 from the HUD attr-pattern setup.
     }
 
     /// <summary>Draw text using the ROM font when available, otherwise
