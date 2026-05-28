@@ -44,7 +44,7 @@ public sealed class Sdl2InputPump
                 // L for horizontal, Enter/Space for fire.
                 case 0x71:              _input.Up = down; break;        // q
                 case 0x61:              _input.Down = down; break;       // a
-                case 0x6C:              _input.Horizontal = down; break; // l
+                case 0x6C:              _input.Horizontal = down; break; // l (scroll in current facing)
                 case Sdl2.KeyReturn:    _input.Fire = down; break;
                 case Sdl2.KeySpace:     _input.Fire = down; break;
 
@@ -52,8 +52,8 @@ public sealed class Sdl2InputPump
                 // anyone who prefers arrows.
                 case Sdl2.KeyUp:        _input.Up = down; break;
                 case Sdl2.KeyDown:      _input.Down = down; break;
-                case Sdl2.KeyLeft:      _input.Horizontal = down; break;
-                case Sdl2.KeyRight:     _input.Horizontal = down; break;
+                case Sdl2.KeyLeft:      _input.Left = down; _input.Horizontal = down; break;
+                case Sdl2.KeyRight:     _input.Right = down; _input.Horizontal = down; break;
             }
         }
 

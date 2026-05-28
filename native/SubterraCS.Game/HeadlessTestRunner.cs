@@ -77,15 +77,17 @@ internal static class HeadlessTestRunner
 
     private static void ApplyKeys(GameInput input, List<(int Start, int End, string Key)> schedule, int frame)
     {
-        input.Up = input.Down = input.Horizontal = input.Fire = false;
+        input.Up = input.Down = input.Horizontal = input.Left = input.Right = input.Fire = false;
         foreach (var (s, e, k) in schedule)
         {
             if (frame < s || frame > e) continue;
             switch (k)
             {
-                case "Q":     case "UP":   input.Up = true; break;
-                case "A":     case "DOWN": input.Down = true; break;
-                case "L":     case "LEFT": case "RIGHT": input.Horizontal = true; break;
+                case "Q":     case "UP":    input.Up = true; break;
+                case "A":     case "DOWN":  input.Down = true; break;
+                case "L":                   input.Horizontal = true; break;
+                case "LEFT":                input.Left = true; input.Horizontal = true; break;
+                case "RIGHT":               input.Right = true; input.Horizontal = true; break;
                 case "FIRE":  case "ENTER": case "SPACE": input.Fire = true; break;
             }
         }

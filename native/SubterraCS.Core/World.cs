@@ -89,6 +89,13 @@ public sealed class World
     /// Bit 1 = was-moving-down (used to detect direction reversal).</summary>
     public int DirectionState;
 
+    /// <summary>Horizontal scroll offset (0..255), in tile-columns.
+    /// Mirrors the original's $E579 source-pointer offset: when the
+    /// player holds L, the bitmap shifts one byte (one tile-col) per
+    /// frame; this offset advances to expose the next column from the
+    /// 256-column-wide source data.  Wraps at 256.</summary>
+    public int ScrollOffsetX;
+
     /// <summary>Bar-fill animation override.  When >= 0 the HUD bar
     /// drawer uses this instead of <see cref="Shield"/>/<see cref="Fuel"/>.
     /// Port of the $E41B..$E446 fill loop in the original (48 iterations
@@ -284,14 +291,23 @@ public sealed class World
             SpeedShift = 1;
         }
 
-        // ---- Horizontal — port of $D9C8 ----
-        // The L key (single bit) toggles or moves horizontally.  The
-        // original repaints the top attribute strip when not pressed;
-        // we just track facing.
-        if (input.Horizontal)
+        // ---- Horizontal — port of $D9C8 → $DA23 / $DA62 ----
+        // Holding LEFT/RIGHT (or O/P) scrolls the ENTIRE LEVEL bitmap
+        // one tile-column per frame, in the direction of the pressed
+        // key.  The ship stays at screen X=120; the level slides past
+        // it.  The plain L key scrolls in the current facing direction
+        // (same as L on the original).
+        //
+        // Facing is updated by which direction key is pressed; bit 0
+        // of DirectionState mirrors the original's $E586 bit 0.
+        if (input.Left) { FacingLeft = true;  DirectionState |= 1; }
+        else if (input.Right) { FacingLeft = false; DirectionState &= ~1; }
+
+        if (input.Horizontal && Fuel > 0 && MiniMap.Buffer.Length > 0)
         {
-            FacingLeft = !FacingLeft;
-            DirectionState ^= 1;
+            int delta = FacingLeft ? -1 : 1;
+            ScrollOffsetX = (ScrollOffsetX + delta) & 0xFF;
+            Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX);
         }
 
         // ---- Page-advance gate — port of $F868 → $F6F2 ----
@@ -577,6 +593,7 @@ public sealed class World
         // bytes (port of the original's $E579 ← $E56D[level*2] step).
         MiniMap.SelectLevel(level);
         Scroll.Reset();
+        ScrollOffsetX = 0;
         // Level scenery paint is deferred — see Scroll.PaintLevel call
         // gated by frame counter in TickPlaying, matching the emu's
         // scroll-in over f140..f200.
@@ -607,12 +624,6 @@ public sealed class World
         int workerCount = 0;
         foreach (var rec in records)
         {
-            // TEMPORARILY SUPPRESS all template entities — they appear
-            // at static positions in our port but at f=100 the emulator
-            // doesn't render any of them.  Need more RE to know when
-            // entities go "live".  For now this gives the cleanest diff.
-            if (true) { if (rec.TypeId == 0) workerCount++; continue; }
-
             var slot = NextFreeEntity();
             if (slot is null) break;
             slot.TypeId = rec.TypeId;

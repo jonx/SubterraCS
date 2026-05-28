@@ -115,17 +115,32 @@ public sealed class LevelScroll
     /// Each tile is 8 bytes from <c>tileBank</c>.
     /// </summary>
     public void PaintLevel(TileBank tileBank, byte[] levelBuffer)
+        => PaintLevelAtOffset(tileBank, levelBuffer, 0);
+
+    /// <summary>
+    /// Paint the level scenery with a horizontal scroll offset (0..255).
+    /// Each source row has 256 tile-index bytes; the visible window is
+    /// 32 cols starting at <paramref name="offsetX"/>, wrapping at 256.
+    ///
+    /// Port of $DA23 / $DA62 (which shift the entire bitmap one byte
+    /// left/right per L-press and paint a fresh column at the exposed
+    /// edge).  We track the offset directly and re-paint, which is
+    /// simpler and equivalent to the Z80 chain.
+    /// </summary>
+    public void PaintLevelAtOffset(TileBank tileBank, byte[] levelBuffer, int offsetX)
     {
         Array.Clear(PlayBitmap, 0, PlayBitmap.Length);
         if (levelBuffer.Length < CharRows * SourceStride) return;
 
+        offsetX &= 0xFF;
         for (int row = 0; row < CharRows; row++)
         {
             int srcRowBase = row * SourceStride;
             int destY = row * 8;
             for (int col = 0; col < 32; col++)
             {
-                byte tileIdx = levelBuffer[srcRowBase + col];
+                int srcCol = (col + offsetX) & 0xFF;
+                byte tileIdx = levelBuffer[srcRowBase + srcCol];
                 if (tileIdx == 0 || tileIdx >= tileBank.TileCount) continue;
                 var tile = tileBank[tileIdx];
                 for (int sl = 0; sl < 8; sl++)

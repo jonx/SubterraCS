@@ -10,6 +10,8 @@ public sealed class GameInput
 {
     public bool Up;          // climb (Q / Up arrow)
     public bool Down;        // dive  (A / Down arrow)
-    public bool Horizontal;  // strafe (L / Left or Right)
+    public bool Horizontal;  // strafe (L)
+    public bool Left;        // explicit face-left (Left arrow / O)
+    public bool Right;       // explicit face-right (Right arrow / P)
     public bool Fire;        // shoot (Enter / Space)
 }

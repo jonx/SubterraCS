@@ -2354,3 +2354,68 @@ This explains so many things at once:
 The game should now FEEL right when controls move the ship:
 UP moves the ship up, DOWN moves it down, reaching the bottom
 advances to the next level.
+
+## 42. Horizontal "movement" is level-scroll, not ship-translate
+
+User feedback: "when I press left, the ship switches side but
+stays put and the level doesn't move".  My port was toggling
+`FacingLeft` every frame the key was held, which was visually
+chaotic and didn't do anything else useful.
+
+Disassembled `$D9C8` (L-key handler) and its two scroll
+destinations:
+
+- **`$DA23`** — `LDIR` shifts the entire `$4000..$5800` region
+  (bitmap top-half + full attribute file) one byte LEFT, then
+  paints a fresh column at the right edge from the source
+  pointer.  Sets `$E586` bit 0 = 1 (facing right).
+- **`$DA62`** — symmetric, uses `LDDR` to shift RIGHT, paints
+  fresh column at the left edge.  Sets `$E586` bit 0 = 0
+  (facing left).
+
+The ship sprite stays at screen X=120 — the LEVEL slides past
+it.  Each frame the L key is held = one tile-column scroll.
+Source data per level is 4096 bytes (16 rows × 256 cols), so a
+level is actually 8 screens wide horizontally — the visible 32
+cols are a window onto the full 256-col tile map.
+
+Full annotated trace in
+[`docs/disasm/scroll-horizontal.md`](disasm/scroll-horizontal.md).
+
+### Port changes
+
+- New `ScrollOffsetX` field (0..255, wraps).
+- `LevelScroll.PaintLevelAtOffset(tileBank, buffer, offsetX)`:
+  paints the 32-col window starting at `offsetX` instead of 0.
+- Input split: `Left`/`Right` set facing; `Horizontal` triggers
+  the scroll using current facing.  Arrow keys map LEFT/RIGHT
+  to both (`Left` + `Horizontal` etc.) so a single key press
+  faces *and* scrolls.
+- Plain `L` key still scrolls in the current facing without
+  changing it (same as the original).
+- Fuel draining only when `Horizontal` is held — already
+  matches the `$D8D8` accumulator we ported in §40.
+
+### Verified by headless run
+
+Holding RIGHT from f140..f240 (100 frames) draws clearly
+different scenery at each sample interval — trees, rocks, and
+cave walls slide past as the offset advances.  Fuel ticks 95
+→ 83 over those 100 frames (~12.5 frames/unit, matches `$20`
+drain per frame with `$FF` accumulator).
+
+## 43. Level entities re-enabled
+
+The §34 commit had suppressed all template-entity placement
+because the emulator at f100 doesn't show any of the placed
+records (entities go "live" later in the start sequence).  This
+was harmless during early diff-tuning but made the gameplay
+feel empty — every level was a clear traversal with nothing to
+shoot or avoid.
+
+Removed the `if (true) continue;` short-circuit in
+`PlaceWorkersForLevel`.  Level 1 now spawns 4 entities at
+load; level 2 onwards spawn the per-level counts decoded in
+§30.  Diff against emu at f50/f100/f200 still 0% — entities
+aren't visible until past the bar-fill animation, and the
+diff harness has no FIRE input so it sits on splash.
