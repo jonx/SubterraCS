@@ -31,6 +31,13 @@ public sealed class World
     public const int PlayfieldTop = 0;        // top pixel of the play area
     public const int PlayfieldBottom = 128;   // first pixel of the HUD strip (HUD starts row 16)
 
+    /// <summary>The player ship's Y position equals <see cref="Altitude"/>.
+    /// Verified by inspecting $E8C9 quadrant addresses across the
+    /// captures in <c>build/at-down-fXXX.bin</c>: at altitude=$00 the
+    /// addresses decode to (120, 0); at altitude=$51 they decode to
+    /// (120, 80).  Y = altitude is exact.</summary>
+    public int PlayerY => Altitude;
+
     // Loaded once at boot ------------------------------------------------
     public TileBank Tiles { get; }
     public UdgBank Udgs { get; }
@@ -62,13 +69,10 @@ public sealed class World
     // quadrant address $400F = pixel (120, 0).  The Stryker sprite is
     // 16×16 so its centre is at (128, 8).  Verified by reading the
     // $E8C9 quadrant table from at-f100.bin.
-    // Player position is FIXED on screen at (120, 0) per the original's
-    // $E8C9 quadrant addresses.  Input doesn't move the ship on screen;
-    // it adjusts Altitude/level-scroll state instead.
+    // X is fixed at 120, but Y == Altitude (the ship moves vertically
+    // on screen with altitude — see PlayerY above).
     public const int FixedPlayerX = 128;
-    public const int FixedPlayerY = 4;
     public int PlayerX = FixedPlayerX;
-    public int PlayerY = FixedPlayerY;
 
     /// <summary>$E584 — player altitude (0..$78 = 0..120).  UP decreases,
     /// DOWN increases, neither resets the SpeedShift.  At $78 the level
@@ -283,10 +287,12 @@ public sealed class World
         }
 
         // ---- Page-advance gate — port of $F868 → $F6F2 ----
-        // At altitude $78 the level page advances.  The original adds
-        // 1000 score and calls $F6F2 (which INCs $E587 mod 6 and
-        // re-runs the full level-load chain).
-        if (Altitude >= 0x78)
+        // The original's gate at $F868 checks `CP $75; RET C` — so
+        // altitude must reach $75 to trigger the page advance.  Adds
+        // 1000 to score and calls $F6F2 (which INCs $E587 mod 6 and
+        // re-runs the full level-load chain).  Our $D95D port caps
+        // altitude at $78 so we use that as the trigger threshold.
+        if (Altitude >= 0x75)
         {
             Score += 1000;
             LoadLevel((Depth + 1) > 5 ? 1 : Depth + 1);
@@ -509,7 +515,7 @@ public sealed class World
             if (e.Alive && EntityAI.For(e.TypeId) != EntityAI.Kind.Worker)
                 e.Alive = false;
         }
-        PlayerX = FixedPlayerX; PlayerY = FixedPlayerY; Altitude = 0; SpeedShift = 1; DirectionState = 0;
+        PlayerX = FixedPlayerX; Altitude = 0; SpeedShift = 1; DirectionState = 0;
         Shield = BarMax;
         Fuel = Math.Max(BarMax / 2, Fuel);
         HitAccum = 0xFF;
@@ -542,7 +548,7 @@ public sealed class World
         Current = ScheduleForLevel(level);
         foreach (var e in Entities) e.Alive = false;
         foreach (var b in Bullets) b.Alive = false;
-        PlayerX = FixedPlayerX; PlayerY = FixedPlayerY; Altitude = 0; SpeedShift = 1; DirectionState = 0;
+        PlayerX = FixedPlayerX; Altitude = 0; SpeedShift = 1; DirectionState = 0;
         Shield = BarMax;
         Fuel = Math.Min(BarMax, Fuel + (BarMax / 4));
         HitAccum = 0xFF;
@@ -765,7 +771,10 @@ public sealed class World
         if (!hidePlayer)
         {
             var playerSprite = FacingLeft ? PlayerSpriteLeft : PlayerSpriteRight;
-            Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY - 4, playerSprite, 0x43);
+            // Original draws the 16×16 sprite at top-left (120, altitude)
+            // per $E8C9; PlayerX = 128 so PlayerX - 8 = 120.  Y is
+            // directly the altitude (no -4 offset).
+            Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43);
         }
 
         Hud.Draw(fb, this);

@@ -74,20 +74,35 @@ If non-zero, the main loop's pre-step routine at `$F868` returns
 immediately; no scrolling, no enemy updates, no level advance. Used
 to freeze the world during animations / death / level-complete.
 
-## RAM ($E584)  — player altitude / depth counter
+## RAM ($E584)  — player altitude **= ship screen Y**
 
 Range 0–120 (`$00`–`$78`). Pushing the DOWN key adds to it (one
-unit per frame at base speed), pushing UP subtracts. The main loop
-at `$F868` checks `CP $75; RET C` — i.e. the level only starts
-*scrolling* and the world only advances when the altitude reaches
-`$75` (117). At `$78` the player has reached the bottom of the
-current section; the game resets `$E584` to 0 and the next page of
-the level scrolls into view.
+unit per frame at base speed), pushing UP subtracts.
 
-**Practical gameplay note:** at the start of a new section the sub
-sits at altitude 0 and the world is static. The player must HOLD
-the DOWN key for ~2 seconds to dive deep enough for the level to
-start scrolling.
+**`$E584` is literally the ship's screen Y coordinate.**  Verified
+by inspecting `$E8C9` (the 4 quadrant bitmap addresses used by
+`$DCF5` to draw the player) across capture states:
+
+| Capture            | `$E584` | `$E8C9` decode      |
+| ------------------ | ------- | ------------------- |
+| `at-down-f100.bin` | `$00`   | (120, 0)            |
+| `at-down-f310.bin` | `$51`   | (120, 80)           |
+
+So the ship MOVES on screen with altitude — it is NOT fixed at
+the top of the playfield.  X is fixed at 120, Y = altitude.
+The death-anim formula at `$DBEB` (`$BF - altitude`) places
+particles at Y = 191 − altitude, which is below the ship (when
+altitude is small) — i.e. particles spawn "where the ship would
+crash" if it kept descending.
+
+At `$78` the player has reached the bottom of the playfield (one
+row above the HUD strip at y=128); `$F868`'s gate (`CP $75; RET C`)
+opens and the world advances to the next page via `$F6F2`.
+
+The level scenery itself is STATIC per page — there's no
+continuous scroll.  Each level page is painted once by `$DB1A`
+at level-load and stays static while the ship traverses the
+page.
 
 ## RAM ($E585)  — vertical-speed shift
 

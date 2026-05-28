@@ -2300,14 +2300,57 @@ harness pass that drives `FIRE` to test gameplay frames.
 
 ### Remaining ship-cycle work
 
-- **Continuous scroll with altitude.**  In the original, as
-  altitude increases the displayed scenery scrolls.  Mechanism
-  not yet decoded — `$EE74` (set to 1 at level-load by `$F6F2`)
-  is probably the scroll counter.
-
 - **Lives DEC.**  `$D8A8` reads `$E588` but doesn't write it.
   Where does the actual lives DEC happen?  Possibly inside
   `$F974` or further upstream from `$DBC8`'s entry.
 
 - **Continuous fuel drain.**  The original drains `$E466` (fuel)
   on some schedule we haven't traced yet.
+
+## 41. Altitude IS the ship's screen Y (not just a counter)
+
+A critical correction to §40.  I'd assumed the ship was fixed
+on screen at (120, 0) — the §40 commit literally renamed
+`PlayerY` to `FixedPlayerY = 4`.  Wrong.
+
+Re-inspected `$E8C9` (the 4-quadrant bitmap address table used
+by `$DCF5`) across multiple capture states, and decoded the
+bitmap addresses back to (x, y) pixel coordinates:
+
+| Capture            | `$E584` | top-left `$E8C9` decode |
+| ------------------ | ------- | ----------------------- |
+| `at-down-f100.bin` | `$00`   | (120, 0)                |
+| `at-down-f310.bin` | `$51`   | (120, 80)               |
+| `at-f300.bin`      | `$00`   | (120, 0)                |
+
+**Y = altitude, exact.**  The ship MOVES on screen with
+altitude.  X is fixed at 120 (`PlayerX = 128` minus the 8 px
+sprite-centring offset).
+
+This explains so many things at once:
+
+- The death-anim formula `$BF − altitude` places particles
+  *below* the ship — i.e. on the bitmap, at `Y = 191 - altitude`
+  which is approximately "where the ship would land if it
+  kept descending".  Now that I know the ship's actual Y is
+  altitude, it makes geometric sense.
+- The page-advance trigger at altitude ≥ `$75` (`$F868`):
+  altitude `$75` = y=117, just three pixels above the HUD
+  strip at y=128.  The ship has reached the bottom of the
+  playable area.
+- The level scenery is STATIC per page — no continuous scroll.
+  The ship traverses through static scenery; when it reaches
+  the bottom, the next page replaces the static scenery.
+
+### Port changes
+
+- `PlayerY` is now a computed property: `=> Altitude`.
+- Removed `FixedPlayerY` field.
+- Player draw at `(PlayerX - 8, PlayerY)` — was
+  `(PlayerX - 8, PlayerY - 4)`; the -4 was a leftover guess.
+- Page-advance trigger lowered from `>= 0x78` to `>= 0x75`,
+  matching `$F868`'s `CP $75; RET C`.
+
+The game should now FEEL right when controls move the ship:
+UP moves the ship up, DOWN moves it down, reaching the bottom
+advances to the next level.
