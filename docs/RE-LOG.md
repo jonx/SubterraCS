@@ -2557,26 +2557,37 @@ E32B  LD BC,$0020            ; 32 bytes
 E32E  LDIR                   ; copy
 ```
 
-The destination `$E597` is the **live entity table** that the
-collision routine `$DD8C` walks and that `$E235` draws on the
-mini-map.
+**CORRECTION (user pointed out):** I initially called these
+"world-positioned entities for the player to scroll through".
+That's wrong — these are the **mini-map markers + collision
+points**, not visible playfield entities.
 
-Each 4-byte record at `$E597`:
-- `+0`: world X (0..255 byte cols across the 256-col level)
-- `+1`: Y (used by `$E235` as `30 - Y/4` to map to mini-map row)
-- `+2`: status (bit 7 = alive; bits 5..6 maybe type/colour)
-- `+3`: 0 (reserved)
+The draw routine for `$E597` is `$E235`:
 
-Level 1's init data (decoded from `at-f100.bin`):
 ```
-(X=$50, Y=$58)   (X=$EA, Y=$60)   (X=$1B, Y=$68)   (X=$B9, Y=$08)
-(X=$27, Y=$10)   (X=$6F, Y=$10)   (X=$F2, Y=$08)   (X=$02, Y=$38)
+E235  LD A,$1E              ; A = 30
+E237  LD B,(IX+$01)          ; B = entity Y
+E23A  SRL B; SRL B           ; B = Y / 4
+E23E  SUB B                  ; A = 30 - Y/4   (vertical scale-down)
+E23F  LD B,A
+E240  LD C,(IX+$00)          ; C = entity X
+E243  INC C
+E244  CALL $E1DE             ; XOR a single byte to screen
 ```
 
-X values span 2..242 — across the full 256-col world.  Most are
-off-screen at game start (only X=$27=39 lands in the first
-screen's 0..31 byte range after subtracting player byte-offset
-15); they come into reach as the player scrolls right.
+`$E1DE` resolves `(B, C)` to a screen address; the inner math at
+`$E1E4` does `scanline = $BF - B = 191 - (30 - Y/4) = 161 + Y/4`.
+So scanlines land in 161..191 — **exactly the mini-map strip**
+at y=160..191.  Each record produces a single byte (≤7 lit
+pixels) somewhere on the mini-map.
+
+So `$E597` entities serve two purposes:
+1. Drawn as dots on the mini-map (`$E235`)
+2. Compared against `($E583) + $0F` for collision (`$DD8C`) —
+   when the player's world byte-offset matches an entity's X,
+   collision fires
+
+But they are NOT drawn on the playfield as visible sprites.
 
 ### `$E583` is the WORLD-SCROLL CURSOR
 
@@ -2590,17 +2601,31 @@ Called from:
 - `$DA54  LD E,$01; CALL $DB06`  (in `$DA23` = scroll left, ship moves right)
 - `$DA93  LD E,$FF; CALL $DB06`  (in `$DA62` = scroll right, ship moves left)
 
-The collision check at `$DD55` builds the player's world position
-as `($E583) + $0F` (= scroll cursor + 15 byte-offset).  So the
-player's world byte = `$E583 + 15` ranges 15..15+255 as the
-player scrolls.
+### Where is the THIRD entity system?
+
+If the user-visible entities aren't from System B, and System A
+only has 10 records mostly on screen 1, then the wider-level
+gameplay entities must come from somewhere I haven't traced
+yet.  Candidates:
+
+- `$E937` is a third routine that reads `$E597` — partially
+  decoded; iterates 7 entities and references a per-record
+  pointer table at `$E5DB`.  May be the playfield draw I'm
+  missing.
+- The spawn schedule at `$E69D` (32 bytes per level, copied to
+  `$E75D` at level-load by `$E2E5`) — possibly the timed
+  spawning of moving hazards.
+- The `$F2EB` records DO render on the playfield (system A) but
+  only have 10 entries; maybe they're loaded into a different
+  list-format somewhere that expands them per scroll position.
+
+Next investigation: trace `$E937` and the `$E5DB` table.
 
 ### Port status
 
 This commit ports System A correctly (`DecodeEntityPosition`
-using the `TopAddr + offset` formula).  System B (`$E48D`
-init-data → `$E597` live entities) is **not yet ported** — the
-asset is extracted to `assets/extracted/level-init-e48d.bin`
-(192 bytes = 6 × 32) but no loader uses it yet.  Adding System B
-will populate the world-positioned entities the user expects
-to encounter while scrolling.
+using the `TopAddr + offset` formula).  System B has its asset
+extracted but no loader yet — and per the correction above, the
+loader needs to populate mini-map data + collision points, NOT
+playfield entities.  The playfield-population mystery is still
+open.

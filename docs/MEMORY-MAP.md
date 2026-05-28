@@ -673,7 +673,7 @@ the PAPER-0 attribute, which turns INK-X-on-PAPER-0 cells into
 INK-0-on-PAPER-0 → invisible. So full strength = rainbow, drain
 from the right.
 
-## RAM ($E48D–$E54C) — per-level "init data" (192 bytes)
+## RAM ($E48D–$E54C) — per-level mini-map+collision init data
 
 Six 32-byte blocks, one per level.  `$E319` copies the active
 level's block to `$E597` at level-load.  Format: **8 records ×
@@ -681,22 +681,19 @@ level's block to `$E597` at level-load.  Format: **8 records ×
 
 | Offset | Meaning |
 | ------ | ------- |
-| +0     | World X (0..255 byte cols across the 256-col world) |
+| +0     | X (compared to player at `$DD8C` collision; passed as the mini-map column to `$E235`) |
 | +1     | Y (used by `$E235` as `30 - Y/4` to map to mini-map row) |
-| +2     | Status (bit 7 = alive; bits 5..6 maybe type/colour) |
+| +2     | Status (bit 7 = alive) |
 | +3     | Reserved (always 0 in observed data) |
 
-Verified by reading at-f100.bin level 1's block at `$E4AD`:
-```
-50 58 80 00   ea 60 a0 00   1b 68 e0 00   b9 08 80 00
-27 10 80 00   6f 10 80 00   f2 08 e0 00   02 38 80 00
-```
+`$E235` draws a single byte per record onto the **mini-map
+strip** (y=160..191), via `$E1E4` math that resolves the
+scanline to `161 + Y/4` — so this is NOT a playfield draw.
+The records double-serve as collision points: `$DD8C` matches
+their X against `($E583) + $0F`.
 
-These X values span 2..242, scattered across the wider-than-
-screen world — most are off-screen at game start and the player
-encounters them while scrolling.  This is distinct from the
-`$F2EB`-style records (fixed playfield decor; see
-[`disasm/entities.md`](disasm/entities.md)).
+This is distinct from the `$F2EB`-style records (fixed playfield
+decor; see [`disasm/entities.md`](disasm/entities.md)).
 
 ## Code ($DB06) — world-scroll cursor update
 
