@@ -21,7 +21,7 @@ internal static class ExtractAllCommand
         (0xF5A0, 0x0040, "entity-types-f5a0.bin"), // type table
         (0xE56D, 0x000C, "level-spriteptr-e56d.bin"),
         (0xE57C, 0x0006, "level-speed-e57c.bin"),
-        (0xE58B, 0x000C, "level-secondptr-e58b.bin"),
+        (0xE58B, 0x000C, "fuel-stations-e58b.bin"),  // 6 × (X, Y) fuel-station positions — see docs/disasm/assets.md
         (0xE69D, 0x00C0, "level-schedules-e69d.bin"),
     };
 

@@ -26,7 +26,6 @@ extracted by separate one-shot commands listed below.
 | [entity-types-f5a0.bin](#entity-types-f5a0bin)     | `$F5A0`  |   92 | `EntityTypeTable`               | (sprite-ptr, frame-count, attr) × 23 entity types |
 | [level-spriteptr-e56d.bin](#level-spriteptr-e56dbin) | `$E56D` | 12   | (currently unused)              | 6 × pointer to per-level tile-data bank |
 | [level-speed-e57c.bin](#level-speed-e57cbin)       | `$E57C`  |  6   | (currently unused)              | 6 × per-level scroll-speed / colour byte |
-| [level-secondptr-e58b.bin](#level-secondptr-e58bbin) | `$E58B` | 12   | (currently unused)              | 6 × second per-level pointer (legacy duplicate of fuel stations) |
 | [fuel-stations-e58b.bin](#fuel-stations-e58bbin)   | `$E58B`  | 12   | `World.FuelStationData`         | 6 × (X, Y) fuel-station position per level |
 | [level-init-e48d.bin](#level-init-e48dbin)         | `$E48D`  | 192  | `EnemyShips.LoadFromInit`       | 6 × 32 bytes of enemy-ship init data (LDIR'd to `$E597`) |
 | [level-schedules-e69d.bin](#level-schedules-e69dbin) | `$E69D` | 192  | `OriginalLevels` + `WorkerScheduleData` | 6 × 32 bytes of worker / spawn schedule |
@@ -166,17 +165,6 @@ RAM footprint after game-init.
   colour; `$DB6C` scenery-paint attribute.
 - **Port:** NOT loaded as a separate file; the port hard-codes
   one level colour through `Scroll.LevelColour`.
-
-## level-secondptr-e58b.bin
-
-- **Cassette source:** `$E58B..$E596` (12 bytes)
-- **What it is:** same bytes as `fuel-stations-e58b.bin` —
-  duplicate extract under a different name from an earlier
-  exploratory pass.  Kept around because the address might
-  serve a different role we haven't fully decoded
-  (`level-secondptr` was the working hypothesis; `fuel-stations`
-  is what the bytes actually do).
-- **Port:** unused.
 
 ## fuel-stations-e58b.bin
 
@@ -356,7 +344,7 @@ canonical source because:
 | `$E48D..$E54C`             | `level-init-e48d.bin`   | `EnemyShips`                  |
 | `$E56D..$E578`             | `level-spriteptr-e56d.bin` | (unused — single bank only) |
 | `$E57C..$E581`             | `level-speed-e57c.bin`  | (unused)                      |
-| `$E58B..$E596`             | `fuel-stations-e58b.bin` (= `level-secondptr-e58b.bin`) | `World.FuelStationData` |
+| `$E58B..$E596`             | `fuel-stations-e58b.bin` | `World.FuelStationData` |
 | `$E62B..$E6D2`             | `udgs-e62b.bin`         | `UdgBank`                     |
 | `$E63B..$E69A`             | `player-e63b.bin`       | `World.PlayerSpriteRight/Left`|
 | `$E69D..$E75C`             | `level-schedules-e69d.bin` | `OriginalLevels` + `Workers` |
