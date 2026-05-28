@@ -2802,3 +2802,94 @@ since both come from the same per-level data block at `($E579)`.
 
 Diff vs emu at f50/f100/f200 still 0%.  Fuel-pickup logic
 (`$DFE1..$DFEB`) not yet ported.
+
+## 51. Damage chain — XOR-overlap vs coord-overlap, no invincibility
+
+Investigation prompted by "ship doesn't take damage, only walls
+hurt me".  Disassembled `$DCF5` (player XOR draw), `$DDC4`
+(damage chain), `$DD4A`/`$DD4D` (walker entries), `$DD8C`/`$DDAA`
+(per-entity tests), and `$EB7A`/`$EDC0` (address-match triggers).
+Findings written up in [`docs/disasm/damages.md`](disasm/damages.md);
+this is the why-it-took-multiple-passes narrative.
+
+### Three triggers, two consequences
+
+The cassette has THREE damage triggers:
+
+1. **`$DCF5` XOR-overlap (PRIMARY)**: the player's XOR draw sets
+   a shadow carry at `$DD2A SCF` whenever it XORs into a non-zero
+   bitmap byte (idiom: `INC (HL); DEC (HL); JR Z,skip → SCF`).
+   Post-draw, `$DD3B CALL C,$DD4A` fires the damage chain.
+2. **`$EB7A` ship address-match**: in the ship AI, after computing
+   each ship's draw address, walk the player's 4 quadrant
+   addresses at `$E8C9`.  On match → `CALL $DD4A`.
+3. **`$EDC0` bullet address-match**: same, called from per-frame
+   bullet tick.
+
+`$DD4A` enters at the top with `CALL $DDC4` (= damage chain:
+border-flash sound + `$E463 -= $40`; on underflow `$E464 --`).
+Then falls into `$DD4D` (entry +3), the per-frame entity walker,
+which tests each entity against player coords with `$DD8C` /
+`$DDAA` — overlap → `JP $DBC8` (INSTANT DEATH, no shield drain).
+
+So the consequences are different:
+- XOR-overlap or address-match → `$DDC4` (damage drain, 4 hits =
+  1 shield notch)
+- Coord-overlap (in the walker) → instant DEATH
+
+### Why this took five passes
+
+Multiple sessions spent guessing coord windows before
+disassembling.  The fixes layered up:
+
+1. **Pass 1**: speculative widening of ship coord window from
+   exact to ±1 byte (no ASM consulted).  User caught me: "are
+   you verifying in the asm code? or you're just fixing the code
+   directly?"  Reverted.
+2. **Pass 2**: faithful `$DD8C`/`$DDAA` port — X ∈ {p, p-1},
+   Y |Δ| < 8 (ships) / Y Δ ∈ [0, 7] (bullets, `RET M` rejects
+   negatives).  Documented in [collision.md](disasm/collision.md).
+3. **Pass 3**: disassembled `$DCF5` for the real damage trigger.
+   `Blitters.DrawPlayerXor` returns `bool overlap` (port of
+   `$DD25 INC/DEC/JR Z` + `$DD29 SCF`); reordered `DrawPlaying`
+   so entities draw before player; latched flag consumed next
+   `TickPlaying`.
+4. **Pass 4**: disassembled `$DDC4` — the cassette has NO
+   per-hit invincibility, every overlap frame drains the
+   accumulator.  Removed my `SetInvincible(20)` from the damage
+   block (the artifact was throttling damage to ~1/sec from the
+   cassette's ~60/sec).  Kept `Invincible` only as a
+   respawn/level-load grace period.  Saved memory note
+   `project_invincibility_secret.md` — the removed cooldown
+   could later become an opt-in cheat/pickup ("easy mode" or
+   shield-bubble).
+5. **Pass 5**: separated coord-overlap from XOR-overlap into
+   their cassette-faithful consequences.  Coord overlap
+   (`LastTickHits` + `EnemyShots.Tick` return) now fires
+   `TriggerDeath` directly (port of `$DD4D` instant-death walker)
+   rather than feeding the damage drain.  XOR overlap continues
+   to drain `HitAccum`.
+
+### Visual signature
+
+The player-flicker the user sees when getting hit is XOR
+cancellation — player sprite bits XOR with bullet/ship sprite
+bits, producing a 1-frame visual artifact.  This IS the
+cassette's visual signature of damage firing.  Not invincibility
+blink (the cassette has no such blink for the damage path).
+This means: if you see the ship flicker, damage *is* being
+applied; just slowly (4 hits = 1 shield notch from $FF=255 down
+through $BF/$7F/$3F).
+
+### Diff impact
+
+`fb.Clear()` runs every frame, so the draw-order change
+(entities-then-player vs player-then-entities) doesn't compound
+across frames.  Verified diff vs emu at f100/f300/f500 still 0%
+(title screen) after the reorder.  Gameplay diff is non-zero
+unrelated to this change.
+
+Headless test runner (`HeadlessTestRunner.cs`) now calls
+`world.Draw(fb)` *every* frame instead of only render-drop
+frames, because the XOR-overlap flag latches at Draw time —
+sparse Draw cadence would silently change game state vs SDL2.

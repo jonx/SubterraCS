@@ -239,8 +239,12 @@ public sealed class EnemyShips
                 bullets.TrySpawnAt(s.X, s.Y, playerByteX, playerY);
             }
 
-            // Port of $EB7A: ship-vs-player collision.
-            if (s.X == playerByteX && Math.Abs(s.Y - playerY) < 16)
+            // Port of $DD8C (stride-4 ship test, see docs/disasm/collision.md):
+            //   X: entity_X == p  OR  entity_X+1 == p   (= entity in {p, p-1})
+            //   Y: |entity_Y - playerY| < 8
+            // where p = playerByteX = ($E583)+$0F.
+            int sdx = (playerByteX - s.X) & 0xFF;
+            if ((sdx == 0 || sdx == 1) && Math.Abs(s.Y - playerY) < 8)
             {
                 LastTickHits |= (1 << i);
             }

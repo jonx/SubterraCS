@@ -137,12 +137,15 @@ public sealed class EnemyBullets
                 if (tile != 0) { e.Status = 0; continue; }
             }
 
-            // Player collision — port of $EDC0.  Player's world byte
-            // = scrollCursor + 15..16 (the 2 bytes the ship sprite
-            // covers); collide if enemy's world byte matches AND Y
-            // is within the player sprite (16 px tall).
-            if ((e.X == playerByteX || e.X == playerByteX + 1)
-                && Math.Abs(e.Y - playerY) < 16)
+            // Port of $DDAA (stride-6 bullet test, see docs/disasm/collision.md):
+            //   X: entity_X == p  OR  entity_X+1 == p   (= entity in {p, p-1})
+            //   Y: 0 <= entity_Y - playerY < 8           (only at-or-below player;
+            //                                              cassette `RET M` rejects
+            //                                              entity-above-player case)
+            // where p = playerByteX = ($E583)+$0F.
+            int bdx = (playerByteX - e.X) & 0xFF;
+            int ydiff = e.Y - playerY;
+            if ((bdx == 0 || bdx == 1) && ydiff >= 0 && ydiff < 8)
             {
                 hitMask |= (1 << i);
             }

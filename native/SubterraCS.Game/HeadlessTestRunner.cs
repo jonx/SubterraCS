@@ -29,9 +29,12 @@ internal static class HeadlessTestRunner
         {
             ApplyKeys(input, schedule, f);
             world.Tick(input);
+            // Draw EVERY frame to match SDL2 cadence — the $DCF5
+            // XOR-overlap collision flag latches at Draw time, so a
+            // sparse Draw schedule would miss most damage events.
+            world.Draw(fb);
             if (f == 0 || (f + 1) % dropEvery == 0 || f == frames - 1)
             {
-                world.Draw(fb);
                 var rgba = fb.ToRgba();
                 var dir = Path.Combine(root, "renders");
                 Directory.CreateDirectory(dir);

@@ -78,26 +78,41 @@ public static class Blitters
     /// <c>$DCF5</c>.  <paramref name="sprite"/> is 16 bytes:
     /// [TL 8 bytes][TR 8 bytes]; the bottom 16 bytes are treated as
     /// zero (matches the live game: the Stryker is 16 × 8).
+    ///
+    /// Returns true if ANY non-transparent sprite byte was about to
+    /// XOR into an already-non-zero screen byte — port of the
+    /// <c>$DD25 INC (HL); DEC (HL); JR Z,$DD2C → $DD29 EX AF,AF';
+    /// SCF; EX AF,AF'</c> shadow-carry flag, which the cassette uses
+    /// at <c>$DD3A EX AF,AF'; CALL C,$DD4A</c> to fire the damage
+    /// chain.  This is the cassette's PRIMARY collision trigger
+    /// (see docs/disasm/collision.md).  Caller forwards this flag
+    /// into the per-frame damage path.
     /// </summary>
-    public static void DrawPlayerXor(Framebuffer fb, int x, int y, ReadOnlySpan<byte> sprite, byte attr)
+    public static bool DrawPlayerXor(Framebuffer fb, int x, int y, ReadOnlySpan<byte> sprite, byte attr)
     {
-        if (sprite.Length < 16) return;
+        if (sprite.Length < 16) return false;
+        bool overlap = false;
         for (int row = 0; row < 8; row++)
         {
             int yy = y + row;
             if ((uint)yy < Framebuffer.Height && (uint)x < Framebuffer.Width)
             {
                 int idx = Framebuffer.BitmapAddress(x, yy);
-                fb.Bitmap[idx] ^= sprite[row];
+                byte sp = sprite[row];
+                if (sp != 0 && fb.Bitmap[idx] != 0) overlap = true;
+                fb.Bitmap[idx] ^= sp;
             }
             if ((uint)yy < Framebuffer.Height && (uint)(x + 8) < Framebuffer.Width)
             {
                 int idx = Framebuffer.BitmapAddress(x + 8, yy);
-                fb.Bitmap[idx] ^= sprite[8 + row];
+                byte sp = sprite[8 + row];
+                if (sp != 0 && fb.Bitmap[idx] != 0) overlap = true;
+                fb.Bitmap[idx] ^= sp;
             }
         }
         PaintAttr(fb, x,     y, attr);
         PaintAttr(fb, x + 8, y, attr);
+        return overlap;
     }
 
     /// <summary>

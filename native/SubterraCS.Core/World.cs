@@ -69,6 +69,15 @@ public sealed class World
     public readonly WorkerSchedule Workers = new();
     private bool _levelPainted;
 
+    /// <summary>Latched at draw time (port of <c>$DCF5</c>'s shadow-carry
+    /// SCF at <c>$DD2A</c>): true if the player's last XOR-draw overlapped
+    /// a non-zero screen byte.  Consumed (and cleared) by the next
+    /// <see cref="TickPlaying"/> to fire the damage chain (port of
+    /// <c>$DD3B CALL C,$DD4A</c>).  This is the cassette's PRIMARY
+    /// collision trigger; the <c>$EB7A</c>/<c>$EDC0</c> address-match
+    /// paths in <see cref="EnemyShipTable"/> are a backup.</summary>
+    private bool _playerXorOverlap;
+
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
     // beyond that we hand off to the procedural generator so the game
     // keeps going.
@@ -515,6 +524,13 @@ public sealed class World
                 var rule = EntityAI.Collision(kind);
                 // Port of $DDC4: damage hits drain the HitAccum by $40;
                 // only on underflow does the visible Shield decrement.
+                // The cassette's $DDC4 has NO invincibility — every
+                // frame of overlap fires the chain, so 4 consecutive
+                // frames drop shield by 1 (at 60fps that's ~15
+                // shield/sec, ~6s death from full shield while stuck).
+                // We honour Invincible only as a respawn/level-load
+                // grace period (set by Respawn/LoadLevel), never as a
+                // per-damage-hit cooldown.
                 if (rule.ShieldDelta < 0)
                 {
                     HitAccum -= 0x40;
@@ -524,7 +540,6 @@ public sealed class World
                         Shield = Math.Max(0, Shield - 1);
                     }
                     Sfx.Trigger(SfxKind.Damage);
-                    SetInvincible(20);
                 }
                 else
                 {
@@ -562,15 +577,30 @@ public sealed class World
             }
         }
 
-        // Ship-vs-player collision (port of $EB7A → $DD4A).  Combined
-        // with bullet hits below to apply HitAccum damage.
-        int hits = EnemyShipTable.LastTickHits;
-
         // Enemy BULLETS — $ED01 per-frame tick.  Bullets are spawned by
         // ships above via $EBB2 (= EnemyShots.TrySpawnAt), not random.
-        hits |= EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY, MiniMap.Buffer);
-        if (hits != 0 && !Invincible)
+        // The return value is the coord-overlap bitmask (port of
+        // $DDAA's `JP C,$DBC8` instant-death detection).
+        int deathHits = EnemyShipTable.LastTickHits
+                      | EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY, MiniMap.Buffer);
+
+        // $DD4D per-frame DEATH walker (called from $E8FD at $E90C).
+        // Walks ships ($E597) + bullets ($EE9E) with $DD8C / $DDAA and
+        // jumps to $DBC8 (instant death) on any coord overlap.  Tight
+        // window: entity_X ∈ {p, p-1}, |Y diff| < 8 (bullets: 0..7
+        // below player only).  Honoured Invincible (respawn / level
+        // grace) prevents instant-death just after respawn.  See
+        // docs/disasm/damages.md.
+        if (deathHits != 0 && !Invincible) { TriggerDeath(); return; }
+
+        // PRIMARY damage trigger — port of $DCF5/$DD2A shadow-carry +
+        // $DD3B CALL C,$DD4A → $DDC4.  Looser than the death walker:
+        // any pixel-overlap of the player XOR-draw fires this, even
+        // when the entity centre is well outside the $DD8C box.  Drain
+        // accumulates; 4 hits → 1 shield notch.  See damages.md.
+        if (_playerXorOverlap && !Invincible)
         {
+            _playerXorOverlap = false;
             HitAccum -= 0x40;
             if (HitAccum < 0)
             {
@@ -578,8 +608,14 @@ public sealed class World
                 Shield = Math.Max(0, Shield - 1);
             }
             Sfx.Trigger(SfxKind.Damage);
-            SetInvincible(20);
             if (Shield <= 0) { TriggerDeath(); return; }
+        }
+        else if (_playerXorOverlap)
+        {
+            // Invincible (respawn/level grace) → drop the flag without
+            // applying damage, matching the cassette's $DDC4 entry
+            // being a no-op when shield drain is suppressed.
+            _playerXorOverlap = false;
         }
 
         // Lasers — port of $DE41 + $DEF0.  In the original, all 15
@@ -1062,6 +1098,18 @@ public sealed class World
             }
         }
 
+        // Playfield-only draws: ship sprites + boss + workers + bullets.
+        // Draw entities FIRST so the player's XOR-overlap probe (in
+        // DrawPlayerXor below) catches collisions with their pixels.
+        // The cassette's main loop calls $DCF5 (player draw) BEFORE
+        // $E8FD (entities), but its bitmap retains last-frame entity
+        // pixels — same net effect.  Since XOR is commutative the
+        // final pixel state is identical regardless of order.
+        EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
+        Boss.Draw(fb, ScrollOffsetX, EnemyShipTable.SpriteBanks, EnemyShipTable.Cycle);
+        Workers.DrawPlayfield(fb, ScrollOffsetX);
+        EnemyShots.Draw(fb, ScrollOffsetX);
+
         bool hidePlayer = State == GameState.Dying
                           || (Invincible && (_frameCounter & 2) == 0)
                           // Match the emu: the player is not drawn
@@ -1076,14 +1124,13 @@ public sealed class World
             // Original draws the 16×16 sprite at top-left (120, altitude)
             // per $E8C9; PlayerX = 128 so PlayerX - 8 = 120.  Y is
             // directly the altitude (no -4 offset).
-            Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43);
+            // Capture shadow-carry overlap flag — port of $DD2A SCF.
+            // Consumed by next TickPlaying via _playerXorOverlap.
+            if (Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43))
+            {
+                _playerXorOverlap = true;
+            }
         }
-
-        // Playfield-only draws: ship sprites + boss + workers + bullets.
-        EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
-        Boss.Draw(fb, ScrollOffsetX, EnemyShipTable.SpriteBanks, EnemyShipTable.Cycle);
-        Workers.DrawPlayfield(fb, ScrollOffsetX);
-        EnemyShots.Draw(fb, ScrollOffsetX);
 
         // Hud.Draw clears y=128..191 then paints HUD chrome + bars.
         Hud.Draw(fb, this);

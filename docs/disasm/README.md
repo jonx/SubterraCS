@@ -27,6 +27,7 @@ routine's *code*.
 | [scroll-horizontal.md](scroll-horizontal.md) | `$D9C8` L-key handler + `$DA23` scroll-left + `$DA62` scroll-right + `$DAA9` fresh-column paint | **done** |
 | [laser.md](laser.md) | `$DE41` fire-key handler + `$DEF0..$DF1B` per-frame beam tail-recede | **done** |
 | [collision.md](collision.md) | `$DD4A` collision walker + `$DD8C` / `$DDAA` per-entity 8×8 box check | partial |
+| [damages.md](damages.md) | `$DCF5` XOR-overlap trigger + `$EB7A` / `$EDC0` address-match + `$DDC4` chain — how the player takes damage | **done** |
 | [enemies.md](enemies.md) | Top-level entity-subsystem map: ships / bullets / boss / workers | **done** |
 | [ship-ai.md](ship-ai.md) | `$E920` ship AI + all helpers (`$EADE`, `$EB00`, `$EB5B`, `$EB7A`, `$EAB2/$EABD`, `$DFAF`, `$DCAC`) | **done** |
 | [boss.md](boss.md) | `$EC10` spawn + `$EC4C` tick + `$EE7D` state | **done** |

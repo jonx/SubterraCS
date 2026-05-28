@@ -458,10 +458,16 @@ DD3E  LD BC,$0028; LD HL,$E8A9; LD DE,$E8D1; LDIR
 
 The four-iteration column loop is what makes the player a 16 × 16
 sprite (the `INC IX; INC IX` advances the screen-address pointer
-between columns); the inner loop draws an 8-row column. Note the
-shadow-A trick: the shadow carry flag is set whenever any
-non-transparent byte was actually drawn, then `$DD4A` is invoked
-to do attribute / collision handling.
+between columns); the inner loop draws an 8-row column.
+
+**Shadow-carry collision flag** (`$DD29 SCF`): the cassette's
+PRIMARY damage trigger.  Before drawing, `$DCFC..$DCFE EX AF,AF';
+XOR A; EX AF,AF'` clears the shadow carry.  Inside the draw loop,
+`$DD25 INC (HL); DEC (HL); JR Z,skip` tests "is the target screen
+byte already non-zero?" — if so, `$DD29 EX AF,AF'; SCF; EX AF,AF'`
+latches the shadow carry.  Post-draw, `$DD3B EX AF,AF'; CALL
+C,$DD4A` fires the damage chain when the flag is set.  See
+[`docs/disasm/damages.md`](disasm/damages.md) for the full chain.
 
 ## RAM ($F5A0–$F5DF)  — entity-type table (4 bytes × ~16 types)
 
