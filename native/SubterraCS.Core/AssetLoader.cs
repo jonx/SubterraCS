@@ -20,6 +20,7 @@ public sealed class Assets
     public byte[] SplashScr { get; }
     public byte[] TitleMenuScr { get; }
     public RomFont RomFont { get; }
+    public LevelEntities LevelEntities { get; }
 
     public Assets(string assetsDir)
     {
@@ -47,6 +48,11 @@ public sealed class Assets
         // original HUD-print path through RST 10.  Required for
         // byte-identical HUD text.
         RomFont = RomFont.Load(Path.Combine(assetsDir, "rom-font.bin"));
+
+        // Per-level static entity placements ($F2E8+, indexed by
+        // counts at $F2E2 and pointers at $F594).  6-byte header
+        // + 6 × N × 8 bytes of records.
+        LevelEntities = LevelEntities.Load(Path.Combine(assetsDir, "level-entities-f2e8.bin"));
     }
 
     private static byte[] LoadOptionalScr(string dir, string name)

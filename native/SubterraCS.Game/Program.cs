@@ -45,6 +45,7 @@ internal static class Program
             SplashScr = assets.SplashScr,
             TitleMenuScr = assets.TitleMenuScr,
             RomFont = assets.RomFont,
+            LevelEntities = assets.LevelEntities,
         };
 
         // Pass music data through to whichever runner uses it.

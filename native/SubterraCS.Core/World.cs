@@ -43,6 +43,7 @@ public sealed class World
     public byte[] SplashScr { get; set; } = Array.Empty<byte>();
     public byte[] TitleMenuScr { get; set; } = Array.Empty<byte>();
     public RomFont? RomFont { get; set; }
+    public LevelEntities? LevelEntities { get; set; }
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
     // beyond that we hand off to the procedural generator so the game
@@ -385,12 +386,53 @@ public sealed class World
     }
 
     /// <summary>
-    /// Static placement of the rescuable workers on this level.
-    /// Count rises gently with depth so the rescue mission gets harder
-    /// the further the player gets.  Positions are deterministic from
-    /// the level number so a given playthrough is reproducible.
+    /// Static placement of entities for this level — uses the
+    /// per-level records from <c>$F2E8</c> (RE-LOG §30).  Each record
+    /// supplies (type, y, frame, top-screen-addr) which we decode
+    /// back to (type, x, y) for the C# entity instance.
+    ///
+    /// Note: the original's "level 0" record list is anomalous
+    /// (overlaps with level 1's start), so we use the records as
+    /// stored but expect level 1+ to be the cleanly-decoded path.
     /// </summary>
     private void PlaceWorkersForLevel(int level)
+    {
+        if (LevelEntities is null || level >= LevelEntities.Levels.Length)
+        {
+            PlaceFallbackWorkers(level);
+            return;
+        }
+
+        var records = LevelEntities.Levels[level];
+        int workerCount = 0;
+        foreach (var rec in records)
+        {
+            var slot = NextFreeEntity();
+            if (slot is null) break;
+            slot.TypeId = rec.TypeId;
+            slot.Frame = rec.Frame & 0x0F;     // frames are 0..15
+            slot.FrameTick = 0;
+            slot.MaxFrames = TypeMaxFrames(rec.TypeId);
+            slot.AgeFrames = 0;
+            slot.Hp = 1;
+            // Decode (x, y) from the original's top-half screen address.
+            var (x, y) = LevelEntities.DecodeBitmapAddress(rec.TopAddr);
+            slot.X = x;
+            slot.Y = y;
+            slot.DX = (rec.Flags & 0x40) != 0 ? -1 : 1;
+            slot.DY = 0;
+            slot.Alive = true;
+            if (rec.TypeId == 0) workerCount++;
+        }
+        // Only require rescues if the level actually has workers; some
+        // pages are pure hazard rooms.  Setting to 0 disables the
+        // auto-progress check until we wire a different end-condition.
+        _workersToRescueThisLevel = workerCount;
+    }
+
+    /// <summary>Fallback if level-entity asset is missing — keeps the
+    /// rescue mechanic alive without crashing.</summary>
+    private void PlaceFallbackWorkers(int level)
     {
         int workers = Math.Clamp(3 + level, 3, 8);
         _workersToRescueThisLevel = workers;
@@ -399,16 +441,11 @@ public sealed class World
         {
             var slot = NextFreeEntity();
             if (slot is null) break;
-            slot.TypeId = 0;       // worker bank
-            slot.Frame = rng.Next(0, TypeMaxFrames(0));
-            slot.FrameTick = rng.Next(0, 4);
+            slot.TypeId = 0;
             slot.MaxFrames = TypeMaxFrames(0);
-            slot.AgeFrames = 0;
-            slot.Hp = 1;
             slot.X = 24 + (i + 1) * (208 / (workers + 1)) + rng.Next(-8, 9);
-            slot.Y = 140;          // walking on the surface ground row
+            slot.Y = 140;
             slot.DX = rng.Next(0, 2) == 0 ? -1 : 1;
-            slot.DY = 0;
             slot.Alive = true;
         }
     }
@@ -520,6 +557,7 @@ public sealed class World
         foreach (var e in Entities)
         {
             if (!e.Alive) continue;
+            if (e.TypeId < 0 || e.TypeId >= EntityTypes.Types.Length) continue;
             var type = EntityTypes.Types[e.TypeId];
             var sprite = EntityBank.Frame(type.SpritePointer, e.Frame);
             if (sprite.IsEmpty) continue;

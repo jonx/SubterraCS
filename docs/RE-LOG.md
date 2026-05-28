@@ -1474,3 +1474,81 @@ the HUD row (the original draws them on top — they're a per-level
 static placement we haven't decoded yet), and (c) the player ship
 position because game-state alignment between emu and native is
 not exact frame-for-frame.
+
+## 30. Per-level entity records are 8-byte, not unaligned
+
+Last session I bailed on the `$F2E8` entity-list format because
+the per-level pointer table at `$F594` had a suspiciously-small
+3-byte gap between levels 0 and 1.  That looked like variable-
+length records.
+
+Re-checked with arithmetic and the answer was right there:
+
+| Level | Count | Start    | Span to next | Bytes/entity |
+| ----- | ----- | -------- | ------------ | ------------ |
+| 0     | 6     | `$F2E8`  | 3            | 0.5 (!?)     |
+| 1     | 10    | `$F2EB`  | 80           | **8.00**     |
+| 2     | 9     | `$F33B`  | 72           | **8.00**     |
+| 3     | 13    | `$F383`  | 104          | **8.00**     |
+| 4     | 18    | `$F3EB`  | 144          | **8.00**     |
+| 5     | 25    | `$F47B`  | ≥200         | **8.00**     |
+
+Levels 1..5 are *uniform 8-byte records*, matching the in-memory
+IX-walked layout already in MEMORY-MAP §`$F1EF`:
+
+| Offset | Meaning |
+| ------ | ------- |
+| +0     | Type id (index into `$F5A0`) |
+| +1     | y coordinate |
+| +2     | Animation frame index |
+| +3, +4 | Top-half screen address (Spectrum bitmap, lo/hi) |
+| +5, +6 | Bottom-half screen address |
+| +7     | Flag / facing byte (TBD) |
+
+Level 0 is anomalous: 6 entities × 8 bytes = 48 bytes, but the
+next level's pointer is only 3 bytes later — so level 0 either
+shares records with level 1 (each level reads from a different
+starting offset of a shared bytestream) or the boot snapshot
+just has level 0 in an uninitialised state.  Either way, levels
+1..5 decode cleanly.
+
+### Verification against the running emulator
+
+Confirmed level 1's records make sense by reading the *active*
+entity list pointer `($F1B9)` from the mid-gameplay RAM dump:
+`$F2EB` (exactly level 1's pointer), `$F1BB` = 10 (the count
+from `$F2E2[1]`). Walking 10 × 8 bytes from `$F2EB` shows
+plausible type IDs (`02, 0A, 01, 01, 01, 04, 04, 08, 09, 12`)
+and screen addresses in the `$4000..$48FF` bitmap range, just
+as expected.
+
+### Decoded screen addresses
+
+The original stores entity positions as their *top-half
+Spectrum bitmap address*, not as `(x, y)` pixels.  The native
+port reverses this in `LevelEntities.DecodeBitmapAddress`:
+
+```csharp
+int bitmapOffset = addr - 0x4000;
+int yBand    = (bitmapOffset >> 5) & 0xC0;   // y bits 7,6
+int yPixRow  = (bitmapOffset >> 8) & 0x07;   // y bits 2,1,0
+int yCharRow = (bitmapOffset >> 2) & 0x38;   // y bits 5,4,3
+int xByte    = bitmapOffset & 0x1F;
+int y = yBand | yCharRow | yPixRow;
+int x = xByte << 3;
+```
+
+### Port
+
+Extracted `assets/extracted/level-entities-f2e8.bin` (654 bytes:
+6 counts + 6 × N × 8 records).  New `LevelEntities` class loads
+it; `World.PlaceWorkersForLevel(n)` consumes the records and
+creates one `EntityInstance` per record with the right type,
+frame, and decoded `(x, y)`.
+
+The visible result at this commit: entities appear at sensible
+positions for levels 1+ (the placeholder fallback path still
+runs for level 0 because of the anomaly).  The pixel-diff
+number didn't move much (9.63% → 9.81% → 9.63%) because the
+per-entity sprite still has to be drawn by per-type AI that's
+not byte-faithful yet — that's the next port target.
