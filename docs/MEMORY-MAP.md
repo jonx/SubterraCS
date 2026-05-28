@@ -699,12 +699,26 @@ DECremented to 0 in `$DDC4`, `$E464` is floored at 1 and the death
 routine fires (`JP $DBC8`).  Verified at f100: `$E464 = $1E` (mid
 bar-fill animation).  At f300: `$E464 = $5F` (full bar).
 
+## RAM ($E465) — fuel accumulator
+
+Initialized to `$FF`.  Each frame the L key is held, `$D8D8..$D8EC`
+SUBs `$20`.  On underflow, `$E466` (fuel) DECs by 1 — so 8 frames
+of held L = 1 fuel notch.
+
 ## RAM ($E466) — player fuel, 0..$5F
 
-Same range as shield.  Decremented continuously by a routine we
-haven't fully traced yet (likely `$D8E8` / `$E465..$E466` chain
-visible in the `$D8C3` block).  At zero, fuel-exhaustion triggers
-death the same way the shield does.
+Same range as shield.  Decremented by the `$D8D8..$D8EC` chain:
+the L-key (horizontal thrust) drains the accumulator at `$E465`
+by `$20` per frame; on underflow, `$E466` DECs by 1.  At full
+tank (`$5F`) it takes ~760 frames (12.7 s at 60 fps) of held
+horizontal input to fully deplete.
+
+The HUD bar painter at `$E0B4` reads `$E466` and passes it to
+`$E0BE` (the bar drawer).
+
+A fuel-low warning fires at `$D879` when fuel drops below `$20`
+— calls `$F8B4` (probably a beeper alert).  Likewise shield-low
+warning calls `$F8D8`.
 
 ## RAM ($E588) — lives counter
 
@@ -716,8 +730,18 @@ NZ,$D8B8` — if DEC produces 0 (i.e. `$E588 == 1`) it calls
 top-right (positions cols 21, 24, 27, 30), so at game start there
 are 4 icons + 1 active = 5 lives total.
 
-The actual `$E588` DECrement site is TBD — `$D8A8` reads but
-doesn't write.
+**Lives DEC site**: `$F6D9..$F6E0`.  Fall-through path from
+`$F6BE` (called after the death-anim restoration).  Reads
+`$E588`, DEC A, `JP Z,$F73B` (game over if zero), else stores
+back to `$E588` and re-runs the level setup at `$F6E3..$F6EF`.
+
+`$D8A8` is the post-explosion stack-restore-only path — it
+reads `$E588` to detect "is this last life" but does NOT DEC.
+The actual DEC happens later in the call chain.
+
+Other write sites: `$F69E` (`$F69C` sets Lives=5 at fresh
+game start), `$D8A0` (`LD (HL),$01` — sets Lives=1, likely a
+cheat-code or panic state).
 
 ## Code ($DDC4) — hit sound + shield decrement
 

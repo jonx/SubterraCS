@@ -106,6 +106,10 @@ public sealed class World
     /// underflow, <see cref="Shield"/> DECrements.  This gives ~4 hits
     /// per bar notch — port of $DDC4's logic.</summary>
     public int HitAccum = 0xFF;
+    /// <summary>$E465 — fuel accumulator.  Each L-key frame SUBs $20;
+    /// on underflow, <see cref="Fuel"/> DECrements.  Port of
+    /// $D8D8..$D8EC.</summary>
+    public int FuelAccum = 0xFF;
     public int Rescued;
     /// <summary>$E588 — lives counter (game-over when DEC reaches 0,
     /// i.e. lives transitions 1 → 0).  Verified by inspecting
@@ -299,10 +303,20 @@ public sealed class World
             return;
         }
 
-        // Fuel drain — only when actually thrusting.
-        if (input.Up || input.Down || input.Horizontal)
-            Fuel = Math.Max(0, Fuel - 1);
-        if ((_frameCounter & 63) == 0) Fuel = Math.Max(0, Fuel - 1);
+        // Fuel drain — port of $D8D8..$D8EC.  The L key (horizontal
+        // input) drains the FuelAccum ($E465) by $20 each frame; on
+        // underflow, Fuel ($E466) DECs by 1.  So holding L for 8 frames
+        // costs 1 fuel unit.  At 60 fps and BarMax = 95, full tank
+        // depletes in ~12.7 seconds of held horizontal input.
+        if (input.Horizontal)
+        {
+            FuelAccum -= 0x20;
+            if (FuelAccum < 0)
+            {
+                FuelAccum &= 0xFF;
+                Fuel = Math.Max(0, Fuel - 1);
+            }
+        }
 
         if (Fuel <= 0) { TriggerDeath(); return; }
 
@@ -519,6 +533,7 @@ public sealed class World
         Shield = BarMax;
         Fuel = Math.Max(BarMax / 2, Fuel);
         HitAccum = 0xFF;
+        FuelAccum = 0xFF;
         SetInvincible(100);
         EnterState(GameState.Playing);
     }
@@ -552,6 +567,7 @@ public sealed class World
         Shield = BarMax;
         Fuel = Math.Min(BarMax, Fuel + (BarMax / 4));
         HitAccum = 0xFF;
+        FuelAccum = 0xFF;
         SetInvincible(60);
         // Switch the active mini-map buffer to this level's packed
         // bytes (port of the original's $E579 ← $E56D[level*2] step).
