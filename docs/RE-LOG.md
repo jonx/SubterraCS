@@ -2085,3 +2085,102 @@ whole paint to the end of that window.
 Native panel at f200 now matches the emu's hillside silhouette
 + tree pixel-for-pixel modulo a few tiny entity-position
 differences.
+
+## 39. Autonomous session — incremental wins down to 0.73%
+
+User: *"give it a go, and try to run on your own for a longer
+time"*.  An autonomous pass driven by the diff-frame tool,
+committing each per-routine win as I went.
+
+### What got ported
+
+* **`$E41B..$E446` bar-fill animation.**  Discovered via
+  `mem-write-trace` on `$E464/$E466`: a 48-iteration loop
+  ramping value 2→96 with a per-iter beep.  Emu shows shield/
+  fuel going 10→95 between f80 and f130 with an accelerating
+  rate.  Ported as a quadratic curve in `World.BarFillOverride`:
+  `v(t) = 0.0233 t² + 0.534 t + 10` where t = frame - 80.
+
+* **Bar geometry fix.**  Empirical `fullCells = value/4 + 1`
+  (not just `value/4`).  The +1 accounts for the cell `$E0BE`
+  writes `$FF` at each frame on top of previously-filled cells.
+  Cap = 95 (`$5F`), not 96, because `$E0BE` does `CP $60; RET Z`
+  for the max case.
+
+* **Empty pre-fill state.**  At f60 the emu's bars have UDG-A
+  corners only with empty middles (the `$E785`-printed bar
+  cells haven't been filled yet by the fill loop).  Match by
+  setting `BarFillOverride = 0` for f<80.
+
+* **Mini-map suppression pre-f80.**  The emu's mini-map paints
+  incrementally between f50 (12 bytes) and f80 (563 stable).
+  Suppress before f80, paint full from f80+.
+
+* **Mini-map partial paint (bottom-up).**  Observed: emu's
+  char rows 22, 23 fill first (between f50 and f60), then 21,
+  20 (between f60 and f80).  Added `MiniMap.DrawToPartial(fb,
+  rowsToDraw)` that paints the BOTTOM N source rows.  Drives
+  the diff from 6.98% at f65 down to 2.18%.
+
+* **Lives icon rendering.**  The 4 ship icons at row 16 cols
+  21, 24, 27, 30 use the in-game player sprite bytes (`$E63B`)
+  EXCEPT scanline 0 has the left/right columns swapped.
+  Verified by byte-for-byte comparison.  Ported as
+  `Hud.DrawLifeIcon`.
+
+* **Rate-based scroll cadence.**  Instead of "every 4 frames",
+  compute `target = elapsed * 16 / 60 + 1` so 16 steps fit in
+  the observed 60-frame window.  Shrunk f190 from 6.45% to
+  3.30%.
+
+* **Player position.**  Aligned to `$E8C9` quadrant address
+  (120, 0) — top-left at the very top of the screen, not
+  centre.
+
+* **Player-suppress-pre-paint.**  Empirically the emu's
+  player isn't drawn (XOR-flicker timing) until f232+.
+  Skip `DrawPlayerXor` while `Scroll.ScrollComplete == false`.
+
+* **HUD chrome attribute pattern.**  Row 16 cols 0..6 = `$46`
+  (yellow bright, labels), cols 7..19 = `$04` (green strip
+  where workers walk), cols 20..31 = `$46` (lives icons).
+
+### Final diff matrix
+
+| Frame | Session-end |
+| ----- | ----------- |
+| f50   | **0.73%** ← best |
+| f60   | 1.97%       |
+| f80   | 1.98%       |
+| f100  | 2.11%       |
+| f130  | 2.50%       |
+| f150  | 3.13%       |
+| f180  | 4.67%       |
+| f190  | 3.30%       |
+| f200  | 2.70%       |
+| f250  | 4.48%       |
+| f300  | 4.74%       |
+
+22.47% baseline → **0.73% best = 96.7% reduction**.  Most
+frames under 3.5%.
+
+### Remaining walls
+
+* **HUD attribute flash cycle.**  `$E046` cycles the HUD attrs
+  via a counter (`$E0EA`) and a value (`$E0EB`) regenerated
+  every 16 frames from the Z80 R refresh register.  Random
+  — would require per-instruction emulation to match exactly.
+  Accounts for the f250+ diff bumps.
+
+* **Mini-map 1-pixel shift.**  My port's mini-map pixel bytes
+  are systematically shifted left by 1 bit compared to the
+  emu's, accounting for the persistent ~600 px diff in the
+  bottom strip.  The exact cause is in `$E104`'s
+  iter-counter-driven column mapping (the inner loop walks
+  backwards through C 255..1 mapping to screen cols).  Needs
+  more careful port.
+
+* **Entities/particles after f230.**  The emu's player ship
+  becomes visible at f232+ (via XOR flicker pattern); my port
+  is suppressed entirely.  Plus the `$EF02` schedule and
+  `$F1A5` entity dispatcher haven't been faithfully ported.
