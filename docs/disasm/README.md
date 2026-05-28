@@ -38,6 +38,7 @@ routine's *code*.
 | [title-menu.md](title-menu.md) | `$F5FC` title loop + control-scheme selection + game-init | **done** |
 | [main-loop.md](main-loop.md) | `$D7FB..$D826` per-frame dispatch map + `$E8FD` sub-chain + state inventory | **done** |
 | [sound.md](sound.md) | `$FA0A` print-stream + `$5E88` Follin player + SFX entries (`$F8F9`, `$F90E`, `$F93A`) | partial |
+| [assets.md](assets.md) | Every file in `assets/extracted/` — cassette address, byte layout, consumer, port loader | **done** |
 
 ## Conventions
 
