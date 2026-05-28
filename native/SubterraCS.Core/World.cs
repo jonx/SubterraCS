@@ -233,10 +233,14 @@ public sealed class World
         const int BarFillEnd = 130;
         if (_frameCounter >= BarFillStart && _frameCounter <= BarFillEnd)
         {
-            // Linear approximation of the $E41B loop's value ramp.
-            int progress = _frameCounter - BarFillStart;        // 0..50
-            int barVal = 10 + (progress * 85) / (BarFillEnd - BarFillStart);
-            BarFillOverride = Math.Clamp(barVal, 0, 95);
+            // The $E41B fill loop accelerates: empirically observed
+            // values are 10/20/30/44/64/95 at f80/f90/f100/f110/f120/f130.
+            // Quadratic fit: v(t) = 0.0233 t² + 0.534 t + 10 where
+            // t = frame - 80.  Implemented as integer arithmetic:
+            // v = (233 t² + 5340 t + 100000) / 10000.
+            long t = _frameCounter - BarFillStart;
+            long v = (233 * t * t + 5340 * t + 100000) / 10000;
+            BarFillOverride = (int)Math.Clamp(v, 0, 95);
         }
         else if (_frameCounter > BarFillEnd)
         {
