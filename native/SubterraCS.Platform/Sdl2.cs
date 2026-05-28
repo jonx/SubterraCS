@@ -83,6 +83,8 @@ internal static class Sdl2
     public const int KeyF11    = 0x40000044;
     public const int KeyR      = 0x72;
     public const int KeyP      = 0x70;
+    public const int KeyLShift = 0x400000E1;     // SDLK_LSHIFT — port-only precision modifier
+    public const int KeyRShift = 0x400000E5;     // SDLK_RSHIFT
     // Letter keys we forward 1:1 (a..z = 0x61..0x7A; digits 0x30..0x39).
 
     // --- Audio format (signed 16-bit) --------------------------------

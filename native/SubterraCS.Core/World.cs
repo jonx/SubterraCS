@@ -156,6 +156,11 @@ public sealed class World
     public bool Invincible;
     public int InvincibleTicks;
 
+    // Edge-detection for the Shift precision mode (port-only).  Holds
+    // the previous frame's Up/Down/Horizontal state so we can fire the
+    // single-step move only on a false→true transition.
+    private bool _prevUp, _prevDown, _prevHorizontal;
+
     // Game flow --------------------------------------------------------
     public GameState State { get; private set; } = GameState.Splash;
     public int StateTicks { get; private set; }
@@ -328,13 +333,23 @@ public sealed class World
             }
         }
 
-        // ---- Vertical movement — port of $D95D ----
-        // Player Y on screen is FIXED; UP/DOWN adjust Altitude
-        // (= the original's $E584).  Acceleration: each frame the
-        // direction is held, SpeedShift increments (capped at 7);
-        // the actual altitude delta is (SpeedShift >> 1) | 1.
-        // When neutral: SpeedShift resets to 1.
-        if (input.Up)
+        // ---- Vertical movement ----
+        // Port-only precision mode: holding Shift overrides the
+        // cassette's $D95D acceleration ramp with edge-triggered
+        // single-pixel steps — release+repress to step again.  Lets
+        // the user nudge altitude 1 px at a time.  When Shift is NOT
+        // held, the original $D95D behaviour applies: SpeedShift
+        // accumulates per frame, delta = (SpeedShift >> 1) | 1.
+        if (input.Shift)
+        {
+            bool upEdge   = input.Up   && !_prevUp;
+            bool downEdge = input.Down && !_prevDown;
+            if (upEdge)   { Altitude = Math.Max(0,    Altitude - 1); DirectionState &= ~2; }
+            if (downEdge) { Altitude = Math.Min(0x78, Altitude + 1); DirectionState |= 2; }
+            SpeedShift = 1;   // keep ramp idle so a Shift-release
+                              // doesn't kick into mid-acceleration
+        }
+        else if (input.Up)
         {
             // Direction-change detection: bit 1 of state tracks "was
             // moving down" — clear on UP to reset acceleration.
@@ -375,12 +390,26 @@ public sealed class World
         if (input.Left) { FacingLeft = true;  DirectionState |= 1; }
         else if (input.Right) { FacingLeft = false; DirectionState &= ~1; }
 
-        if (input.Horizontal && Fuel > 0 && MiniMap.Buffer.Length > 0)
+        // Port-only Shift precision: only fire the scroll on the
+        // false→true edge of Horizontal.  Cassette scroll is byte-
+        // aligned (one char column = 8 pixels per L-press), so the
+        // smallest possible step in this axis is 1 byte rather than
+        // 1 literal pixel — that's the precision floor we expose.
+        bool scrollThisFrame =
+            input.Shift
+                ? (input.Horizontal && !_prevHorizontal)
+                : input.Horizontal;
+        if (scrollThisFrame && Fuel > 0 && MiniMap.Buffer.Length > 0)
         {
             int delta = FacingLeft ? -1 : 1;
             ScrollOffsetX = (ScrollOffsetX + delta) & 0xFF;
             Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX);
         }
+
+        // Snapshot direction-key state for next frame's edge detection.
+        _prevUp = input.Up;
+        _prevDown = input.Down;
+        _prevHorizontal = input.Horizontal;
 
         // Port of $F1EF's $F222 SUB B / CP $1F / RET NC gate:
         // recompute screen X and visibility for every entity each

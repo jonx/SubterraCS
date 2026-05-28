@@ -54,6 +54,12 @@ public sealed class Sdl2InputPump
                 case Sdl2.KeyDown:      _input.Down = down; break;
                 case Sdl2.KeyLeft:      _input.Left = down; _input.Horizontal = down; break;
                 case Sdl2.KeyRight:     _input.Right = down; _input.Horizontal = down; break;
+
+                // Port-only precision modifier — hold Shift to make
+                // each direction key fire ONE step per press-edge
+                // instead of accelerating while held.
+                case Sdl2.KeyLShift:
+                case Sdl2.KeyRShift:    _input.Shift = down; break;
             }
         }
 

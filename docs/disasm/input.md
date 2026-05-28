@@ -140,3 +140,58 @@ The interesting bits are:
   for the original's "press direction key to flip facing" UX.
   Our port has explicit `Left`/`Right` GameInput flags, so the
   flip is direct (no SHIFT-row+key-row combo needed).
+
+## Port-only addition — Shift precision modifier
+
+The cassette's keyboard scheme treats SHIFT as part of the
+LEFT key-group (any of SHIFT/Z/X/C/V = LEFT, per `$D918`
+"IN A,($FE)" read of the bottom row of the keyboard matrix).
+The port hijacks SHIFT for a different role:
+
+- **Hold L-Shift or R-Shift** to enter precision mode.
+- In precision mode, each direction key (Up/Down/Horizontal)
+  fires **one step per press-edge** instead of accelerating
+  while held.  Step sizes:
+  - Up / Down: **1 pixel** of altitude per edge (the smallest
+    altitude unit `($E584)` supports).
+  - Horizontal (L / Left / Right): **1 byte = 1 char column =
+    8 pixels** of scroll per edge (the cassette's scroll is
+    byte-aligned; sub-byte horizontal scrolling isn't a thing
+    in `$DA23`/`$DA62`, so 1 byte is the precision floor here).
+- To step again, RELEASE the direction key, then RE-PRESS it
+  (while still holding SHIFT).  Continuous hold = exactly one
+  step then frozen.
+- Releasing SHIFT immediately reverts to the cassette's
+  acceleration ramp (`SpeedShift` reset to 1, no mid-ramp
+  carry-over).
+
+Verified in `HeadlessTestRunner`:
+
+| Inputs (50 frames) | Final altitude |
+| ------------------ | --------------- |
+| A held, no Shift   | 80 (acceleration ramp) |
+| A held + Shift held | 1 (single edge, then frozen) |
+| A pulsed 3-on/2-off + Shift held | = number of press-edges |
+
+### Implementation
+
+- `GameInput.Shift` — held-state flag.
+- `Sdl2InputPump` maps both `SDLK_LSHIFT` (`0x400000E1`) and
+  `SDLK_RSHIFT` (`0x400000E5`) into the flag.
+- `HeadlessTestRunner` accepts `SHIFT` in `--keys=` schedules
+  for reproducible tests.
+- `World` keeps three private `_prevUp / _prevDown /
+  _prevHorizontal` bools updated at the end of each
+  `TickPlaying`; the Shift-precision branch reads
+  `input.X && !_prevX` as the edge condition.
+
+### Why this isn't a cassette behaviour
+
+Nothing in `$D8F4..$DDA9` implements an "edge-only" mode — every
+control scheme writes the held key state directly into `$E45F`,
+and `$D95D` always runs the SpeedShift ramp.  Adding edge
+detection at the cassette layer would have required spare RAM
+for the per-key previous-state cache (which the original game
+doesn't allocate).  This is purely a port quality-of-life
+feature; the diff-vs-emu harness is unaffected because the
+emulator never receives a SHIFT keystroke.
