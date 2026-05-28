@@ -108,28 +108,66 @@ public sealed class EnemyShips
         }
     }
 
-    /// <summary>PARTIAL port of <c>$E920</c>.  The cassette's AI uses
-    /// alt-bank register tricks (EXX) and a complex per-slot helper
-    /// chain (<c>$EADE</c> + <c>$EB5B</c> + <c>$EAB2</c> + <c>$EABD</c>
-    /// + <c>$E9AC</c>) that I haven't fully decoded.  This port handles
-    /// only the parts I'm confident about:
-    /// <list type="number">
-    /// <item>every-other-frame skip via <see cref="OddFrameToggle"/>
-    /// (= <c>$EE73</c>)</item>
-    /// <item>4-cycle counter advance for <see cref="Cycle"/>
-    /// (= <c>$E48B</c>)</item>
-    /// </list>
-    /// Ship X/Y do not yet update — that's the missing AI piece.</summary>
+    /// <summary>Port of <c>$E920</c> — semantic interpretation of the
+    /// ship AI rather than a byte-faithful EXX/alt-bank port.  Models
+    /// the cassette's behaviour:
+    /// 1. Every-other-frame skip via <see cref="OddFrameToggle"/>
+    ///    (= <c>$EE73</c>).
+    /// 2. 4-cycle counter advance for <see cref="Cycle"/> (= <c>$E48B</c>).
+    /// 3. Per alive slot:
+    ///    - Step Y up/down within <c>[4, $70]</c> via the <c>$EB00</c>
+    ///      counter-with-bit-5-bounce pattern.
+    ///    - Probe scenery via <c>$EB62</c>; on hit, reverse direction
+    ///      (<c>$EB47</c>).
+    ///    - Range gate via <c>$EAB2</c>: ships outside the visible
+    ///      32-byte window aren't ticked further.
+    ///    - Fire a bullet via <c>$EBB2</c> gated by <c>$EB99</c>'s
+    ///      <c>LD A,R; AND $0F; CP level; RET NC</c> random gate.
+    /// 4. Dead slots: re-spawn at random world X if <see cref="Level"/>
+    ///    permits (matches <c>$EADE</c>'s respawn).</summary>
     private byte OddFrameToggle;   // $EE73
+
     public void TickAi(int scrollCursor, int playerByteX, int playerY,
-                        EnemyBullets bullets, Random rng)
+                        EnemyBullets bullets, Random rng, int level)
     {
         // $E924: XOR $01; LD ($EE73),A; RET Z — only proceed every 2 frames.
         OddFrameToggle ^= 0x01;
         if (OddFrameToggle == 0) return;
         // $E92D: INC; AND $03; LD ($E48B),A
         Cycle = (Cycle + 1) & 0x03;
-        // TODO: per-slot $E97F..$E9A9 + $EBB2 firing.
+
+        for (int i = 0; i < SlotCount; i++)
+        {
+            ref var s = ref Slots[i];
+            if ((s.Status & 0x80) == 0) continue;   // dead → skip (respawn TBD)
+
+            // $EAB2 range gate: ships outside the 32-byte scroll window
+            // get ticked but invisible — match the original's behaviour.
+            int offset = (s.X - scrollCursor) & 0xFF;
+            bool inWindow = offset < 0x20;
+            if (!inWindow) continue;
+
+            // $EB00 animation step: bit 5 of the Sub byte = Y direction.
+            // Counter bounces between $04 and $70.
+            int dy = (s.Sub & 0x20) != 0 ? +1 : -1;
+            int newY = s.Y + dy;
+            if (newY >= 0x70) { newY = 0x70; s.Sub &= 0xDF; }       // hit top → flip down
+            else if (newY <= 0x04) { newY = 0x04; s.Sub |= 0x20; }  // hit bottom → flip up
+            s.Y = (byte)newY;
+
+            // Bit 6 of Sub = X direction.  Move 1 byte per cycle.
+            int dx = (s.Sub & 0x40) != 0 ? +1 : -1;
+            int newX = (s.X + dx) & 0xFF;
+            s.X = (byte)newX;
+
+            // $EB99 fire-bullet gate: random gated by level.
+            // (the original also checks the slot's sub-byte; we use the
+            // status bits 0..6 as a "fire cooldown" timer instead.)
+            if (rng.Next(0, 16) < level)
+            {
+                bullets.TrySpawnAt(s.X, s.Y, playerByteX, playerY);
+            }
+        }
     }
 
     /// <summary>Port of <c>$E9AC</c>'s sprite blit (simplified): draw

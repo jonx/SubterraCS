@@ -103,6 +103,11 @@ public sealed class World
     /// 256-column-wide source data.  Wraps at 256.</summary>
     public int ScrollOffsetX;
 
+    /// <summary>$EE74 — scroll-progress counter (16-bit).  Incremented
+    /// each frame by <c>$D827</c> at level-scaled step.  Boss at
+    /// <c>$EC10</c> spawns when this reaches <c>$4A38</c>.</summary>
+    public int ScrollProgress;
+
     /// <summary>Bar-fill animation override.  When >= 0 the HUD bar
     /// drawer uses this instead of <see cref="Shield"/>/<see cref="Fuel"/>.
     /// Port of the $E41B..$E446 fill loop in the original (48 iterations
@@ -263,6 +268,24 @@ public sealed class World
 
     private void TickPlaying(GameInput input)
     {
+        // ---- Scroll-progress counter — port of $D827 ----
+        // Saturating increment by ((level + 3) >> 3) + 1.
+        // At level 1: +1/frame; reaches $4A38 (boss trigger) in ~19000 frames.
+        int step = (((Depth + 3) >> 3) + 1) & 0xFF;
+        ScrollProgress = Math.Min(0xFFFF, ScrollProgress + step);
+
+        // ---- Player vs scenery — port of $DFAF ----
+        // Probe the level tile at the player's world position.  If the
+        // tile byte is $01 (= solid wall), die.  Uses the same $EB62
+        // semantics as the ship AI scenery probe.
+        if (MiniMap.Buffer.Length >= 4096)
+        {
+            int playerWorldByte = (ScrollOffsetX + 0x0F) & 0xFF;
+            int playerRow = (PlayerY >> 3) & 0x0F;
+            byte tile = MiniMap.Buffer[playerRow * 256 + playerWorldByte];
+            if (tile == 0x01) { TriggerDeath(); return; }
+        }
+
         // ---- Vertical movement — port of $D95D ----
         // Player Y on screen is FIXED; UP/DOWN adjust Altitude
         // (= the original's $E584).  Acceleration: each frame the
@@ -481,12 +504,11 @@ public sealed class World
         // Order matches the cassette: ship AI → boss tick → bullet tick.
         // Mini-map ship dots ($E213) are drawn in DrawPlaying.
         int playerByteX = (ScrollOffsetX + 15) & 0xFF;
-        EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng);   // $E920 (STUB)
-        Boss.Tick(ScrollOffsetX, playerByteX, PlayerY, _rng);                            // $EC10 (STUB)
+        EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth);  // $E920
+        Boss.Tick(ScrollOffsetX, playerByteX, PlayerY, _rng);                                  // $EC10 (STUB)
 
-        // Enemy BULLETS — port of $EE9E + $ED01.  These are the projectiles
-        // fired by the ships above, not the ships themselves.
-        EnemyShots.TrySpawn(Depth, ScrollOffsetX, playerByteX, PlayerY, _rng);
+        // Enemy BULLETS — $ED01 per-frame tick.  Bullets are spawned by
+        // ships above via $EBB2 (= EnemyShots.TrySpawnAt), not random.
         int hits = EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY);
         if (hits != 0 && !Invincible)
         {
@@ -676,6 +698,7 @@ public sealed class World
         MiniMap.SelectLevel(level);
         Scroll.Reset();
         ScrollOffsetX = 0;
+        ScrollProgress = 0;
         EnemyShots.Reset();
         // Port of $E319's LDIR from $E48D + level*32 → $E597.  Loads
         // the 7 ships' (X, Y, status, sub) into the live table.

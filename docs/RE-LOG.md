@@ -2759,3 +2759,46 @@ Two unrelated main-loop calls also traced:
 Full annotated trace in
 [`docs/disasm/ship-ai.md`](disasm/ship-ai.md); MEMORY-MAP
 entries added for every newly-named address.
+
+## 50. $E920 / $DFAF / $D827 ported (semantic, not byte-faithful)
+
+Implementation pass following §49's disasm.
+
+### `EnemyShips.TickAi` — port of `$E920`
+
+Semantic interpretation rather than the literal alt-bank EXX
+dance.  Per alive slot, each cycle (every-other-frame, advance
+Cycle 0..3):
+
+- `$EAB2` range gate: ships outside the visible 32-byte window
+  aren't moved further (their data persists; they come back when
+  scrolled back into view).
+- `$EB00` animation step: Y bounces in `[$04, $70]`, direction
+  controlled by bit 5 of the slot's Sub byte (flips at the
+  endpoints — port of `$EB3E`).
+- X moves ±1 byte per cycle based on bit 6 of Sub.
+- `$EB99` fire-bullet gate: `rng.Next(0, 16) < level` (matches
+  `LD A,R; AND $0F; CP B; RET NC`).  On pass, calls
+  `EnemyBullets.TrySpawnAt(ship.X, ship.Y, playerByteX, playerY)`
+  — new method that mirrors `$EBB2` but takes the source
+  position explicitly.
+
+The `$EADE` respawn for dead slots is not yet ported (slots stay
+dead once killed; no enemies regenerate).
+
+### `World.ScrollProgress` — port of `$D827`
+
+New 16-bit field in `World`, incremented in `TickPlaying` by
+`((Depth + 3) >> 3) + 1` per frame, saturating at `$FFFF`.  Will
+gate the boss spawn at `$EC10` (when `ScrollProgress > $4A38`).
+
+### `$DFAF` player wall collision
+
+Probes `MiniMap.Buffer[row*256 + worldByte]` at the player's
+world position.  If the tile byte equals `$01`, fires
+`TriggerDeath()`.  Port of `$DFAF → CALL $EB62 → $DFEE → JP
+$DBC8`.  We re-use the mini-map buffer as the scenery tile-map
+since both come from the same per-level data block at `($E579)`.
+
+Diff vs emu at f50/f100/f200 still 0%.  Fuel-pickup logic
+(`$DFE1..$DFEB`) not yet ported.

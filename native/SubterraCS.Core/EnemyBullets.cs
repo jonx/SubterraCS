@@ -35,6 +35,28 @@ public sealed class EnemyBullets
         for (int i = 0; i < SlotCount; i++) Slots[i] = default;
     }
 
+    /// <summary>Port of <c>$EBB2</c>: spawn a bullet at (sourceX, sourceY)
+    /// (= a ship's position).  Direction = sign-toward-player from
+    /// $EBDE..$EBFB.  Returns the slot index or -1 if no free slot.</summary>
+    public int TrySpawnAt(int sourceX, int sourceY, int playerByteX, int playerY)
+    {
+        int slot = -1;
+        for (int i = 0; i < SlotCount; i++)
+        {
+            if (!IsAlive(i)) { slot = i; break; }
+        }
+        if (slot < 0) return -1;
+
+        ref var e = ref Slots[slot];
+        e.X = (byte)(sourceX & 0xFF);
+        e.Y = (byte)(sourceY & 0xFF);
+        e.Dx = (sbyte)Sign(playerByteX - sourceX);
+        e.Dy = (sbyte)Sign(playerY - sourceY);
+        e.Status = 0x80;
+        e.Lifetime = 0x40;
+        return slot;
+    }
+
     /// <summary>Port of <c>$EBB2</c>: spawn one enemy if the random
     /// gate fires and there's a free slot.  Returns the slot index
     /// or -1 if the spawn was dropped.
