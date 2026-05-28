@@ -101,11 +101,15 @@ public sealed class WorkerSchedule
     /// Also port of <c>$F02E</c> mini-map dot at (X, mini-map row).</summary>
     public void Draw(Framebuffer fb, int scrollCursor, byte levelAttr)
     {
-        // Worker sprite from $F0F1 (the level-color variant — bytes
-        // not yet decoded; using a simple person silhouette).
+        // Worker sprite from $F071 (the white "draw" variant) —
+        // verified bytes from at-f100.bin.  $F0F1 is the level-color
+        // "erase" variant (= all zeros; the original draws both each
+        // frame, erase-then-draw).  We just draw the white sprite.
+        // The cassette has 4 frames at $F071/$F079/$F081/$F089 for
+        // a shovel-swing animation; we use frame 0 for now.
         ReadOnlySpan<byte> sprite = stackalloc byte[]
         {
-            0x18, 0x18, 0x3C, 0x18, 0x18, 0x3C, 0x66, 0x66,
+            0x18, 0x1C, 0x0E, 0x0E, 0x16, 0xAE, 0xCA, 0x49,
         };
         for (int i = 0; i < SlotCount; i++)
         {

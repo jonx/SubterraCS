@@ -47,11 +47,13 @@ public sealed class Explosion
     };
 
     /// <summary>Trigger the explosion at the given pixel coordinate
-    /// using the level's attribute colour.</summary>
+    /// using the level's attribute colour.  Port of <c>$DBC8</c>'s
+    /// 8-particle outward burst with seeds at <c>$E861</c>.</summary>
     public void Trigger(int centerX, int centerY, byte levelColor)
     {
         _levelColor = levelColor;
         _frame = 0;
+        _converge = false;
         for (int i = 0; i < ParticleCount; i++)
         {
             _particles[i].X = centerX;
@@ -61,6 +63,38 @@ public sealed class Explosion
         }
         Active = true;
     }
+
+    /// <summary>Trigger the spawn-in animation — port of <c>$E135</c>:
+    /// 8 particles seeded at fixed scattered positions (table at
+    /// <c>$E841</c>) converging on the screen centre over 40 frames.
+    /// Replaces the explosion's outward-burst with inward-converge.</summary>
+    public void TriggerSpawnIn(byte levelColor)
+    {
+        _levelColor = levelColor;
+        _frame = 0;
+        _converge = true;
+        for (int i = 0; i < ParticleCount; i++)
+        {
+            _particles[i].X = SpawnSeeds[i].X;
+            _particles[i].Y = SpawnSeeds[i].Y;
+            _particles[i].Dx = SpawnSeeds[i].Dx;
+            _particles[i].Dy = SpawnSeeds[i].Dy;
+        }
+        Active = true;
+    }
+
+    /// <summary>Spawn-in particle seed table — port of <c>$E841</c>.
+    /// 8 particles at scattered positions on the screen edges with
+    /// velocities pointing inward.  Verified bytes from at-f100.bin.</summary>
+    private static readonly (int X, int Y, int Dx, int Dy)[] SpawnSeeds =
+    {
+        (0x30, 0xBC, +2, +0),  (0x58, 0x44, +1, +3),
+        (0x08, 0x94, +3, +1),  (0x30, 0x6C, +2, +2),
+        (0xD0, 0x94, -2, +1),  (0xF8, 0x6C, -3, +2),
+        (0xD0, 0x44, -2, +3),  (0xD0, 0xBC, -2, +0),
+    };
+
+    private bool _converge;
 
     public void Reset()
     {
@@ -75,13 +109,15 @@ public sealed class Explosion
         if (!Active) return;
         for (int i = 0; i < ParticleCount; i++)
         {
-            // Match $DC1D: skip particles with Y < $41 (offscreen-ish).
-            if (_particles[i].Y < 0x41) continue;
+            if (!_converge && _particles[i].Y < 0x41) continue;   // $DC1D
             _particles[i].X += _particles[i].Dx;
             _particles[i].Y += _particles[i].Dy;
         }
         _frame++;
-        if (_frame >= AnimFrames) Active = false;
+        // Spawn-in is 40 frames per $E144 LD B,$28; death is 64 frames
+        // per $DC00 LD B,$40.
+        int maxFrames = _converge ? 40 : AnimFrames;
+        if (_frame >= maxFrames) Active = false;
     }
 
     /// <summary>Paint particles for this frame.  Like the original's

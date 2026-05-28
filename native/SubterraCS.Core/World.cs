@@ -272,6 +272,10 @@ public sealed class World
 
     private void TickPlaying(GameInput input)
     {
+        // Advance the spawn-in/explosion particle animation if active.
+        // (Death state runs its own TickDying tick; this catches the
+        // level-start spawn-in.)
+        Explosion.Tick();
         // ---- Scroll-progress counter — port of $D827 ----
         // Saturating increment by ((level + 3) >> 3) + 1.
         // At level 1: +1/frame; reaches $4A38 (boss trigger) in ~19000 frames.
@@ -755,6 +759,11 @@ public sealed class World
         EnemyShipTable.LoadFromInit(EnemyShipInitData, level);
         Boss.Reset();
         Workers.LoadFromSchedule(WorkerScheduleData, level);
+        // Spawn-in animation: port of $E135 — 8 particles converge
+        // from scattered screen positions to the centre over 40
+        // frames.  Reuses the Explosion class with the spawn-seed
+        // table from $E841.
+        Explosion.TriggerSpawnIn(Scroll.LevelColour);
         // Level scenery paint is deferred — see Scroll.PaintLevel call
         // gated by frame counter in TickPlaying, matching the emu's
         // scroll-in over f140..f200.
@@ -1021,6 +1030,19 @@ public sealed class World
             Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43);
         }
 
+        // Mini-map BASE first (static level layout from $60F4+) — then
+        // ship/worker/boss dots draw ON TOP so they're visible.
+        if (_frameCounter >= 80)
+        {
+            MiniMap.DrawTo(fb);
+        }
+        else if (_frameCounter >= 50)
+        {
+            int progress = _frameCounter - 50;
+            int rowsToDraw = 16 * progress / 30;
+            MiniMap.DrawToPartial(fb, rowsToDraw);
+        }
+
         // Ship sprites + mini-map dots — port of $E9AC sprite blit
         // + $E213 mini-map plot (called twice for blink alternation).
         EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
@@ -1038,26 +1060,6 @@ public sealed class World
         // the HUD chrome (matches the original's $DBC8 timing where
         // particles paint the attribute file directly).
         Explosion.Draw(fb);
-
-        // Mini-map at the bottom strip (y=160..191) — port of $E104.
-        // The emu's mini-map paints incrementally between f50 and f80
-        // (12 → 563 bytes) but the order doesn't match a simple top-
-        // down or left-right walk.  Until the exact paint pattern is
-        // decoded, suppress before f80 and paint full from f80+.
-        if (_frameCounter >= 80)
-        {
-            MiniMap.DrawTo(fb);
-        }
-        else if (_frameCounter >= 50)
-        {
-            // Bottom-up paint approximation matching the emu's
-            // observed pattern (char rows 23 first, then 22, 21, 20
-            // between f50 and f80).  Source rows are mapped to char
-            // rows: 4 source rows per char row.
-            int progress = _frameCounter - 50;          // 0..30
-            int rowsToDraw = 16 * progress / 30;        // 0..16
-            MiniMap.DrawToPartial(fb, rowsToDraw);
-        }
     }
 
     /// <summary>
