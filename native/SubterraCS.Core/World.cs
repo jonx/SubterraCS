@@ -19,16 +19,17 @@ public enum GameState
 ///       all workers rescued?  → LevelClear → LoadLevel(n+1)
 ///       player dies?          → Dying → respawn or GameOver
 ///
-/// There is no "diving" or altitude-gate page advance.  The Stryker
-/// flies freely within the playable area; the level progresses only
-/// when every rescuable worker on this page has been picked up.
+/// The Stryker is a SPACE SHIP — it flies freely up / down / left /
+/// right within the playable area.  There is no altitude-gate page
+/// advance.  A level progresses only when every rescuable worker on
+/// the page has been picked up.
 /// </summary>
 public sealed class World
 {
     public const int MaxEntities = 16;
     public const int MaxBullets  = 8;
-    public const int PlayfieldTop = 0;       // top pixel of the play area
-    public const int PlayfieldBottom = 160;  // first pixel of the HUD strip
+    public const int PlayfieldTop = 0;        // top pixel of the play area
+    public const int PlayfieldBottom = 128;   // first pixel of the HUD strip (HUD starts row 16)
 
     // Loaded once at boot ------------------------------------------------
     public TileBank Tiles { get; }
@@ -542,73 +543,33 @@ public sealed class World
     }
 
     /// <summary>
-    /// Paint the level's static scenery.  The original game composes
-    /// each page from the master tile bank at <c>$B0F4</c> driven by
-    /// per-level data tables we haven't fully reverse-engineered yet
-    /// (the pointers at <c>$E56D</c> target <c>$60F4..$A0F4</c>, but
-    /// those regions are empty in our snapshots — the data must be
-    /// built at runtime by a path we haven't traced).
+    /// Paint the level's static scenery.  In the original, the top 16
+    /// char-rows (y=0..127) are the playfield — empty sky at level
+    /// start, populated by entities over time.  The bottom 8 char-rows
+    /// (y=128..191) are the HUD chrome, drawn by <see cref="Hud.Draw"/>.
     ///
-    /// What we DO have is the full extracted tile bank (384 tiles, 8
-    /// bytes each).  Per <c>docs/MEMORY-MAP.md</c>:
-    /// row 6-7 = hills / surface; row 10-11 = ground floor; row 8-9 =
-    /// trees / branches.  We compose a deterministic landscape per
-    /// depth out of these tiles — same tiles the original uses, picked
-    /// by a level-keyed seed so each page looks different but stable.
+    /// The hand-drawn hill silhouette + tree we see in mid-gameplay
+    /// renders are NOT a static backdrop — they emerge as entities
+    /// accumulate.  Per RE-LOG §24 the routine that paints them is
+    /// not fully traced yet, so for now this method just sets up the
+    /// attribute strip for the playfield and lets the entity system
+    /// fill in the rest.
     /// </summary>
     private void DrawLevelScenery(Framebuffer fb)
     {
-        // Sky attribute strip — fully transparent so the player and
-        // entities draw on black.  The lower half (rows 12+) is the
-        // landscape and HUD.
-        for (int row = 0; row < 24; row++)
+        // Playfield attribute strip — bright green on black, matching
+        // the emulator-peeked attributes at rows 0..15 in mid-gameplay
+        // RAM (uniform $04 from $5800..$59FF — see RE-LOG §24).
+        for (int row = 0; row < HudCharRow; row++)
         {
             for (int col = 0; col < 32; col++)
             {
-                fb.Attributes[row * 32 + col] = 0x07;  // bright white ink on black
+                fb.Attributes[row * 32 + col] = 0x04;  // green ink on black
             }
-        }
-
-        var rng = new Random(HashCode.Combine(Depth, 0xC0DE));
-
-        // Hill silhouette band — rows 14..17 (y=112..136).  We tile a
-        // strip of "hill" tiles from the master bank (rough indices
-        // 96..127 per MEMORY-MAP), wrapping the column index by the
-        // bank size.  The whole strip is painted green.
-        int hillBase = 96;
-        int hillSpan = 32;
-        for (int row = 14; row < 18; row++)
-        {
-            for (int col = 0; col < 32; col++)
-            {
-                int idx = (hillBase + ((col + Depth * 3) % hillSpan)) % Tiles.TileCount;
-                Blitters.DrawTile8x8(fb, col * 8, row * 8, Tiles[idx], 0x44);
-            }
-        }
-
-        // Trees / surface accent — a few standalone "tree" tiles
-        // (~indices 128..159) sprinkled across the hill top.
-        for (int col = 1; col < 31; col += 6 + rng.Next(0, 4))
-        {
-            int treeIdx = (128 + rng.Next(0, 16)) % Tiles.TileCount;
-            Blitters.DrawTile8x8(fb, col * 8, 13 * 8, Tiles[treeIdx], 0x44);
-        }
-
-        // Surface ground strip at row 18 (y=144) — solid grass tiles.
-        int groundIdx = (160 + Depth) % Tiles.TileCount;
-        for (int col = 0; col < 32; col++)
-        {
-            Blitters.DrawTile8x8(fb, col * 8, 18 * 8, Tiles[groundIdx], 0x44);
-        }
-
-        // Underground floor stripe just below the surface for
-        // structural variety — uses a "ground" tile a few indices on.
-        int floorIdx = (164 + Depth) % Tiles.TileCount;
-        for (int col = 0; col < 32; col++)
-        {
-            Blitters.DrawTile8x8(fb, col * 8, 19 * 8, Tiles[floorIdx], 0x44);
         }
     }
+
+    private const int HudCharRow = 16;
 
     private void DrawLevelClear(Framebuffer fb)
     {

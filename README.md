@@ -42,8 +42,8 @@ runs, and accepts input on macOS, Linux, and Windows.
 dotnet run --project src/Subterra.Game
 ```
 
-* **Q / A** — climb / dive (the world only scrolls once you've
-  dived deep enough — it's *subterranean*)
+* **Q / A** — thrust up / thrust down (it's a space ship — free
+  flight in all four directions)
 * **L** — move horizontally
 * **Enter** — fire
 * **1 / 2 / 3 / 4** on the title screen pick a control method
@@ -251,8 +251,8 @@ dotnet run --project src/Subterra.Tools -- \
 Reading the `-keys=` line: press **SPACE** during frames 5..10 (to
 break out of `PAUSE 0` on the boot screen), press **1** during
 frames 40..50 (to pick the KEYBOARD control option), then press
-**A** for frames 200..500 (to dive deep enough that the level
-starts scrolling). After 600 frames we save the full 48 K of
+**A** for frames 200..500 (to fly the ship through the level).
+After 600 frames we save the full 48 K of
 Spectrum RAM as a flat binary, `build/post-game.bin`.
 
 The Editor (`dotnet run --project src/Subterra.Editor`) checks for
@@ -333,8 +333,8 @@ the honest breakdown:
   [`docs/MEMORY-MAP.md`](docs/MEMORY-MAP.md).
 * The **level "design" is 192 bytes** — 6 levels × 32 bytes per
   level (8 timed enemy spawns). No tile maps, no compressed
-  terrain. The cave is procedurally composed by the entity
-  system as you dive.
+  terrain. The hazards are procedurally composed by the entity
+  system as the ship flies through.
 
 The largest remaining work is the 16+ per-enemy AI behaviours;
 everything else (renderer, blitters, dispatcher, player, audio)

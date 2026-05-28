@@ -24,8 +24,9 @@ What IS correct today
   pixel-perfect.
 * **Title menu** — captured Spectrum SCREEN$ from running the
   emulator past BASIC PAUSE; pixel-perfect.
-* **Gameplay model** — free flight, A/Q vertical + L horizontal,
-  no diving. Level completes when all rescuable workers picked up.
+* **Gameplay model** — it's a SPACE SHIP: free flight up / down /
+  left / right within the playable area.  No diving, no altitude
+  gates.  Level completes when all rescuable workers picked up.
 * **Asset loading + game loop architecture** — assets → splash
   → title → `LoadLevel(n)` → play → level complete / death.
 * **Player sprite + bullet + entity 16×16 quadrant blit** —
@@ -88,7 +89,7 @@ What is NOT correct yet
   player takes graze damage when straying outside the safe
   corridor.
 * **Sound effects**: `SfxQueue` is a Core-only one-shot queue with
-  voices for Fire / Hit / Explode / Pickup / Dive / Damage /
+  voices for Fire / Hit / Explode / Pickup / Thrust / Damage /
   GameOver / LevelUp. The Platform layer drains it each frame
   into `BeeperSynth.Tone` — Core has zero audio dependency.
 * **Music**: `MusicPlayer` walks the 4 KB Follin music stream
@@ -98,7 +99,7 @@ What is NOT correct yet
   slide loop at sample-accurate timing.
 * **Procedural levels** (depth 6+): deterministic-but-varied
   infinite levels keyed on depth, with the difficulty curve
-  rising as you dive and the type-pool broadening.
+  rising with the level and the type-pool broadening.
 
 ## Layout
 
@@ -155,7 +156,7 @@ dotnet run --project SubterraCS.Game
 ```
 
 Controls in interactive mode (same as the emulator-based Game):
-**Q / Up** climb, **A / Down** dive, **L / Left / Right** strafe,
+**Q / Up** thrust up, **A / Down** thrust down, **L / Left / Right** translate,
 **Enter / Space** fire, **P** pause, **F11** fullscreen, **Esc**
 quit.
 

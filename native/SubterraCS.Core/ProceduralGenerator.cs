@@ -12,7 +12,7 @@ namespace SubterraCS.Core;
 /// workers to recover; a "Lava Chamber" page is mostly type-1 + type-9
 /// drips with a thin background of stalactites.  This gives the
 /// infinite mode a sense of place that the original's six fixed pages
-/// already had — instead of just "more falling rocks", each new dive
+/// already had — instead of just "more falling rocks", each new level
 /// feels like a new room.
 ///
 /// Difficulty still rises with depth: timers shrink and the theme pool
