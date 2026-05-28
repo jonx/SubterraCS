@@ -162,10 +162,15 @@ public static class Hud
 
     /// <summary>
     /// Convert a 0..100 percentage (used through the rest of the World)
-    /// into the 0..96 game-internal range.
+    /// into the 0..95 game-internal range.  The original caps at $5F
+    /// (95), not $60 (96) — $E446 sets the bars to $5F after the fill
+    /// animation, and $E0BE has CP $60; RET Z which makes 96 a no-op
+    /// (the bar stays at whatever it was before).  Matches the emu's
+    /// observed full-bar state where 23 cells are $FF and cell 23 has
+    /// a partial mask.
     /// </summary>
     private static int ScaleToBar(int value0to100)
-        => Math.Clamp(value0to100 * BarMaxValue / 100, 0, BarMaxValue);
+        => Math.Clamp(value0to100 * 95 / 100, 0, 95);
 
     /// <summary>
     /// Draw a 24-cell bar starting at (<paramref name="x"/>, <paramref name="y"/>)
@@ -177,7 +182,14 @@ public static class Hud
     /// </summary>
     private static void DrawBar(Framebuffer fb, int x, int y, int value)
     {
-        int fullCells = value / QuantaPerCell;
+        // Empirically: at value=10 the emu has cells 0,1,2 full (3
+        // cells); at value=30 cells 0..7 (8 cells); at value=95 all
+        // 24 cells.  So fullCells = value/4 + 1 (not value/4 as my
+        // earlier code assumed).  The +1 accounts for $E0BE writing
+        // $FF at cell (value/4) each frame while previous iterations
+        // of the +2 fill loop have already filled cells 0..(value/4-1).
+        // At value=0 we want 0 full cells, so guard that case.
+        int fullCells = value == 0 ? 0 : value / QuantaPerCell + 1;
         int partialIdx = value % QuantaPerCell;
 
         Span<byte> cell = stackalloc byte[8];
