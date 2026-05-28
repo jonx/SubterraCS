@@ -105,11 +105,17 @@ public static class Hud
 
         // Row 18: "SHIELD:" + bar
         DrawText(fb, font, 0, 144, "SHIELD:", 0x46);
-        DrawBar(fb, 7 * 8, 144, ScaleToBar(world.Shield));
+        int shieldBarValue = world.BarFillOverride >= 0
+            ? world.BarFillOverride
+            : ScaleToBar(world.Shield);
+        DrawBar(fb, 7 * 8, 144, shieldBarValue);
 
         // Row 19: "FUEL  :" + bar
         DrawText(fb, font, 0, 152, "FUEL  :", 0x46);
-        DrawBar(fb, 7 * 8, 152, ScaleToBar(world.Fuel));
+        int fuelBarValue = world.BarFillOverride >= 0
+            ? world.BarFillOverride
+            : ScaleToBar(world.Fuel);
+        DrawBar(fb, 7 * 8, 152, fuelBarValue);
 
         // Bottom decor strip (rows 20..23) — green-on-black attribute strip
         // matching the emulator's $5A80..$5AFF.  Pixel content is procedural

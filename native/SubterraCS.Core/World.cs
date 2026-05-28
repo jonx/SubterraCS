@@ -63,6 +63,12 @@ public sealed class World
     // $E8C9 quadrant table from at-f100.bin.
     public int PlayerX = 128;
     public int PlayerY = 8;
+
+    /// <summary>Bar-fill animation override.  When >= 0 the HUD bar
+    /// drawer uses this instead of <see cref="Shield"/>/<see cref="Fuel"/>.
+    /// Port of the $E41B..$E446 fill loop in the original (48 iterations
+    /// of +2 with a per-iter beep; takes ~50 frames at level-start).</summary>
+    public int BarFillOverride = -1;
     public bool FacingLeft;
     public int Score;
     public int Fuel = 100;
@@ -218,6 +224,30 @@ public sealed class World
         // don't match the emulator.  Disabled until we port the real
         // executor.  Keep TickHazardSchedule as code for future plug-in.
         // TickHazardSchedule();
+
+        // Animate the bar fill at level start.  Port of $E41B..$E446
+        // which loops 48 times with A += 2 and a beep each iter, taking
+        // ~50 frames in total.  Empirical match: shield/fuel go 10 →
+        // 95 between f80 and f130 in the emulator.
+        const int BarFillStart = 80;
+        const int BarFillEnd = 130;
+        if (_frameCounter >= BarFillStart && _frameCounter <= BarFillEnd)
+        {
+            // Linear approximation of the $E41B loop's value ramp.
+            int progress = _frameCounter - BarFillStart;        // 0..50
+            int barVal = 10 + (progress * 85) / (BarFillEnd - BarFillStart);
+            BarFillOverride = Math.Clamp(barVal, 0, 95);
+        }
+        else if (_frameCounter > BarFillEnd)
+        {
+            BarFillOverride = -1;   // bars use the real Shield/Fuel
+        }
+        else
+        {
+            // Pre-fill (f<80): mirror the emu which shows full bars
+            // (the values were set to $5F earlier somewhere).
+            BarFillOverride = 95;
+        }
 
         // Animate the level scroll-in: one $DB1A iteration every
         // ScrollFramesPerStep frames, starting at ScrollStartFrame.
@@ -616,7 +646,13 @@ public sealed class World
         }
 
         bool hidePlayer = State == GameState.Dying
-                          || (Invincible && (_frameCounter & 2) == 0);
+                          || (Invincible && (_frameCounter & 2) == 0)
+                          // Match the emu: the player is not drawn
+                          // until the level paint completes.  Verified
+                          // by sampling f60..f400 in the emu — first
+                          // visible byte at f232, right after $DB1A's
+                          // 16 outer iterations finish.
+                          || !Scroll.ScrollComplete;
         if (!hidePlayer)
         {
             var playerSprite = FacingLeft ? PlayerSpriteLeft : PlayerSpriteRight;
