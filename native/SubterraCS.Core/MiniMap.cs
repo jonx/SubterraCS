@@ -84,13 +84,15 @@ public sealed class MiniMap
     /// cell on screen renders as a clean ribbon, so the byte value
     /// IS what the original puts on screen — we mirror that exactly.
     /// </summary>
-    /// <summary>Paint only the first N rows of the mini-map (top-down
-    /// approximation of the original's incremental paint pattern
-    /// observed between f50 and f80 in the emulator).</summary>
+    /// <summary>Paint the BOTTOM N rows of the mini-map (matches the
+    /// emu's incremental paint pattern: char rows 23 first, then 22,
+    /// then 21, then 20, as observed at f50 and f60).</summary>
     public void DrawToPartial(Framebuffer fb, int rowsToDraw)
     {
         rowsToDraw = Math.Clamp(rowsToDraw, 0, Rows);
-        for (int row = 0; row < rowsToDraw; row++)
+        // Paint source rows (Rows - rowsToDraw) .. Rows-1.
+        int firstRow = Rows - rowsToDraw;
+        for (int row = firstRow; row < Rows; row++)
         {
             int screenY1 = ScreenTop + row * 2;
             int screenY2 = screenY1 + 1;

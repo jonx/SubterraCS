@@ -677,6 +677,16 @@ public sealed class World
         {
             MiniMap.DrawTo(fb);
         }
+        else if (_frameCounter >= 50)
+        {
+            // Bottom-up paint approximation matching the emu's
+            // observed pattern (char rows 23 first, then 22, 21, 20
+            // between f50 and f80).  Source rows are mapped to char
+            // rows: 4 source rows per char row.
+            int progress = _frameCounter - 50;          // 0..30
+            int rowsToDraw = 16 * progress / 30;        // 0..16
+            MiniMap.DrawToPartial(fb, rowsToDraw);
+        }
     }
 
     /// <summary>
