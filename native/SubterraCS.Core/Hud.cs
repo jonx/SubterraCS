@@ -85,11 +85,23 @@ public static class Hud
             for (int col = 0; col < 32; col++)
                 fb.Bitmap[Framebuffer.BitmapAddress(col * 8, y)] = 0;
 
-        // Default attribute for the HUD chrome rows = bright yellow on black,
-        // matching the running emulator's $5A00..$5A7F (rows 16..19) values.
+        // HUD chrome attribute pattern, matching the emu's $5A00..$5A7F
+        // at f200 (the steady "default" state before any flash):
+        //   row 16: cols 0..6 = $46 (yellow bright, labels),
+        //           cols 7..19 = $04 (green, the worker-walk stretch),
+        //           cols 20..31 = $46 (yellow bright, lives icons).
+        //   row 17..19: cols 0..6 = $46 (labels), cols 7..31 = $46.
+        // The emu also FLASHES rows 16-17 to other colours every few
+        // frames via $E046's cycle on $E0EA/$E0EB — not yet ported.
         for (int row = HudCharRow; row < 20; row++)
+        {
             for (int col = 0; col < 32; col++)
-                fb.Attributes[row * 32 + col] = 0x46;
+            {
+                byte a = (byte)0x46;
+                if (row == HudCharRow && col >= 7 && col < 20) a = 0x04;
+                fb.Attributes[row * 32 + col] = a;
+            }
+        }
 
         // Use the Spectrum ROM font ($3D00..$3FFF) for the labels — same
         // bytes the original $E347 painter writes via RST 10 → ROM font.

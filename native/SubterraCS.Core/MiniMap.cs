@@ -84,6 +84,32 @@ public sealed class MiniMap
     /// cell on screen renders as a clean ribbon, so the byte value
     /// IS what the original puts on screen — we mirror that exactly.
     /// </summary>
+    /// <summary>Paint only the first N rows of the mini-map (top-down
+    /// approximation of the original's incremental paint pattern
+    /// observed between f50 and f80 in the emulator).</summary>
+    public void DrawToPartial(Framebuffer fb, int rowsToDraw)
+    {
+        rowsToDraw = Math.Clamp(rowsToDraw, 0, Rows);
+        for (int row = 0; row < rowsToDraw; row++)
+        {
+            int screenY1 = ScreenTop + row * 2;
+            int screenY2 = screenY1 + 1;
+            if (screenY2 >= Framebuffer.Height) continue;
+            for (int byteCol = 0; byteCol < 32; byteCol++)
+            {
+                byte stamp = 0;
+                for (int b = 0; b < 8; b++)
+                {
+                    byte src = Buffer[row * Cols + byteCol * 8 + b];
+                    if (src != 0) stamp |= (byte)(0x80 >> b);
+                }
+                if (stamp == 0) continue;
+                fb.Bitmap[Framebuffer.BitmapAddress(byteCol * 8, screenY1)] |= stamp;
+                fb.Bitmap[Framebuffer.BitmapAddress(byteCol * 8, screenY2)] |= stamp;
+            }
+        }
+    }
+
     public void DrawTo(Framebuffer fb)
     {
         for (int row = 0; row < Rows; row++)

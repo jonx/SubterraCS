@@ -665,10 +665,10 @@ public sealed class World
         Hud.Draw(fb, this);
 
         // Mini-map at the bottom strip (y=160..191) — port of $E104.
-        // The emu's mini-map paints incrementally between f50 and f80:
-        // 12 bytes at f50, 292 at f60, 563 (stable) from f80 onward.
-        // Suppress before f80 to avoid showing a too-complete map; an
-        // approximate paint animation could be added later.
+        // The emu's mini-map paints incrementally between f50 and f80
+        // (12 → 563 bytes) but the order doesn't match a simple top-
+        // down or left-right walk.  Until the exact paint pattern is
+        // decoded, suppress before f80 and paint full from f80+.
         if (_frameCounter >= 80)
         {
             MiniMap.DrawTo(fb);
