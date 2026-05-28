@@ -1753,3 +1753,62 @@ diff is concentrated in entity positions (mine static, emu's
 moving), the player ship, and entity sprites that spawn from
 the hazard schedule between f150 and f200 in the emu that my
 port hasn't fired yet (frame-200 spike).
+
+## 34. Player position alignment + template-entity suppression
+
+### Player position
+
+Earlier I had `PlayerX=120; PlayerY=64` (centre-ish of play
+area).  Read the actual emulator state:
+
+```
+$E8C9 quadrant addresses at f100:
+  quad 0: $400F → pixel (120,  0)
+  quad 1: $4010 → pixel (128,  0)
+  quad 2: $402F → pixel (120,  8)
+  quad 3: $4030 → pixel (128,  8)
+```
+
+So the player's 16×16 top-left lands at (120, 0) — the
+SPRITE COVERS the very top of the screen.  Centre is (128, 8).
+Fixed `PlayerX = 128; PlayerY = 8` in the port; the same values
+are used by Respawn and LoadLevel.
+
+### Template entities are not "live"
+
+When I extracted the per-level entity records from `$F2E8`+
+(§30), I assumed each record was a live entity that should be
+drawn at level-start.  Empirical verification at f100 showed
+otherwise:
+
+* The records ARE static between f60/f100/f200/f400 (we already
+  knew).
+* But the emulator's screen at f100 shows NO entities at the
+  positions decoded from those records.
+* The records contain `flags=$00` entries (e1, e8, e9) which
+  look like uninitialised slots, and others (e0, e4, e6, e7)
+  that share `top=$48A0` — multiple records pointing to the
+  same screen position, which can't be valid live state.
+
+Conclusion: the records are TEMPLATES that the cassette ships
+in RAM, but they're not the active-entity list until the game
+animates them.  My port was drawing them all at their template
+positions and creating noise.
+
+Suppressed the template-draw path entirely.  Worker counts
+still drive the rescue-complete check; the rendering is just
+muted until we figure out the activation path.
+
+### Result
+
+| Frame | With templates | Without templates |
+| ----- | --------------- | ----------------- |
+| 75    | 5.59%           | 5.47%             |
+| 100   | 5.07%           | 4.74%             |
+| 120   | 4.06%           | **3.55%**         |
+| 150   | 4.26%           | 4.18%             |
+| 200   | 11.00%          | 11.01%            |
+
+Best overall diff: **3.55%** at f120, down from 22.47%
+baseline — an **84% reduction** through systematic per-routine
+porting with no inventing.

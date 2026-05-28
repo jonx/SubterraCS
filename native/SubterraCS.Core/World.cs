@@ -55,8 +55,12 @@ public sealed class World
     public SpawnSchedule Current { get; private set; }
 
     // Player -----------------------------------------------------------
-    public int PlayerX = 120;
-    public int PlayerY = 64;
+    // Initial position matches the emulator at game-start: top-left
+    // quadrant address $400F = pixel (120, 0).  The Stryker sprite is
+    // 16×16 so its centre is at (128, 8).  Verified by reading the
+    // $E8C9 quadrant table from at-f100.bin.
+    public int PlayerX = 128;
+    public int PlayerY = 8;
     public bool FacingLeft;
     public int Score;
     public int Fuel = 100;
@@ -351,7 +355,7 @@ public sealed class World
             if (e.Alive && EntityAI.For(e.TypeId) != EntityAI.Kind.Worker)
                 e.Alive = false;
         }
-        PlayerX = 120; PlayerY = 64;
+        PlayerX = 128; PlayerY = 8;
         Shield = 100;
         Fuel = Math.Max(50, Fuel);
         SetInvincible(100);
@@ -383,7 +387,7 @@ public sealed class World
         Current = ScheduleForLevel(level);
         foreach (var e in Entities) e.Alive = false;
         foreach (var b in Bullets) b.Alive = false;
-        PlayerX = 120; PlayerY = 64;
+        PlayerX = 128; PlayerY = 8;
         Shield = 100;
         Fuel = Math.Min(100, Fuel + 25);
         SetInvincible(60);
@@ -416,6 +420,12 @@ public sealed class World
         int workerCount = 0;
         foreach (var rec in records)
         {
+            // TEMPORARILY SUPPRESS all template entities — they appear
+            // at static positions in our port but at f=100 the emulator
+            // doesn't render any of them.  Need more RE to know when
+            // entities go "live".  For now this gives the cleanest diff.
+            if (true) { if (rec.TypeId == 0) workerCount++; continue; }
+
             var slot = NextFreeEntity();
             if (slot is null) break;
             slot.TypeId = rec.TypeId;
