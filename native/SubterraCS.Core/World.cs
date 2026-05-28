@@ -211,9 +211,11 @@ public sealed class World
 
         if (Fuel <= 0) { TriggerDeath(); return; }
 
-        // Tick the hazard schedule (this only spawns hazards — workers
-        // are placed statically at LoadLevel time, not via the schedule).
-        TickHazardSchedule();
+        // The hazard schedule (port of $EF02) is not yet byte-faithful —
+        // it spawns at inflated cadences and at random x positions that
+        // don't match the emulator.  Disabled until we port the real
+        // executor.  Keep TickHazardSchedule as code for future plug-in.
+        // TickHazardSchedule();
 
         // Update every live entity.
         foreach (var e in Entities)
