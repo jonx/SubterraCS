@@ -2013,3 +2013,75 @@ a linear 32-byte-per-row grid which produces blank tile draws
 The scroll infrastructure is in place and correctly drives
 the persistent bitmap — wiring the right source-data interpreter
 will make the hillside scroll in.
+
+## 38. Hillside ported — diff f200: 10.59% → 3.26%
+
+User: *"i'm not completely sure why you have to instrument and
+capture when, you can simply look what the assembly code is
+doing no?"*  Correct.  Read `$DB1A` end-to-end instead of
+trying to instrument register reads.
+
+### What `$DB1A` actually does
+
+```
+DB1A  LD HL,$E56D            ; per-level pointer table
+DB1D  LD DE,($E587)          ; level
+DB25  SLA E
+DB29  ADD HL,DE; LD E,(HL); INC HL; LD D,(HL)
+DB2D  PUSH DE; POP IX         ; IX = per-level sprite ptr ($60F4 for L1)
+DB30  LD B,$10                ; OUTER LOOP: 16 char rows
+DB4F  CALL $DB7A              ; scroll up
+DB52  LD DE,$48E0             ; bottom of band 1 (y=120, col 0)
+DB55  LD B,$20                ; INNER LOOP: 32 cols
+DB57  PUSH BC; PUSH DE; PUSH IX; POP HL
+DB5C  CALL $DAF2              ; blit tile (HL → DE)
+DB5F  INC IX                   ; advance source by 1
+DB61  POP DE; INC DE           ; advance dest by 1
+DB63  POP BC; DJNZ $DB57       ; loop 32 cols
+DB66  LD HL,$59E0; LD B,$20; EX AF,AF'
+DB6C  LD (HL),A; INC HL; DJNZ  ; paint 32 attr cells
+DB71  LD BC,$00E0; ADD IX,BC   ; advance IX by $E0 (=224)
+DB77  POP BC; DJNZ $DB32        ; outer loop
+DB79  RET
+```
+
+Per outer iteration: 32 tile-index bytes consumed (`INC IX`
+× 32), then a `+224` stride.  Total per row: 256 bytes.
+Sixteen rows × 256 = 4096 — exactly the per-level buffer size.
+
+### Verified empirically
+
+For level 1 (`$E587 = 1`, `IX = $60F4`): char row 2 cols 21..24
+on the emu screen at f200 use tiles 161, 164, 165, 168.  The
+bytes at `$60F4 + 2*256 + 21..24` are `$A1, $A4, $A5, $A8` —
+exact match for every column tested.
+
+### Port
+
+`LevelScroll.PaintLevel(tileBank, levelBuffer)` walks the
+buffer in row-major order: for each char row 0..15 and column
+0..31, reads `buffer[row*256 + col]` as a tile index, blits the
+8 bytes of that tile from the master bank into the play-area
+bitmap at (col*8, row*8).  No scroll-and-draw idiom needed —
+that was the Z80's way of writing to the bitmap with limited
+registers; in C# we write to target addresses directly.
+
+`World.LoadLevel` resets a paint flag; `World.TickPlaying`
+fires `PaintLevel` once at `_frameCounter == 200`, approximating
+the emu's gradual scroll-in over f140..f200 by deferring the
+whole paint to the end of that window.
+
+### Diff impact
+
+| Frame | Before | After |
+| ----- | ------ | ----- |
+| 100   |  4.74% |  4.74% (unchanged — pre-paint) |
+| 130   |  3.23% |  3.23% (unchanged) |
+| 175   |  4.41% |  5.60% (mid-paint partial in emu) |
+| **200**   | 10.59% | **3.26%** ← huge win |
+| 250   | 11.82% |  4.49% |
+| 300   | (n/a)  |  4.76% |
+
+Native panel at f200 now matches the emu's hillside silhouette
++ tree pixel-for-pixel modulo a few tiny entity-position
+differences.
