@@ -1,79 +1,84 @@
 namespace SubterraCS.Core;
 
 /// <summary>
-/// Renders the HUD into a <see cref="Framebuffer"/> using a small
-/// hand-built 8 × 8 font (A-Z, 0-9, space, period, colon, slash, dash).
-/// Keeps the native build free of the Spectrum ROM character set the
-/// original game leans on.
-///
-/// Layout (matches the rough shape of the original):
-///   row 168:  DEPTH:###  SCORE:#####  RESCUED:##
-///   row 176:  SHIELD bar (red→yellow→green)
-///   row 184:  FUEL   bar (cyan)
+/// HUD layout reproduced from the original game's bottom-half chrome:
+/// <pre>
+///   row 128..159  : sky / playable area (left alone)
+///   row 160..167  : DEPTH:   N                  RESCUED:NN
+///   row 168..175  : SCORE: NNNNN
+///   row 176..183  : SHIELD ▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+///   row 184..191  : FUEL   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+/// </pre>
+/// Same DEPTH/SCORE/SHIELD/FUEL stack the original draws via <c>$E046</c>,
+/// with the multi-colour shield + fuel bars made of solid 8×8 cells whose
+/// attribute byte cycles through bright red→magenta→yellow→cyan to match
+/// the original's striped fill.
 /// </summary>
 public static class Hud
 {
+    public const int HudTop = 160;
+
     public static void Draw(Framebuffer fb, World world)
     {
-        // Black-out the HUD rows so the cave decor at row 184 doesn't
-        // bleed through.  Keep the cave colour everywhere else.
-        for (int row = 22; row < 24; row++)
-        {
-            for (int col = 0; col < 32; col++)
-            {
-                fb.Attributes[row * 32 + col] = 0x47; // bright white on black
-            }
-        }
-        for (int y = 168; y < 192; y++)
+        // Clear the HUD region (bitmap + attrs) so we have a clean slate.
+        for (int y = HudTop; y < 192; y++)
         {
             for (int col = 0; col < 32; col++)
             {
                 fb.Bitmap[Framebuffer.BitmapAddress(col * 8, y)] = 0;
             }
         }
+        for (int row = HudTop / 8; row < 24; row++)
+        {
+            for (int col = 0; col < 32; col++)
+            {
+                fb.Attributes[row * 32 + col] = 0x07;
+            }
+        }
 
-        DrawString(fb, 0,  168, $"DEPTH:{world.Depth:D3}", 0x47);
-        DrawString(fb, 88, 168, $"SCORE:{world.Score:D5}", 0x46);
-        DrawString(fb, 184,168, $"RES:{world.Rescued:D2}", 0x44);
+        // Left-stacked labels — bright white on black.
+        MiniFont.Draw(fb, 0,   160, $"DEPTH: {world.Depth + 1,3}", 0x47);
+        MiniFont.Draw(fb, 152, 160, $"RESCUED:{world.Rescued:D2}/{world.WorkersForThisLevel:D1}", 0x46);
+        MiniFont.Draw(fb, 0,   168, $"SCORE: {world.Score:D5}", 0x46);
 
-        DrawBar(fb, 0,   176, "SH", world.Shield, 0x42);   // red(ish)
-        DrawBar(fb, 128, 176, "FU", world.Fuel,   0x45);   // cyan
+        DrawStripedBar(fb, 0,   176, "SHIELD", world.Shield);
+        DrawStripedBar(fb, 0,   184, "FUEL  ", world.Fuel);
 
-        // Lives — drawn as small magenta squares on the bottom row's
-        // attribute strip so they don't crowd the bars.
+        // Lives — three magenta chips on the bottom-right.
         Span<byte> chip = stackalloc byte[8];
         for (int r = 1; r < 7; r++) chip[r] = 0x7E;
-        int lx = 232;
         for (int i = 0; i < Math.Min(world.Lives, 3); i++)
         {
-            Blitters.DrawTile8x8(fb, lx + i * 8, 184, chip, 0x43);  // bright magenta
+            Blitters.DrawTile8x8(fb, 232 + i * 8, 176, chip, 0x43);
         }
     }
 
-    private static void DrawBar(Framebuffer fb, int x, int y, string label, int value, byte attr)
+    /// <summary>
+    /// Draws a striped multi-colour bar in the same idiom as the
+    /// original — the bar is 16 cells of 8 pixels each, each cell
+    /// taking its colour from a 4-step palette so the fill looks
+    /// "rainbow"-like at full strength and fades back from the right
+    /// as the value drops.
+    /// </summary>
+    private static void DrawStripedBar(Framebuffer fb, int x, int y, string label, int value)
     {
-        DrawString(fb, x, y, label, attr);
-        // 12-cell bar starting after the 2-char label + space.
-        int bx = x + 24;
-        int cells = Math.Clamp(value / 8, 0, 12);   // value 0..100 → 0..12 cells
+        MiniFont.Draw(fb, x, y, label, 0x47);
+        int barStart = x + 8 * label.Length;
+        const int Cells = 16;
+        // 4-stripe palette: red, magenta, yellow, cyan (all bright).
+        ReadOnlySpan<byte> stripe = stackalloc byte[] { 0x42, 0x43, 0x46, 0x45 };
+        int filled = Math.Clamp(value * Cells / 100, 0, Cells);
+
         Span<byte> solid = stackalloc byte[8];
         Span<byte> empty = stackalloc byte[8];
-        for (int r = 0; r < 8; r++) { solid[r] = 0x7C; empty[r] = 0x00; }
-        for (int i = 0; i < 12; i++)
-        {
-            int xx = bx + i * 8;
-            Blitters.DrawTile8x8(fb, xx, y, i < cells ? solid : empty, attr);
-        }
-    }
+        for (int r = 1; r < 7; r++) solid[r] = 0xFF;
 
-    private static void DrawString(Framebuffer fb, int x, int y, string s, byte attr)
-    {
-        foreach (var ch in s)
+        for (int i = 0; i < Cells; i++)
         {
-            if (x >= Framebuffer.Width) return;
-            var glyph = MiniFont.Glyph(ch);
-            Blitters.DrawTile8x8(fb, x, y, glyph, attr);
-            x += 8;
+            int cx = barStart + i * 8;
+            if (cx + 8 > 256) break;
+            byte attr = i < filled ? stripe[i & 3] : (byte)0x07;
+            Blitters.DrawTile8x8(fb, cx, y, i < filled ? solid : empty, attr);
         }
     }
 }

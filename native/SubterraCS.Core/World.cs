@@ -28,7 +28,7 @@ public sealed class World
     public const int MaxEntities = 16;
     public const int MaxBullets  = 8;
     public const int PlayfieldTop = 0;       // top pixel of the play area
-    public const int PlayfieldBottom = 128;  // first pixel of the HUD strip
+    public const int PlayfieldBottom = 160;  // first pixel of the HUD strip
 
     // Loaded once at boot ------------------------------------------------
     public TileBank Tiles { get; }
@@ -404,7 +404,7 @@ public sealed class World
             slot.AgeFrames = 0;
             slot.Hp = 1;
             slot.X = 24 + (i + 1) * (208 / (workers + 1)) + rng.Next(-8, 9);
-            slot.Y = 112;          // walking on the surface
+            slot.Y = 140;          // walking on the surface ground row
             slot.DX = rng.Next(0, 2) == 0 ? -1 : 1;
             slot.DY = 0;
             slot.Alive = true;
@@ -544,42 +544,69 @@ public sealed class World
     /// <summary>
     /// Paint the level's static scenery.  The original game composes
     /// each page from the master tile bank at <c>$B0F4</c> driven by
-    /// per-level data tables; until we've fully reversed that path the
-    /// native port draws a minimal but level-distinct skyline so the
-    /// playfield isn't blank.
+    /// per-level data tables we haven't fully reverse-engineered yet
+    /// (the pointers at <c>$E56D</c> target <c>$60F4..$A0F4</c>, but
+    /// those regions are empty in our snapshots — the data must be
+    /// built at runtime by a path we haven't traced).
+    ///
+    /// What we DO have is the full extracted tile bank (384 tiles, 8
+    /// bytes each).  Per <c>docs/MEMORY-MAP.md</c>:
+    /// row 6-7 = hills / surface; row 10-11 = ground floor; row 8-9 =
+    /// trees / branches.  We compose a deterministic landscape per
+    /// depth out of these tiles — same tiles the original uses, picked
+    /// by a level-keyed seed so each page looks different but stable.
     /// </summary>
     private void DrawLevelScenery(Framebuffer fb)
     {
-        // Sky attribute strip — black background with cyan ink, the
-        // colour the original uses for the upper play area.
-        for (int row = 0; row < 16; row++)
+        // Sky attribute strip — fully transparent so the player and
+        // entities draw on black.  The lower half (rows 12+) is the
+        // landscape and HUD.
+        for (int row = 0; row < 24; row++)
         {
             for (int col = 0; col < 32; col++)
             {
-                fb.Attributes[row * 32 + col] = 0x05;  // cyan on black
+                fb.Attributes[row * 32 + col] = 0x07;  // bright white ink on black
             }
         }
 
-        // Ground line at row 16 (y = 128).  Use UDG tile 0 (cave-floor
-        // pattern) repeated across the whole screen, painted green.
-        int floorTile = Math.Min(Depth, Math.Max(0, Udgs.Count - 1));
-        for (int col = 0; col < 32; col++)
+        var rng = new Random(HashCode.Combine(Depth, 0xC0DE));
+
+        // Hill silhouette band — rows 14..17 (y=112..136).  We tile a
+        // strip of "hill" tiles from the master bank (rough indices
+        // 96..127 per MEMORY-MAP), wrapping the column index by the
+        // bank size.  The whole strip is painted green.
+        int hillBase = 96;
+        int hillSpan = 32;
+        for (int row = 14; row < 18; row++)
         {
-            Blitters.DrawTile8x8(fb, col * 8, 128, Udgs[floorTile], 0x44);
-        }
-        // Second row of cave-floor pattern, slightly shifted, gives a
-        // grass-band silhouette.
-        int secondTile = (floorTile + 1) % Math.Max(1, Udgs.Count);
-        for (int col = 0; col < 32; col++)
-        {
-            Blitters.DrawTile8x8(fb, col * 8, 136, Udgs[secondTile], 0x44);
+            for (int col = 0; col < 32; col++)
+            {
+                int idx = (hillBase + ((col + Depth * 3) % hillSpan)) % Tiles.TileCount;
+                Blitters.DrawTile8x8(fb, col * 8, row * 8, Tiles[idx], 0x44);
+            }
         }
 
-        // Per-level accent tile sprinkled along the ground for variety.
-        var accent = Udgs.Count > 0 ? Udgs[(Depth * 7) % Udgs.Count] : ReadOnlySpan<byte>.Empty;
-        for (int col = 2; col < 32; col += 6)
+        // Trees / surface accent — a few standalone "tree" tiles
+        // (~indices 128..159) sprinkled across the hill top.
+        for (int col = 1; col < 31; col += 6 + rng.Next(0, 4))
         {
-            Blitters.DrawTile8x8(fb, col * 8, 120, accent, 0x44);
+            int treeIdx = (128 + rng.Next(0, 16)) % Tiles.TileCount;
+            Blitters.DrawTile8x8(fb, col * 8, 13 * 8, Tiles[treeIdx], 0x44);
+        }
+
+        // Surface ground strip at row 18 (y=144) — solid grass tiles.
+        int groundIdx = (160 + Depth) % Tiles.TileCount;
+        for (int col = 0; col < 32; col++)
+        {
+            Blitters.DrawTile8x8(fb, col * 8, 18 * 8, Tiles[groundIdx], 0x44);
+        }
+
+        // Underground floor stripe just below the surface for
+        // structural variety — uses a "ground" tile a few indices on.
+        int floorIdx = (164 + Depth) % Tiles.TileCount;
+        for (int col = 0; col < 32; col++)
+        {
+            Blitters.DrawTile8x8(fb, col * 8, 19 * 8, Tiles[floorIdx], 0x44);
         }
     }
 
