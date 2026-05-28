@@ -947,10 +947,9 @@ public sealed class World
             Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43);
         }
 
-        // Ship sprites + mini-map dots (STUBS) — port of $E920 draw
-        // chain + $E213.
-        EnemyShipTable.TickAndDraw(fb, ScrollOffsetX, (ScrollOffsetX + 15) & 0xFF,
-                                    PlayerY, EnemyShots, _rng);
+        // Ship sprites + mini-map dots — port of $E9AC sprite blit
+        // + $E213 mini-map plot (called twice for blink alternation).
+        EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
         Boss.Draw(fb, ScrollOffsetX);
 
         // Enemy BULLETS draw before the HUD so the HUD chrome stays

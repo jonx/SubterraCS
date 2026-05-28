@@ -695,6 +695,53 @@ their X against `($E583) + $0F`.
 This is distinct from the `$F2EB`-style records (fixed playfield
 decor; see [`disasm/entities.md`](disasm/entities.md)).
 
+## RAM ($E48B) — enemy-ship AI 4-cycle counter
+
+Increments 0→1→2→3→0 each frame inside `$E920`.  Used to index
+the per-cycle sprite-data table at `$E5DB`.
+
+## RAM ($E5DB–$E5FA) — enemy-ship animated sprite (4 frames × 8 bytes)
+
+The 4 animation frames of the alien-ship 8×8 sprite.  Verified
+contents (from `at-f100.bin`):
+
+```
+bank 0: 3C FF DB 7E 66 A5 42 00
+bank 1: 3C FF DB 7E 66 81 66 00
+bank 2: 3C FF DB 7E 66 81 42 42
+bank 3: 3C E7 FF 7E 66 81 42 81
+```
+
+Decoded as 8×8 glyphs, these are the 4 animation frames of a
+flapping-wing alien ship.  Used by `$E9AC` (called from the
+`$E920` AI chain) to draw one frame per cycle into the bitmap.
+
+## Code ($D827) — scroll-progress counter update
+
+Called every frame from the main loop (`$D7FE`).  Updates
+`($EE74)` by adding a level-scaled step:
+
+```
+HL = ($EE74); DE = ($E587)  ; DE = (level, ?)
+DE.H = 0
+DE.L = ((level + 3) >> 3) + 1   ; step = 1 at level 1, 2 at level 6
+HL += DE  (saturated)
+($EE74) = HL
+```
+
+Used by `$EC10` for the boss-spawn gate: boss eligible once
+`$EE74 > $4A38`.
+
+## RAM ($EE73) — every-other-frame toggle for $E920
+
+XOR'd with `$01` at the top of `$E920`; RET Z makes the AI
+process only on alternate frames (`$E924..$E92C`).
+
+## RAM ($EE74) — scroll-progress counter (16-bit)
+
+Saturating counter incremented by `$D827` every frame.  Boss at
+`$EC10` becomes eligible when `($EE74) > $4A38` (~19000 ticks).
+
 ## RAM ($EE9E–$EEC1) — enemy ship live table
 
 6 slots × 6 bytes.  Spawned dynamically by `$EBB2`, ticked by

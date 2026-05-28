@@ -2638,3 +2638,80 @@ extracted but no loader yet — and per the correction above, the
 loader needs to populate mini-map data + collision points, NOT
 playfield entities.  The playfield-population mystery is still
 open.
+
+## 48. Full entity-subsystem map: ships, bullets, boss, workers
+
+User: "find where the other enemy space ships are, what they do
+and where".  Following the source from the main loop yielded the
+complete map — and corrected my prior misreads.
+
+### Main loop entry-points (from `$D7FB`)
+
+```
+D7FB main loop
+  D7FE CALL $D827   scroll-progress counter ($EE74 += level-step)
+  D801 CALL $D8C2   input + L-key fuel drain
+  D804 CALL $DCAC   sprite-context maintenance
+  D807 CALL $DC5D   player attribute paint
+  D80A CALL $F1A5   STATIC DECOR draw  (System A, $F2EB records)
+  D80D CALL $D9C8   horizontal scroll
+  D810 CALL $DCF5   player XOR draw
+  D813 CALL $DFAF   (TBD)
+  D816 CALL $E248   player MINI-MAP dot
+  D819 CALL $E8FD   ← ENTITY SUPERCALLER
+  D81C CALL $DE2A   player BULLETS ($E46B + $DE41 fire)
+  D81F CALL $EF02   WORKER SCHEDULE ($E75D)
+  D822 CALL $E046   HUD attribute flash + bar update
+```
+
+### `$E8FD` supercaller chain
+
+```
+E8FD CALL $E213   ; mini-map dot draw for $E597 ships (XOR)
+E900 CALL $E920   ; SHIP AI — every-other-frame, 4-cycle slice
+E903 CALL $EC10   ; BOSS spawn + tick (single slot at $EE7D)
+E906 CALL $E213   ; mini-map again — alternation produces blink
+E909 CALL $ED00   ; BULLET tick ($EE9E processor)
+E90C CALL $DD4D   ; collision pass (player vs ships/bullets/boss)
+```
+
+So FOUR distinct entity systems live in the cassette:
+
+| Table | Routine chain | Role |
+| ----- | ------------- | ---- |
+| `$F2EB` (8-byte records, ROM) | `$F1A5`/`$F1EF` | Static playfield decor |
+| `$E75D` (4-byte × 8, loaded from `$E69D`) | `$EF02`/`$EF08` + `$F02E` | Rescuable workers (playfield 8×8 sprites + mini-map dots) |
+| `$E597` (4-byte × 7, loaded from `$E48D`) | `$E920` AI + `$E213` mini-map + `$E9AC` 8×8 sprite | Enemy SHIPS (mini-map dots + playfield aliens) |
+| `$EE9E` (6-byte × 6, dynamic) | `$EBB2` spawn from `$E920` chain + `$ED01` tick | Bullets the ships fire |
+| `$EE7D..$EE84` (single slot) | `$EC10` spawn + `$EC4C` tick | BOSS — triggered when `$EE74 > $4A38` |
+
+### Key state addresses uncovered
+
+- `$E48B` — 4-cycle counter for `$E920`, indexes `$E5DB`.
+- `$E5DB..$E5FA` — 4 frames × 8 bytes of the alien-ship sprite.
+- `$EE73` — every-other-frame toggle for `$E920`.
+- `$EE74` (word) — scroll-progress counter, updated by `$D827`.
+  Boss eligible at `$4A38`.
+- `$EE7C` — boss-active flag.
+- `$EE83` — boss kill-count.
+- `$EE82` — alternate-frame toggle for boss.
+
+### Port status
+
+Stubs created for the missing subsystems; the parts I'm confident
+about are implemented:
+
+- `EnemyShips.LoadFromInit` — port of `$E319` LDIR from `$E48D`.
+- `EnemyShips.DrawMiniMapDots` — port of `$E213`/`$E235`/`$E1DE`:
+  single-pixel XOR at `(X+1, 161 + Y/4)`.
+- `EnemyShips.DrawShipSprites` — port of `$E9AC`'s 8-byte blit
+  using the per-cycle frame from `$E5DB`.
+- `EnemyShips.TickAi` — the every-other-frame and cycle-counter
+  parts of `$E920`.  Per-slot AI movement + bullet-firing not yet
+  ported (the `$E920` body uses alt-bank EXX tricks + the helper
+  chain `$EADE`/`$EB5B`/`$EAB2`/`$EABD` that I haven't fully
+  decoded).
+- `BossEntity` — fields and stubs only.  `$EC10` spawn check +
+  `$EC4C` tick not yet ported.
+
+Full inventory in [`docs/disasm/enemies.md`](disasm/enemies.md).

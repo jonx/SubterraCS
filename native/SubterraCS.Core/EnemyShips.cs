@@ -62,20 +62,27 @@ public sealed class EnemyShips
             Slots[i].Status = initData[baseOff + i*4 + 2];
             Slots[i].Sub    = initData[baseOff + i*4 + 3];
         }
+        // Verified contents of $E5DB at f100: 4 banks × 8 bytes of an
+        // animated alien sprite (the bytes encode an 8x8 silhouette).
+        // We bake this from the snapshot since it's static cassette data.
+        SpriteBanks = new byte[]
+        {
+            0x3C, 0xFF, 0xDB, 0x7E, 0x66, 0xA5, 0x42, 0x00,   // frame 0
+            0x3C, 0xFF, 0xDB, 0x7E, 0x66, 0x81, 0x66, 0x00,   // frame 1
+            0x3C, 0xFF, 0xDB, 0x7E, 0x66, 0x81, 0x42, 0x42,   // frame 2
+            0x3C, 0xE7, 0xFF, 0x7E, 0x66, 0x81, 0x42, 0x81,   // frame 3
+        };
     }
 
-    /// <summary>STUB — port of <c>$E8FD</c> entity supercaller:
-    /// mini-map draw, AI tick, mini-map blink, bullet tick, collision.
-    /// </summary>
-    public void TickAndDraw(Framebuffer fb, int scrollCursor, int playerByteX, int playerY,
-                            EnemyBullets bullets, Random rng)
+    /// <summary>Port of <c>$E8FD</c> entity supercaller (partial):
+    /// mini-map dots × 2 (blink alternation) + ship-sprite blit.
+    /// AI tick and bullet/collision are handled by the caller.</summary>
+    public void Draw(Framebuffer fb, int scrollCursor, byte levelAttr)
     {
         DrawMiniMapDots(fb, scrollCursor);     // $E213 first pass
-        TickAi(scrollCursor, playerByteX, playerY, bullets, rng);   // $E920
-        // $EC10 boss tick goes here (Boss class)
-        DrawMiniMapDots(fb, scrollCursor);     // $E213 second pass (blink)
-        // bullets.Tick(...) called by caller after $ED00
-        // collision pass via $DD4D handled by caller
+        DrawShipSprites(fb, scrollCursor, levelAttr);
+        DrawMiniMapDots(fb, scrollCursor);     // $E213 second pass — XOR
+                                               //   toggle = blink effect
     }
 
     /// <summary>Port of <c>$E213</c>/<c>$E235</c>/<c>$E1DE</c>:
@@ -101,26 +108,59 @@ public sealed class EnemyShips
         }
     }
 
-    /// <summary>STUB — port of <c>$E920</c>: per-cycle AI dispatch.
-    /// Reads <see cref="SpriteBanks"/> at offset <see cref="Cycle"/> * 16
-    /// (= 4 banks of 16 bytes in the original; we use 4×8).  For each
-    /// alive ship, runs <c>$E97F..$E99C</c> sub-logic which:
-    ///   - if level &lt; 6, calls <c>$EAA6</c> path
-    ///   - else <c>$EADE</c> + <c>$EB5B</c> repeated
-    /// Then draws via <c>$E9AC</c> twice.  Possibly fires bullets
-    /// via <c>$EBB2</c> indirectly during the inner loop.</summary>
+    /// <summary>PARTIAL port of <c>$E920</c>.  The cassette's AI uses
+    /// alt-bank register tricks (EXX) and a complex per-slot helper
+    /// chain (<c>$EADE</c> + <c>$EB5B</c> + <c>$EAB2</c> + <c>$EABD</c>
+    /// + <c>$E9AC</c>) that I haven't fully decoded.  This port handles
+    /// only the parts I'm confident about:
+    /// <list type="number">
+    /// <item>every-other-frame skip via <see cref="OddFrameToggle"/>
+    /// (= <c>$EE73</c>)</item>
+    /// <item>4-cycle counter advance for <see cref="Cycle"/>
+    /// (= <c>$E48B</c>)</item>
+    /// </list>
+    /// Ship X/Y do not yet update — that's the missing AI piece.</summary>
+    private byte OddFrameToggle;   // $EE73
     public void TickAi(int scrollCursor, int playerByteX, int playerY,
                         EnemyBullets bullets, Random rng)
     {
-        // TODO: $E920 chain
+        // $E924: XOR $01; LD ($EE73),A; RET Z — only proceed every 2 frames.
+        OddFrameToggle ^= 0x01;
+        if (OddFrameToggle == 0) return;
+        // $E92D: INC; AND $03; LD ($E48B),A
         Cycle = (Cycle + 1) & 0x03;
+        // TODO: per-slot $E97F..$E9A9 + $EBB2 firing.
     }
 
-    /// <summary>STUB — port of <c>$E9AC</c>: blit one 8x8 cell of the
-    /// per-cycle sprite at the ship's screen position.</summary>
-    public void DrawShipSprite(Framebuffer fb, int slot, int scrollCursor)
+    /// <summary>Port of <c>$E9AC</c>'s sprite blit (simplified): draw
+    /// the current cycle's 8x8 alien sprite at each alive ship's
+    /// (X, Y).  Same gate as <see cref="DrawMiniMapDots"/>: only ships
+    /// whose (X - scrollCursor) lands in the visible 32-byte window.</summary>
+    public void DrawShipSprites(Framebuffer fb, int scrollCursor, byte levelAttr)
     {
-        // TODO: implement
+        int spriteBase = Cycle * 8;
+        if (spriteBase + 8 > SpriteBanks.Length) return;
+        for (int i = 0; i < SlotCount; i++)
+        {
+            if (!IsAlive(i)) continue;
+            int offset = (Slots[i].X - scrollCursor) & 0xFF;
+            if (offset >= 0x20) continue;
+            int sx = offset * 8;
+            int sy = Slots[i].Y;
+            if ((uint)sx >= Framebuffer.Width || (uint)sy >= Framebuffer.Height) continue;
+            // Sprite-byte plot, 8 scanlines.  XOR matches the cassette's
+            // self-erase pattern at $E9D0 (though that has guards we skip).
+            for (int row = 0; row < 8; row++)
+            {
+                int yy = sy + row;
+                if ((uint)yy >= Framebuffer.Height) break;
+                int addr = Framebuffer.BitmapAddress(sx, yy);
+                fb.Bitmap[addr] ^= SpriteBanks[spriteBase + row];
+            }
+            // Attribute cell — single 8×8 paint with the level colour
+            // (matches $E9BE LD A,($E57B); LD (HL),A).
+            fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = levelAttr;
+        }
     }
 }
 
