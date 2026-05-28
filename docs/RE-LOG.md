@@ -1612,3 +1612,60 @@ Buffer stays empty until we trace the populator; renders a blank
 strip for now.  This sets up the right SHAPE so that as soon as
 we find what writes the bytes, plugging it in needs no
 plumbing.
+
+## 32. Mini-map shows level + entity positions — half-confirmed
+
+User: *"note that the mini map shows the whole level but also the
+position of the enemies and such"*.
+
+Verifications:
+
+* `$60F4..$70F3` (the supposed mini-map source buffer) differs by
+  **exactly 1 byte** between f60/f100/f200/f400.  Effectively
+  static after early init — *not* updated per-frame with entity
+  positions.
+* The bottom-strip BITMAP at y=160..191 differs by 272 bytes
+  between f60 and f100 (the level-paint pass).  Then 0 bytes
+  f100→f200 and only **12 bytes** f200→f400.
+* The 12 late-stage diffs are all single-bit XORs at scattered
+  pixel positions — pattern matches `$E1DE`-style single-byte
+  XOR writes (the "particle / bullet" draw primitive).
+
+Cross-check against the `$E881` particle table (8 slots × 4
+bytes = x, y, dx, dy per MEMORY-MAP):
+
+| Slot | f200 (x,y) | f400 (x,y) | Movement? |
+| ---- | ---------- | ---------- | --------- |
+| 0    | (50, 188)  | (128, 188) | yes       |
+| 1    | (89, 71)   | (128, 188) | yes       |
+| 2    | (11, 149)  | (128, 188) | yes       |
+| …    | …          | …          | …         |
+
+Several particles are at y ≥ 160 (i.e. IN the bottom strip
+region), and they ARE updated every frame.  So the "moving
+single-pixel markers" we see at y=160..191 are most likely just
+**particles whose trajectories happen to traverse the bottom-
+strip area** — they're the same particle/bullet system the
+play area uses, not a dedicated mini-map marker layer.
+
+What this means for the user's claim:
+
+* "Mini-map shows the level" — partially supported.  The
+  bottom-strip BITMAP holds a structured per-column terrain
+  pattern that doesn't change, suggesting a static layout view.
+  Whether `$60F4` populates it via `$E104` (theory of §31) or
+  something else draws it directly (the 272-byte f60→f100 paint
+  passing through some other code) is still open.
+* "Position of the enemies" — only partially.  Enemy/particle
+  motion DOES make pixels flicker in the bottom strip, but
+  that's a side-effect of those entities being at y > 160,
+  not a dedicated tracking layer.  The "real" entity tracking
+  for AI / collision lives in `($F1B9)`'s 8-byte records and
+  the `$E881` particles.
+
+Honest wall: I can't make the bottom strip render correctly in
+the native port without either (a) tracing the routine that
+writes those 272 bytes of initial paint, or (b) capturing the
+per-level mini-map bitmap and shipping it as an asset (which
+crosses the "don't capture levels" line).  The infrastructure
+in `MiniMap.cs` is ready for (a) when the routine is found.
