@@ -362,7 +362,12 @@ public sealed class World
         Lives = 3;
         Score = 0;
         Rescued = 0;
-        LoadLevel(0);
+        // The original's $E587 starts at 0 but $F6F2 INC's it before
+        // entering the first playable level — so the first level the
+        // player sees uses index 1's records (10 entities, the clean
+        // 8-byte stride at $F2EB).  Level 0 is the anomalous short
+        // record set we haven't fully decoded.
+        LoadLevel(1);
     }
 
     /// <summary>
@@ -615,7 +620,7 @@ public sealed class World
         DrawPlaying(fb);
         if ((StateTicks & 8) < 4)
         {
-            MiniFont.DrawCentered(fb, 56, $"LEVEL {Depth + 1} CLEAR", 0x46);
+            MiniFont.DrawCentered(fb, 56, $"LEVEL {Depth} CLEAR", 0x46);
             MiniFont.DrawCentered(fb, 72, $"+250", 0x44);
         }
     }
@@ -625,7 +630,7 @@ public sealed class World
         DrawPlaying(fb);
         for (int i = 0; i < fb.Attributes.Length; i++) fb.Attributes[i] = 0x07;
         MiniFont.DrawCentered(fb, 64, "GAME OVER", 0x42);
-        MiniFont.DrawCentered(fb, 80, $"LEVEL {Depth + 1}  SCORE {Score:D5}", 0x46);
+        MiniFont.DrawCentered(fb, 80, $"LEVEL {Depth}  SCORE {Score:D5}", 0x46);
         MiniFont.DrawCentered(fb, 88, $"RESCUED {Rescued:D2}", 0x44);
         if ((StateTicks & 16) < 8)
         {

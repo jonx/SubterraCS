@@ -96,7 +96,8 @@ public static class Hud
         var font = world.RomFont;
 
         // Row 16: "DEPTH :   N"
-        DrawText(fb, font, 0, 128, $"DEPTH :{world.Depth + 1,3}", 0x46);
+        // Depth is the original's $E587 (1-based at first playable level).
+        DrawText(fb, font, 0, 128, $"DEPTH :{world.Depth,3}", 0x46);
 
         // Row 17: "SCORE : NNNNNN"     "RESCUED:NN"@col22
         DrawText(fb, font, 0,      136, $"SCORE :{world.Score:D6}", 0x46);
