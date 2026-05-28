@@ -22,6 +22,9 @@ public sealed class Assets
     public RomFont RomFont { get; }
     public LevelEntities LevelEntities { get; }
     public MiniMap MiniMap { get; }
+    /// <summary>Per-level enemy-ship init data ($E48D, 6 × 32 bytes).
+    /// Copied to $E597 at level-load by $E319.</summary>
+    public byte[] EnemyShipInitData { get; }
 
     public Assets(string assetsDir)
     {
@@ -60,6 +63,10 @@ public sealed class Assets
         // in its $60F4 / $70F4 / etc. RAM regions — extracted directly
         // from the boot snapshot.
         MiniMap = MiniMap.LoadFromAsset(Path.Combine(assetsDir, "level-minimaps.bin"));
+
+        // Per-level enemy-ship init data (6 × 32 bytes = 192).
+        // Loaded into EnemyShipTable at level-load via $E319 port.
+        EnemyShipInitData = File.ReadAllBytes(Path.Combine(assetsDir, "level-init-e48d.bin"));
     }
 
     private static byte[] LoadOptionalScr(string dir, string name)

@@ -52,6 +52,8 @@ public sealed class World
     public RomFont? RomFont { get; set; }
     public LevelEntities? LevelEntities { get; set; }
     public MiniMap MiniMap { get; set; } = new();
+    /// <summary>Per-level enemy-ship init data ($E48D, 6 × 32 bytes).</summary>
+    public byte[] EnemyShipInitData { get; set; } = Array.Empty<byte>();
     public readonly LevelScroll Scroll = new();
     public readonly Explosion Explosion = new();
     public readonly EnemyBullets EnemyShots = new();
@@ -675,9 +677,9 @@ public sealed class World
         Scroll.Reset();
         ScrollOffsetX = 0;
         EnemyShots.Reset();
-        // STUB: would call EnemyShipTable.LoadFromInit(initData, level)
-        // once we load the $E48D asset.
-        EnemyShipTable.Reset();
+        // Port of $E319's LDIR from $E48D + level*32 → $E597.  Loads
+        // the 7 ships' (X, Y, status, sub) into the live table.
+        EnemyShipTable.LoadFromInit(EnemyShipInitData, level);
         Boss.Reset();
         // Level scenery paint is deferred — see Scroll.PaintLevel call
         // gated by frame counter in TickPlaying, matching the emu's

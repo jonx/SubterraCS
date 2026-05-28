@@ -47,6 +47,7 @@ internal static class Program
             RomFont = assets.RomFont,
             LevelEntities = assets.LevelEntities,
             MiniMap = assets.MiniMap,
+            EnemyShipInitData = assets.EnemyShipInitData,
         };
 
         // Pass music data through to whichever runner uses it.

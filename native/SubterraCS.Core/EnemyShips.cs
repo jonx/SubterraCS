@@ -78,13 +78,27 @@ public sealed class EnemyShips
         // collision pass via $DD4D handled by caller
     }
 
-    /// <summary>STUB — port of <c>$E213</c>/<c>$E235</c>:
-    /// draw one mini-map byte per alive ship at scanline
-    /// <c>161 + Y/4</c>, column <c>X + 1</c>.</summary>
+    /// <summary>Port of <c>$E213</c>/<c>$E235</c>/<c>$E1DE</c>:
+    /// draw one mini-map pixel per alive ship.
+    ///   B = $1E - Y/4; passed to $E1DE which computes
+    ///   scanline = $BF - B = $A1 + Y/4 = 161 + Y/4 (mini-map row).
+    ///   C = X + 1; lower 3 bits pick the pixel within the byte,
+    ///   upper bits the byte column.  $E1DE XORs the bit into
+    ///   the screen byte.
+    /// Mini-map covers y=160..191 (32 px tall) and the full 256 px
+    /// width, so each world byte (0..255) maps to one mini-map pixel.</summary>
     public void DrawMiniMapDots(Framebuffer fb, int scrollCursor)
     {
-        // TODO: implement byte plot at $E80F[(30-Y/4)>>3]
-        //       using $E1DE-style XOR write.
+        for (int i = 0; i < SlotCount; i++)
+        {
+            if (!IsAlive(i)) continue;
+            int pixelX = (Slots[i].X + 1) & 0xFF;
+            int pixelY = 0xA1 + (Slots[i].Y >> 2);   // 161 + Y/4
+            if (pixelY < 160 || pixelY >= 192) continue;
+            int addr = Framebuffer.BitmapAddress(pixelX, pixelY);
+            byte bit = (byte)(0x80 >> (pixelX & 7));
+            fb.Bitmap[addr] ^= bit;
+        }
     }
 
     /// <summary>STUB — port of <c>$E920</c>: per-cycle AI dispatch.
