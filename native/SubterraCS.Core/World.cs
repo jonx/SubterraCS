@@ -244,9 +244,12 @@ public sealed class World
         }
         else
         {
-            // Pre-fill (f<80): mirror the emu which shows full bars
-            // (the values were set to $5F earlier somewhere).
-            BarFillOverride = 95;
+            // Pre-fill (f<80): bars show UDG-A corners only with
+            // empty middle.  $E464 = $5F at this point in the emu,
+            // but $E0BE hasn't been called yet so the cells aren't
+            // filled.  Setting value=0 makes our DrawBar output
+            // the same empty-middle pattern.
+            BarFillOverride = 0;
         }
 
         // Animate the level scroll-in: one $DB1A iteration every
