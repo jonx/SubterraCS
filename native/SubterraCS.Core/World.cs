@@ -365,12 +365,12 @@ public sealed class World
         }
 
         // ---- Page-advance gate — port of $F868 → $F6F2 ----
-        // The original's gate at $F868 checks `CP $75; RET C` — so
-        // altitude must reach $75 to trigger the page advance.  Adds
-        // 1000 to score and calls $F6F2 (which INCs $E587 mod 6 and
-        // re-runs the full level-load chain).  Our $D95D port caps
-        // altitude at $78 so we use that as the trigger threshold.
-        if (Altitude >= 0x75)
+        // Page-advance gate — port of $F868.  Original requires BOTH:
+        //   altitude >= $75    (player at bottom of playfield)
+        //   $E77D[level] != 0  (all 8 workers picked → level cleared)
+        // We model the cleared flag as Workers.RemainingThisLevel == 0.
+        // On pass: +1000 score and load next level (= $F6F2).
+        if (Altitude >= 0x75 && Workers.RemainingThisLevel == 0)
         {
             Score += 1000;
             LoadLevel(NextLevel(Depth));
