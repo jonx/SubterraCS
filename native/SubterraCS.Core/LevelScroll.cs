@@ -48,9 +48,64 @@ public sealed class LevelScroll
     /// covers bands 0+1 (y=0..127).</summary>
     public byte[] PlayBitmap { get; } = new byte[4096];
 
+    /// <summary>How many rows of the level have been scrolled in so far (0..16).</summary>
+    public int ScrolledRows { get; private set; }
+
+    public bool ScrollComplete => ScrolledRows >= CharRows;
+
     public void Reset()
     {
         Array.Clear(PlayBitmap, 0, PlayBitmap.Length);
+        ScrolledRows = 0;
+    }
+
+    /// <summary>
+    /// Advance the scroll-in by one step — port of one outer-loop
+    /// iteration of <c>$DB1A</c>.  Scrolls the existing PlayBitmap UP
+    /// by 8 scanlines, then paints the next source row at the bottom
+    /// char row (y=120..127).
+    /// </summary>
+    public void ScrollOneStep(TileBank tileBank, byte[] levelBuffer)
+    {
+        if (ScrollComplete) return;
+        if (levelBuffer.Length < CharRows * SourceStride) return;
+
+        // Scroll the play area UP by 8 scanlines (one char row).
+        // Spectrum's interleaved layout means we can't do a flat
+        // memmove; iterate scanline by scanline.
+        for (int y = 0; y < World.PlayfieldBottom - 8; y++)
+        {
+            int srcY = y + 8;
+            for (int col = 0; col < 32; col++)
+            {
+                int src = Framebuffer.BitmapAddress(col * 8, srcY);
+                int dst = Framebuffer.BitmapAddress(col * 8, y);
+                PlayBitmap[dst] = PlayBitmap[src];
+            }
+        }
+
+        // Paint the bottom char row (y=120..127) from source row K
+        // where K = ScrolledRows + 1 (1-indexed match for $DB1A's
+        // outer iteration counter).
+        int srcBase = ScrolledRows * SourceStride;
+        int bottomY = World.PlayfieldBottom - 8;
+        for (int col = 0; col < 32; col++)
+        {
+            byte tileIdx = levelBuffer[srcBase + col];
+            for (int sl = 0; sl < 8; sl++)
+            {
+                if (tileIdx == 0 || tileIdx >= tileBank.TileCount)
+                {
+                    PlayBitmap[Framebuffer.BitmapAddress(col * 8, bottomY + sl)] = 0;
+                }
+                else
+                {
+                    PlayBitmap[Framebuffer.BitmapAddress(col * 8, bottomY + sl)] = tileBank[tileIdx][sl];
+                }
+            }
+        }
+
+        ScrolledRows++;
     }
 
     /// <summary>

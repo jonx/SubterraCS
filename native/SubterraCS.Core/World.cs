@@ -219,15 +219,17 @@ public sealed class World
         // executor.  Keep TickHazardSchedule as code for future plug-in.
         // TickHazardSchedule();
 
-        // Defer the level-scenery paint until ~f140 to match the
-        // emu's gradual scroll-in.  The original's $DB1A runs the
-        // scroll 16 times in sequence with a per-iteration sound
-        // effect that takes ~9 frames — that's where the ~140-frame
-        // delay between game-start and full paint comes from.
-        if (!_levelPainted && _frameCounter >= 200 && MiniMap.Buffer.Length > 0)
+        // Animate the level scroll-in: one $DB1A iteration every
+        // ScrollFramesPerStep frames, starting at ScrollStartFrame.
+        // Matches the emulator's observed pace (16 rows painted
+        // between f140 and f200 = ~3.75 frames per row).
+        const int ScrollStartFrame = 140;
+        const int ScrollFramesPerStep = 4;
+        if (_frameCounter >= ScrollStartFrame && !Scroll.ScrollComplete
+            && (_frameCounter - ScrollStartFrame) % ScrollFramesPerStep == 0
+            && MiniMap.Buffer.Length > 0)
         {
-            Scroll.PaintLevel(Tiles, MiniMap.Buffer);
-            _levelPainted = true;
+            Scroll.ScrollOneStep(Tiles, MiniMap.Buffer);
         }
 
         // Update every live entity.
