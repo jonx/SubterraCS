@@ -430,13 +430,16 @@ public sealed class World
             }
             if (!e.Visible) continue;
             // Port of $DD8C collision test: entity X within ±1 byte
-            // (8 px) AND |entity.Y - player.Y| < 8 px.  This is much
-            // tighter than the 24×24 box we had before — the original
-            // is essentially "do the 16×8 ship sprite and the 16×8
-            // entity sprite share a cell?".
+            // (8 px) AND |entity.Y - player.Y| < 8 px.  Both sprites
+            // are 16×16; e.X/e.Y is the entity sprite's TOP-LEFT;
+            // PlayerX is the ship's CENTER, PlayerY is its top-left.
+            // Compare centers: entityCx = e.X + 8, playerCx = PlayerX.
+            int entCx = e.X + 8;
+            int entCy = e.Y + 8;
+            int plyCy = PlayerY + 8;
             if (!Invincible
-                && Math.Abs(e.X - PlayerX) < 12
-                && Math.Abs(e.Y - PlayerY) < 8)
+                && Math.Abs(entCx - PlayerX) < 12
+                && Math.Abs(entCy - plyCy) < 8)
             {
                 var rule = EntityAI.Collision(kind);
                 // Port of $DDC4: damage hits drain the HitAccum by $40;
@@ -865,7 +868,10 @@ public sealed class World
             var type = EntityTypes.Types[e.TypeId];
             var sprite = EntityBank.Frame(type.SpritePointer, e.Frame);
             if (sprite.IsEmpty) continue;
-            Blitters.DrawSprite16x16(fb, e.X - 8, e.Y - 8, sprite, type.Attribute);
+            // Draw at (e.X, e.Y) = sprite top-left, matching $F26D..$F2A8
+            // where HL = TopAddr + offset is the TL byte and $F2BC walks
+            // INC H 8 times (= 8 scanlines down from TL).
+            Blitters.DrawSprite16x16(fb, e.X, e.Y, sprite, type.Attribute);
         }
 
         foreach (var b in Bullets)

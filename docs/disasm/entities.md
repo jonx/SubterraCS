@@ -141,6 +141,54 @@ pixel (136, 104).
 At `$E583=18`: offset = -1 wraps as `($FF) → CP $1F` fails (NC)
 → entity hidden.  Record dormant until `$E583` decreases.
 
+### `$F2BC` — the 8-scanline column blit
+
+Called four times per entity (once per 8×8 quadrant: TL/TR/BL/BR):
+
+```
+F2BC  LD B,$08             ; 8 scanlines
+F2BE  PUSH HL              ; save column start address
+F2BF  LD A,(HL)            ; (read screen byte — value discarded)
+F2C0  JP $F2CD             ; bypass the comparison block (dead code at $F2C3..$F2CA)
+F2CD  LD A,(DE)            ; A = sprite byte
+F2CE  LD (HL),A             ; OVERWRITE screen byte (no XOR, no mask)
+F2CF  INC DE                ; sprite ptr ++
+F2D0  INC H                  ; address += 256 → next pixel-row within char-row
+F2D1  DJNZ $F2BF            ; loop 8 times → covers one 8×8 cell
+
+F2D3  POP HL                ; HL = top of column
+F2D4..F2DC  HL → attribute address  (H >> 3, OR $58)
+F2DD  LD A,(IY+$03)         ; type's attribute byte
+F2E0  LD (HL),A             ; write 8×8 attribute cell
+F2E1  RET
+```
+
+So the entity blit is **direct overwrite**, NOT XOR.  The sprite
+clobbers whatever scenery was underneath the 16×16 box.  Entities
+don't "integrate" with cave walls — they just overdraw the
+underlying bitmap.
+
+Each quadrant call writes 8 sprite bytes + 1 attribute byte
+(uniform for the whole cell, taken from the type-table's `+3`
+byte at `$F5A3 + type*4`).
+
+### Sprite data layout (per frame)
+
+`$F22D..$F231` compute `HL = frame * 32`.  Then 4 calls to `$F2BC`
+each consume 8 bytes from the sprite data, in order:
+- bytes 0..7  → TL quadrant
+- bytes 8..15 → TR quadrant
+- bytes 16..23 → BL quadrant
+- bytes 24..31 → BR quadrant
+
+### Port placement note
+
+In our C# port the entity's pixel position is the **top-left**
+of the 16×16 sprite (matching the original's `TopAddr + offset`
+semantic).  Draw at `(e.X, e.Y)` directly — NOT `(e.X-8, e.Y-8)`
+(an earlier port had that and entities appeared 8 px up/left of
+where the cassette places them).
+
 ### Level 1 visibility table
 
 | `$E583` value | Visible records | Notes |
