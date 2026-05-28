@@ -99,20 +99,23 @@ public sealed class WorkerSchedule
     /// in the original (level-color + white for blink); we use a
     /// single bright-yellow pass for simplicity.
     /// Also port of <c>$F02E</c> mini-map dot at (X, mini-map row).</summary>
+    /// <summary>4 frames × 8 bytes of the worker shovel-swing animation
+    /// from <c>$F071</c>/<c>$F079</c>/<c>$F081</c>/<c>$F089</c>.
+    /// Verified bytes from at-f100.bin.</summary>
+    private static readonly byte[][] WorkerFrames = new[]
+    {
+        new byte[] { 0x18, 0x1C, 0x0E, 0x0E, 0x16, 0xAE, 0xCA, 0x49 },
+        new byte[] { 0x18, 0x1C, 0x0E, 0x1E, 0xA6, 0xCE, 0x4A, 0x19 },
+        new byte[] { 0x0C, 0x4C, 0xCE, 0xAE, 0x16, 0x0E, 0x0A, 0x19 },
+        new byte[] { 0x6C, 0xCC, 0xAE, 0x1E, 0x06, 0x0E, 0x0A, 0x19 },
+    };
+
     /// <summary>Draw playfield 8×8 sprites only (mini-map dots come
-    /// via <see cref="DrawMiniMapDots"/> after the mini-map base).</summary>
+    /// via <see cref="DrawMiniMapDots"/> after the mini-map base).
+    /// Each worker animates through 4 shovel-swing frames using its
+    /// <see cref="Worker.Cycle"/> byte ($EF2F INC; AND $1F).</summary>
     public void DrawPlayfield(Framebuffer fb, int scrollCursor)
     {
-        // Worker sprite from $F071 (the white "draw" variant) —
-        // verified bytes from at-f100.bin.  $F0F1 is the level-color
-        // "erase" variant (= all zeros; the original draws both each
-        // frame, erase-then-draw).  We just draw the white sprite.
-        // The cassette has 4 frames at $F071/$F079/$F081/$F089 for
-        // a shovel-swing animation; we use frame 0 for now.
-        ReadOnlySpan<byte> sprite = stackalloc byte[]
-        {
-            0x18, 0x1C, 0x0E, 0x0E, 0x16, 0xAE, 0xCA, 0x49,
-        };
         for (int i = 0; i < SlotCount; i++)
         {
             ref var w = ref Slots[i];
@@ -123,10 +126,16 @@ public sealed class WorkerSchedule
             int sx = offset * 8;
             int sy = w.Row * 8;
             if (sy + 8 > 128) continue;
+
+            // Advance the animation counter ($EF2F: INC A; AND $1F).
+            // 32 ticks per cycle; we want 4 frames so frame = cycle/8.
+            w.Cycle = (byte)((w.Cycle + 1) & 0x1F);
+            byte[] frame = WorkerFrames[(w.Cycle >> 3) & 0x03];
+
             for (int row = 0; row < 8; row++)
             {
                 int yy = sy + row;
-                fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= sprite[row];
+                fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= frame[row];
             }
             fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = 0x46;  // bright yellow
         }
