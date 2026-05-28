@@ -1923,3 +1923,37 @@ What this means for the port:
 
 This is the next big port target.  The diff at f200 stays at
 10.59% until this is wired.
+
+### Scroll trigger investigation
+
+Searched for callers of `$DBC8` (the scroll routine):
+
+```
+JP $DBC8 at $DBxx          (internal)
+CALL $DBDA at $DBC8..$DBD4 (four internal calls)
+```
+
+No direct external callers via plain `CALL $DBC8` or `JP $DBC8`.
+But searching for the 2-byte pointer `C8 DB` finds:
+
+```
+$DDA7:  ... CP $08; JP C,$DBC8 ; RET
+$DDC0:  ... CP $08; JP C,$DBC8 ; RET  (in a routine starting $DDAA)
+```
+
+Both are `CP $08; JP C,$DBC8` — conditional jumps to the scroll
+when some value is < 8.
+
+The second one's context (`$DDAA`) reads from `$EE76`, compares
+to `(IX+0)`, and if matching or adjacent computes
+`A = (IX+1) - (HL+1)` then conditional-scrolls if `A < 8`.
+
+So the scroll is triggered when game-state values are in a
+specific range — not every frame.  This explains the BURST
+pattern we observed (5-frame intervals adding 20-40 bytes
+each).  Each burst is one scroll trigger.
+
+What `$EE76` and the IX-walked structure represent is the
+next thing to identify before this can be ported faithfully.
+That requires another mem-write-trace pass targeted at `$EE76`
+plus reading the routines that touch `($EE76)`.
