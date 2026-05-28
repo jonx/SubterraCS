@@ -230,6 +230,13 @@ public static class EntityAI
     /// <summary>
     /// Advance an entity one frame.  Returns false when the entity
     /// should be removed (off-screen or natural lifetime exhausted).
+    ///
+    /// In the original game most entities placed by the per-level
+    /// list at $F2E8 are STATIONARY — they sit at their placed (x, y)
+    /// and only the player navigates around them (by altitude change
+    /// and horizontal scroll).  A few types do move (Drones, Falling
+    /// Rocks, MineCarts, Wagons).  Sparks/Explosion are short-lived
+    /// effects.
     /// </summary>
     public static bool Tick(
         EntityInstance e, Kind kind, int playerX, int playerY,
@@ -238,46 +245,14 @@ public static class EntityAI
         e.AgeFrames++;
         switch (kind)
         {
-            case Kind.Worker:
-                e.X += e.DX;
-                if (e.X < 16) { e.X = 16; e.DX = 1; }
-                else if (e.X > 232) { e.X = 232; e.DX = -1; }
-                break;
-
-            case Kind.Lava:
-                // Stays put for a beat, then drops with gravity.
-                if (e.AgeFrames > 30) e.DY = Math.Min(e.DY + 1, 4);
-                e.Y += e.DY;
-                break;
-
-            case Kind.Stalactite:
-                if (e.AgeFrames < 40)
-                {
-                    // Wobble in place while clinging.
-                    if ((e.AgeFrames & 7) == 0) e.X += rng.Next(-1, 2);
-                }
-                else
-                {
-                    e.DY = Math.Min(e.DY + 1, 5);
-                    e.Y += e.DY;
-                }
-                break;
-
+            // ─── Moving hazards (the few that actually patrol) ───────
             case Kind.FallingRock:
-                e.X += e.DX;
                 e.Y += e.DY;
-                if ((e.AgeFrames & 15) == 0) e.DX = rng.Next(-1, 2);
                 break;
 
             case Kind.Drone:
             case Kind.Robot:
                 e.X += e.DX;
-                // Slight bob.
-                if ((e.AgeFrames & 7) == 0)
-                {
-                    e.Y += (e.AgeFrames & 8) == 0 ? -1 : 1;
-                    e.Y = Math.Clamp(e.Y, 32, 152);
-                }
                 break;
 
             case Kind.MineCart:
@@ -285,8 +260,8 @@ public static class EntityAI
                 e.X += e.DX;
                 break;
 
+            // ─── Short-lived effects ────────────────────────────────
             case Kind.Sparks:
-                // Lives ~24 frames, harmless.
                 if (e.AgeFrames > 24) return false;
                 break;
 
@@ -294,54 +269,17 @@ public static class EntityAI
                 if (e.AgeFrames > 18) return false;
                 break;
 
-            case Kind.FlameDrip:
-                if (e.AgeFrames > 20) e.DY = Math.Min(e.DY + 1, 5);
-                e.Y += e.DY;
-                break;
-
-            case Kind.Vine:
-                // Stationary; ages out so the cave doesn't clog.
-                if (e.AgeFrames > 120) return false;
-                break;
-
-            case Kind.Creature:
-                // Slow descent + slow chase in X.
-                e.Y += e.DY;
-                if ((e.AgeFrames & 3) == 0)
-                {
-                    if (playerX < e.X) e.X--;
-                    else if (playerX > e.X) e.X++;
-                }
-                break;
-
-            case Kind.Bubble:
-                e.X += e.DX;
-                e.Y += e.DY;
-                if ((e.AgeFrames & 15) == 0) e.DX = -e.DX;  // gentle wobble
-                break;
-
-            case Kind.ForceField:
-                e.Y += e.DY;
-                if (e.AgeFrames > 80) e.DY = -1;            // lift back up
-                break;
-
-            case Kind.Pipe:
-                e.Y += e.DY;
-                break;
-
-            case Kind.Bowtie:
-                // Sine wave drift.
-                e.Y += e.DY;
-                e.X += (e.AgeFrames & 16) == 0 ? 1 : -1;
-                break;
-
+            // ─── Everything else is stationary ──────────────────────
+            // Workers, Lava, Stalactite, FlameDrip, Vine, Creature,
+            // Bubble, ForceField, Pipe, Bowtie, Generic — they all sit
+            // at their placed (x, y) position.  Per the user's
+            // feedback "they should stay at a specific spot."
             default:
-                e.X += e.DX;
-                e.Y += e.DY;
                 break;
         }
 
-        // Animate.
+        // Animate the frame counter (sprite cycle) even for stationary
+        // entities — many have multi-frame idle animations.
         e.FrameTick++;
         if (e.FrameTick >= 4)
         {
@@ -349,8 +287,13 @@ public static class EntityAI
             if (e.MaxFrames > 0) e.Frame = (e.Frame + 1) % e.MaxFrames;
         }
 
-        // Off-screen culling.
-        if (e.Y < -32 || e.Y > 200 || e.X < -32 || e.X > 288) return false;
+        // Off-screen culling — only for the moving kinds; static
+        // entities can be off-screen during scroll and still exist.
+        if (kind is Kind.Drone or Kind.Robot or Kind.MineCart or Kind.Wagon
+                  or Kind.FallingRock)
+        {
+            if (e.Y < -32 || e.Y > 200 || e.X < -64 || e.X > 320) return false;
+        }
         return true;
     }
 }

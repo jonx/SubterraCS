@@ -20,10 +20,27 @@ public sealed class EntityInstance
     public bool Alive;
 }
 
-/// <summary>The 8-slot bullet / particle list (matches <c>$E881</c>).</summary>
+/// <summary>The bullet/laser-beam list — port of the 4-slot table at
+/// <c>$E46B</c> (4 bytes × 4 slots).  Each laser is a horizontal beam
+/// up to <see cref="MaxLength"/> bytes (= 120 pixels) wide.  The HEAD
+/// (far end from ship) is anchored at fire time; per-frame the TAIL
+/// (ship-side end) recedes outward toward the head (matching $DEF0).
+/// </summary>
 public sealed class Bullet
 {
+    public const int MaxLength = 15;
+
+    /// <summary>Fire-time anchor X (= ship's exit-side edge).  The
+    /// head end is computed as X + (MaxLength-1)*8*dir.</summary>
     public int X, Y, DX, DY;
     public bool Alive;
-    public byte Pattern;     // single-byte XOR pattern (e.g. 0x80, 0x40, …)
+    /// <summary>Bitmap byte the beam paints (e.g. $EF = 7 lit pixels).</summary>
+    public byte Pattern;
+    /// <summary>Remaining beam length in bytes (0..15).  Each frame the
+    /// tail moves one byte AWAY from the ship (toward the head); when
+    /// Length reaches 0 only the head byte remains and then the bullet
+    /// expires.</summary>
+    public int Length;
+    /// <summary>Spectrum attribute byte (bright | ink) — randomized per shot.</summary>
+    public byte Attr;
 }

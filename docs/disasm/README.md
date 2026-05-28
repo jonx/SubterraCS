@@ -25,6 +25,8 @@ routine's *code*.
 | [entities.md](entities.md) | `$F1A5` dispatcher + `$F1EF` per-entity draw + `$F2BC` 16×16 blit + `$F1BC` per-level loader | partial |
 | [death.md](death.md) | `$DDC4` hit sound + shield-- + `$DBC8` death animation + `$DBDA` 8-particle paint + `$DC43` screen-dim + `$D8A8` lives check | **done** |
 | [scroll-horizontal.md](scroll-horizontal.md) | `$D9C8` L-key handler + `$DA23` scroll-left + `$DA62` scroll-right + `$DAA9` fresh-column paint | **done** |
+| [laser.md](laser.md) | `$DE41` fire-key handler + `$DEF0..$DF1B` per-frame beam tail-recede | **done** |
+| [collision.md](collision.md) | `$DD4A` collision walker + `$DD8C` / `$DDAA` per-entity 8×8 box check | partial |
 
 ## Conventions
 

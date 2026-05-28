@@ -2419,3 +2419,86 @@ load; level 2 onwards spawn the per-level counts decoded in
 §30.  Diff against emu at f50/f100/f200 still 0% — entities
 aren't visible until past the bar-fill animation, and the
 diff harness has no FIRE input so it sits on splash.
+
+## 44. Laser beam — $DE41 fire + $DEF0 tail-recede
+
+User feedback: "the laser beam is slightly too high, also maybe
+it's made of sprites because it should be thicker, the color
+also changes".
+
+Disassembled `$DE41` (the fire-key handler) and its companion
+update routine `$DEF0`.  Findings (full trace in
+[`disasm/laser.md`](disasm/laser.md)):
+
+- **Y origin = `altitude + 4`** — the MIDDLE of the 8-pixel-tall
+  ship sprite, not the top.  Explains "slightly too high"
+  exactly: my port had `Y = PlayerY` (= altitude = top).
+- **Beam pattern = `$EF`** — `1110 1111`, 7 lit pixels per byte.
+  Not "thicker vertically" but visually substantial because the
+  beam is **15 bytes (120 pixels) long**, painted byte by byte
+  from a starting screen address.
+- **Color randomized per shot** from `$DEC3 LD A,R; AND $07; OR
+  $40` (Z80 R-register, effectively random).  Explains "the color
+  also changes".
+- **Head is anchored at fire-time max extent.**  The original's
+  `$DEF0` update routine erases the TAIL byte each frame and
+  advances the tail pointer by `±1` toward the head.  So the
+  beam appears at full length on fire, then the ship-side end
+  recedes outward.
+
+Two visual bugs caught during integration:
+
+1. First port had `Y = altitude` (= top of ship, the bug user
+   reported).  Fixed to `altitude + 4`.
+2. Second port anchored `b.X = ship` and walked FORWARD with
+   `Length--`, so the FAR end retreated toward the ship — user
+   reported "the laser is shooting from the outside to the
+   ship".  Fixed by anchoring the HEAD at the far end and
+   walking backward; the visible tail now recedes outward.
+
+## 45. Stationary entities + entity-scroll wiring
+
+User feedback: "the plans [plants?] and other monsters that
+are currently moving around but are supposed to stay at a
+specific spot".
+
+The §43 commit had re-enabled level entity placement but my
+`EntityAI.Tick` ported guesses for per-type motion — Workers
+walked, Drones flew, Vines aged out, etc.  The original game
+mostly DOESN'T move entities — they sit at their placed
+positions and the player navigates around them.
+
+Rewrote `EntityAI.Tick`:
+- Only `Drone`, `Robot`, `MineCart`, `Wagon`, `FallingRock`
+  actually move.
+- `Sparks` and `Explosion` are short-lived effects.
+- Everything else (Worker, Lava, Stalactite, FlameDrip, Vine,
+  Creature, Bubble, ForceField, Pipe, Bowtie, Generic) — sits
+  at its placed (x, y).
+- Off-screen culling only applies to the moving kinds; static
+  entities can be off-screen during horizontal scroll and still
+  exist.
+
+Also wired the horizontal scroll to shift entity X — when the
+level scrolls right (`ScrollOffsetX++`), all alive entities
+slide left by 8 px.  Entities are anchored to LEVEL columns,
+not screen columns.
+
+## 46. Tightened ship collision — $DD8C
+
+Disassembled `$DD4A` (the collision walker) and `$DD8C`
+(per-entity check).  Box is **±1 column horizontally × ±8 px
+vertically** — much tighter than my port's previous 24×24 AABB.
+
+Updated `World.TickPlaying`'s collision condition to
+`Math.Abs(e.X - PlayerX) < 12 && Math.Abs(e.Y - PlayerY) < 8`
+(±12 horizontally is slightly more permissive than the
+original's "same or adjacent column" since we work in pixels
+rather than char columns).
+
+Open question: `$DD4A` unconditionally `CALL`s `$DDC4` at
+entry, which would drain `$E463/$E464` every frame this runs.
+Caller-search for `CALL $DD4A` returns no hits in the at-f100
+snapshot, so this routine is invoked from a context I haven't
+found yet.  Documented in
+[`disasm/collision.md`](disasm/collision.md).

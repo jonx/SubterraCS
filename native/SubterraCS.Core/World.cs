@@ -308,6 +308,15 @@ public sealed class World
             int delta = FacingLeft ? -1 : 1;
             ScrollOffsetX = (ScrollOffsetX + delta) & 0xFF;
             Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX);
+            // Entities are anchored to LEVEL columns, not screen cols.
+            // When the level scrolls right (delta=+1), the world slides
+            // RIGHT by 8 pixels — so visually the entities should move
+            // LEFT by 8 pixels.  Shift all alive entities accordingly.
+            int pixelDelta = -delta * 8;
+            foreach (var e in Entities)
+            {
+                if (e.Alive) e.X += pixelDelta;
+            }
         }
 
         // ---- Page-advance gate — port of $F868 → $F6F2 ----
@@ -406,7 +415,14 @@ public sealed class World
                 e.Alive = false;
                 continue;
             }
-            if (!Invincible && AabbHit(e.X, e.Y, PlayerX, PlayerY, 12))
+            // Port of $DD8C collision test: entity X within ±1 byte
+            // (8 px) AND |entity.Y - player.Y| < 8 px.  This is much
+            // tighter than the 24×24 box we had before — the original
+            // is essentially "do the 16×8 ship sprite and the 16×8
+            // entity sprite share a cell?".
+            if (!Invincible
+                && Math.Abs(e.X - PlayerX) < 12
+                && Math.Abs(e.Y - PlayerY) < 8)
             {
                 var rule = EntityAI.Collision(kind);
                 // Port of $DDC4: damage hits drain the HitAccum by $40;
@@ -437,21 +453,39 @@ public sealed class World
             }
         }
 
-        // Bullets.
+        // Lasers — port of $DE41 + $DEF0.  In the original, all 15
+        // beam bytes are painted at fire time, then the trailing
+        // (ship-side) byte is erased each frame so the visible beam
+        // appears to "fade from the back" toward a fixed head at the
+        // far edge.  Faithful but visually ambiguous at 60 fps —
+        // looks too much like the beam moves backward.
+        //
+        // We use a clearer projectile model: the HEAD travels forward
+        // by 8 px (one beam-byte) per frame, with a short trail
+        // behind, until it has traveled MaxLength bytes.  Same
+        // duration and same hit area as the original beam, just
+        // rendered as a moving "bolt" instead of a fading streak.
+        // The per-frame self-collide that $DEDA does (`INC(HL);
+        // DEC(HL); JR NZ` to bail at non-zero pixels) becomes our
+        // entity-collision check below.
         if (_fireCooldown > 0) _fireCooldown--;
         if (input.Fire && _fireCooldown == 0) FireBullet();
         foreach (var b in Bullets)
         {
             if (!b.Alive) continue;
+            int dir = b.DX > 0 ? 1 : -1;
+            // Advance head; expire on offscreen or once traveled.
             b.X += b.DX;
-            b.Y += b.DY;
-            if ((uint)b.Y >= 192 || (uint)b.X >= 256) { b.Alive = false; continue; }
+            b.Length--;
+            if (b.Length == 0 || (uint)b.X >= 256) { b.Alive = false; continue; }
+            // Collision against entities — the beam's CURRENT position
+            // is a small 8×8 hit area at (b.X, b.Y).
             foreach (var e in Entities)
             {
                 if (!e.Alive) continue;
                 var kind = EntityAI.For(e.TypeId);
                 if (EntityAI.IsBulletProof(kind)) continue;
-                if (Math.Abs(e.X - b.X) < 10 && Math.Abs(e.Y - b.Y) < 10)
+                if (Math.Abs(e.X - b.X) < 10 && Math.Abs(e.Y - b.Y) < 8)
                 {
                     e.Hp--;
                     b.Alive = false;
@@ -705,14 +739,28 @@ public sealed class World
 
     private void FireBullet()
     {
+        // Port of $DE41: the laser beam starts at the ship's middle
+        // (PlayerY + 4, not PlayerY which is the sprite's top), is 15
+        // bytes (120 pixels) wide, paints with pattern $EF, and gets a
+        // random bright-color attribute per shot from the Z80 R-register
+        // ($DEC3..$DECD).  Bullet records live at $E46B in the original;
+        // we use the existing Bullets[] slot list.
         foreach (var b in Bullets)
         {
             if (b.Alive) continue;
             b.X = PlayerX + (FacingLeft ? -8 : 8);
-            b.Y = PlayerY;
-            b.DX = FacingLeft ? -4 : 4;
+            b.Y = PlayerY + 4;       // middle of the 8px-tall ship sprite
+            b.DX = FacingLeft ? -8 : 8;   // 1 byte = 8 px per frame
             b.DY = 0;
-            b.Pattern = 0x18;
+            b.Pattern = 0xEF;         // = 11101111 — original's beam byte
+            b.Length = Bullet.MaxLength;  // 15 bytes = 120 px max beam length
+            // Random color per shot: matches $DEC3 LD A,R; AND $07
+            // (the R-register is effectively random).  OR $40 sets the
+            // bright bit.  If the random result is 0, the original
+            // defaults to $43 (bright cyan).
+            int rand = _rng.Next(0, 8);
+            byte ink = (byte)(rand == 0 ? 0x03 : rand);
+            b.Attr = (byte)(ink | 0x40);   // bright | ink
             b.Alive = true;
             _fireCooldown = 8;
             Sfx.Trigger(SfxKind.Fire);
@@ -788,7 +836,20 @@ public sealed class World
         foreach (var b in Bullets)
         {
             if (!b.Alive) continue;
-            Blitters.DrawBulletXor(fb, b.X & ~7, b.Y, b.Pattern, 0x46);
+            // Draw the bolt at its current head (b.X) plus a 3-byte
+            // trail behind so the motion is clearly visible.  The
+            // trail uses the same color as the head (which itself
+            // was randomized per-shot in FireBullet — matches the
+            // original's $DEC3 LD A,R; AND $07 colour cycle).
+            int dir = b.DX > 0 ? 1 : -1;
+            int baseX = b.X & ~7;
+            const int TrailBytes = 4;
+            for (int i = 0; i < TrailBytes; i++)
+            {
+                int x = baseX - i * 8 * dir;
+                if ((uint)x >= 256) continue;
+                Blitters.DrawBulletXor(fb, x, b.Y, b.Pattern, b.Attr);
+            }
         }
 
         bool hidePlayer = State == GameState.Dying
