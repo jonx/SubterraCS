@@ -12,7 +12,7 @@ namespace SubterraCS.Core;
 /// On contact with the player, fires the hit-sound + shield-drain
 /// chain just like the cassette's <c>$EDC0 → $DD4A</c> path.
 /// </summary>
-public sealed class EnemySwarm
+public sealed class EnemyBullets
 {
     public const int SlotCount = 6;
 

@@ -1,9 +1,59 @@
-# Enemy ships — `$EE9E` table + `$EBB2` spawn + `$ED01` tick
+# Enemy systems — `$E597` ships + `$EE9E` bullets
 
-Distinct from the static playfield decor (System A, `$F2EB` records)
-and the rescuable-workers schedule (`$E75D`).  This is the third
-entity subsystem — small, fast, attribute-flash enemies that chase
-the player.
+User feedback caught my earlier mistake: I had labelled `$EE9E`
+as "enemy ships", but those are **bullets fired by the actual
+enemies**.  The real ships live at `$E597`.
+
+The main game loop calls `$E8FD` once per frame which dispatches:
+
+```
+E8FD  CALL $E213    ; mini-map dot draw (for the $E597 entries)
+E900  CALL $E920    ; ENEMY SHIP per-frame AI + spawn (4-cycle slice)
+E903  CALL $EC10    ; ?? (uses $EE7C / $EE74 / $EE83)
+E906  CALL $E213    ; another mini-map pass (blink/erase)
+E909  CALL $ED00    ; ENEMY BULLET tick ($EE9E processor — what I was wrongly calling "ships")
+E90C  CALL $DD4D    ; collision pass entry+3
+E90F  RET
+```
+
+`$EBB2` (spawn into `$EE9E`) and `$ED01` (per-frame tick) are
+reachable as part of this chain, not via direct CALL — which is
+why my pattern-match search for callers came up empty.
+
+---
+
+## `$E597` — enemy ship table (4 bytes × 7 slots)
+
+| Offset | Meaning |
+| ------ | ------- |
+| +0     | World X (0..255 byte position along the level) |
+| +1     | Y (pixel — mini-map row is `30 - Y/4`, playfield draw uses Y direct) |
+| +2     | Status (bit 7 = alive) |
+| +3     | TBD (frame counter? AI sub-state?) |
+
+Verified: in `at-f100.bin` level 1 these are pre-loaded from the
+init data at `$E48D + level*32` (8 records × 4 bytes copied at
+level-load by `$E319`).
+
+`$E213` walks them once per frame and draws a single-byte mini-map
+dot per alive entry.  `$E920` is the per-frame AI/animation —
+indexed by a 4-cycle counter at `$E48B` so each entity gets
+different code per slice (typical Z80 time-sliced AI).  Ships
+fire bullets by calling `$EBB2` to spawn an entry into `$EE9E`
+(the exact call path inside `$E920` is still TBD — it goes
+through `$EA…` helpers and uses a per-cycle parameter table at
+`$E5DB`).
+
+---
+
+## `$EE9E` — enemy BULLETS (not ships) — 6 slots × 6 bytes
+
+What I'd previously documented here.  This is the table for the
+**projectiles fired by the `$E597` ships**.  Each bullet is born
+aimed at the player's current world position (DX/DY = sign of
+difference), has a short lifetime (`$40` ticks), and is drawn as
+a single-byte attribute flash that travels until either lifetime
+expires or it hits the player's bitmap.
 
 ## Table layout — `$EE9E` (6 slots × 6 bytes)
 

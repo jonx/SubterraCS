@@ -54,7 +54,7 @@ public sealed class World
     public MiniMap MiniMap { get; set; } = new();
     public readonly LevelScroll Scroll = new();
     public readonly Explosion Explosion = new();
-    public readonly EnemySwarm Enemies = new();
+    public readonly EnemyBullets Enemies = new();
     private bool _levelPainted;
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
