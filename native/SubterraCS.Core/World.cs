@@ -237,9 +237,13 @@ public sealed class World
     {
         if (StateTicks >= 60)
         {
-            LoadLevel(Depth + 1);
+            LoadLevel(NextLevel(Depth));
         }
     }
+
+    /// <summary>Compute the next level index — port of $F6F2's
+    /// INC + CP $06 + XOR A pattern, which wraps level 5 back to 0.</summary>
+    private static int NextLevel(int current) => (current + 1) > 5 ? 0 : current + 1;
 
     // ─── Playing-state tick ─────────────────────────────────────────
 
@@ -299,7 +303,7 @@ public sealed class World
         if (Altitude >= 0x75)
         {
             Score += 1000;
-            LoadLevel((Depth + 1) > 5 ? 1 : Depth + 1);
+            LoadLevel(NextLevel(Depth));
             return;
         }
 
