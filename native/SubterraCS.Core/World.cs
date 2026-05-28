@@ -665,10 +665,14 @@ public sealed class World
         Hud.Draw(fb, this);
 
         // Mini-map at the bottom strip (y=160..191) — port of $E104.
-        // Drawn AFTER Hud which clears the HUD-region bitmap as part
-        // of its repaint pass; we layer the mini-map on top of the
-        // green-on-black attribute strip that Hud sets for rows 20-23.
-        MiniMap.DrawTo(fb);
+        // The emu's mini-map paints incrementally between f50 and f80:
+        // 12 bytes at f50, 292 at f60, 563 (stable) from f80 onward.
+        // Suppress before f80 to avoid showing a too-complete map; an
+        // approximate paint animation could be added later.
+        if (_frameCounter >= 80)
+        {
+            MiniMap.DrawTo(fb);
+        }
     }
 
     /// <summary>
