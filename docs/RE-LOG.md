@@ -1957,3 +1957,59 @@ What `$EE76` and the IX-walked structure represent is the
 next thing to identify before this can be ported faithfully.
 That requires another mem-write-trace pass targeted at `$EE76`
 plus reading the routines that touch `($EE76)`.
+
+## 37. Scroll infrastructure ported, source data format unclear
+
+Ported the scroll routines into `LevelScroll.cs`:
+
+* `ScrollUpOneCharRow(bitmap)` — port of `$DB85`.  Copies bytes
+  from one char row below to the current row, walking through
+  all 16 char rows of the play area.
+* `DrawBottomTileRow(bitmap, tileBank, source, row)` — port of
+  `$DAF2`.  Reads 32 tile indices from the source buffer,
+  multiplies each by 8, adds `$B0F4` to get tile data, copies
+  8 bytes into the bottom char row of the play area.
+* `Blit(fb)` — copies the persistent PlayBitmap into the
+  framebuffer's bitmap region each draw frame.
+* `Tick(tileBank, source)` — runs draw-then-scroll, advances
+  the SourceRow counter.
+
+Wired into `World.DrawPlaying` to fire every 5 frames starting
+at f140 (the cadence observed in the emulator).
+
+### The source-data wall
+
+Empirically verified the hill tiles in the emu come from the
+master bank.  At f150, the emerging hill at cols 21..24
+char-row 13 (y=104) uses bank tiles 161, 164, 165, 168 — i.e.
+`$A1, $A4, $A5, $A8` indices.
+
+Searched RAM for those byte sequences: they appear at `$6309`
+in the per-level "mini-map" buffer (the same `$60F4..$70F4`
+region we extracted for the mini-map):
+
+```
+$6309: A1 A4 A5 A8 00 00 00 00 ...
+$6319: 00 00 00 00 00 00 00 00 00 0E 05 05 04 1C 05 14
+$6329: 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+$6339: 00 00 00 00 00 00 00 00 00 00 00 0E 07 07 07 07
+$6349: 07 16 ...
+```
+
+So **the same buffer serves both purposes** — mini-map (as
+pixel data, via `$E104`) AND scenery composition (as tile
+indices, via `$DAF2`).  But the layout is *not* a simple
+32-byte-per-row grid: the non-zero tile indices appear in
+short runs separated by long zero stretches.
+
+This means the encoding is more complex than I assumed — maybe
+run-length encoded, position-encoded, or read via a
+non-linear walker.  Without tracing `$DAF2`'s exact source
+address during gameplay (a per-call HL read), I can't
+determine the format.  My current port reads the buffer as
+a linear 32-byte-per-row grid which produces blank tile draws
+(all zero indices → tile 0 which is blank).
+
+The scroll infrastructure is in place and correctly drives
+the persistent bitmap — wiring the right source-data interpreter
+will make the hillside scroll in.
