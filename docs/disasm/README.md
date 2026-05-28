@@ -31,6 +31,7 @@ routine's *code*.
 | [ship-ai.md](ship-ai.md) | `$E920` ship AI + all helpers (`$EADE`, `$EB00`, `$EB5B`, `$EB7A`, `$EAB2/$EABD`, `$DFAF`, `$DCAC`) | **done** |
 | [boss.md](boss.md) | `$EC10` spawn + `$EC4C` tick + `$EE7D` state | **done** |
 | [workers.md](workers.md) | `$E75D` schedule + `$EF02` chain + pickup zone + `$EFE0` scoring | **done** |
+| [input.md](input.md) | `$D8F0` dispatcher + 4 control schemes (`$D8F4` keyboard, `$F14E` Kempston, `$F177` Interface 2, `$F0F9` cursor, `$FB71` Sinclair) + `$E45F` bit layout | **done** |
 | [sound.md](sound.md) | `$FA0A` print-stream + `$5E88` Follin player + SFX entries (`$F8F9`, `$F90E`, `$F93A`) | partial |
 
 ## Conventions
