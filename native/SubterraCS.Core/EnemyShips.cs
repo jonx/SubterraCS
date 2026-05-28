@@ -145,7 +145,24 @@ public sealed class EnemyShips
         for (int i = 0; i < SlotCount; i++)
         {
             ref var s = ref Slots[i];
-            if ((s.Status & 0x80) == 0) continue;   // dead → skip (respawn TBD)
+            if ((s.Status & 0x80) == 0)
+            {
+                // Dead slot — port of $EADE respawn behaviour.
+                // The cassette respawns when the spawn counter at
+                // $E8F9/$E8FA reaches threshold; we simulate with
+                // a per-slot countdown via Sub (Sub > 0 = waiting).
+                if (s.Sub > 0) { s.Sub--; }
+                else if (level >= 1 && rng.Next(0, 256) < (level * 8))
+                {
+                    // Respawn at a random world X (off-screen so the
+                    // ship sails in) with random Y in playfield range.
+                    s.X = (byte)((scrollCursor + rng.Next(32, 224)) & 0xFF);
+                    s.Y = (byte)rng.Next(0x10, 0x70);
+                    s.Status = 0x80;
+                    s.Sub = (byte)(0x40 | (rng.Next(0, 4) << 5));  // bit 6/5 → init direction
+                }
+                continue;
+            }
 
             // $EAB2 range gate: ships outside the 32-byte scroll window
             // get ticked but invisible — match the original's behaviour.

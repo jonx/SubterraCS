@@ -75,9 +75,34 @@ player isn't emulated.  Adding it requires a tick driver that
 consumes the message data at the same cadence as the cassette
 ($FA32 driven by the Z80 R-register through speaker toggles).
 
+## Longer tunes — `$F974` / `$F99F`
+
+Two longer entries that dispatch `$F97F`-style 32-byte messages
+plus per-level lookups:
+
+- **`$F974`** — game-over tune.  Called ONLY from `$D8B5` (= the
+  lives-reached-zero path inside `$D8A8`):
+  ```
+  F974  CALL $F9F9
+  F977  LD HL,$F97F; LD B,$20    ; 32-byte message at $F97F
+  F97C  JP $FA0A
+  ```
+  Hard-coded fanfare.
+
+- **`$F99F`** — per-level fanfare.  Called from `$F72E` (= inside
+  the level-load chain `$F6F2`):
+  ```
+  F99F  CALL $F9F9
+  F9A2  LD DE,($E587)            ; level (low byte)
+  F9A6  DEC E; LD D,$00; SLA E    ; (level - 1) * 2 = word index
+  F9AB  LD HL,$F9B8; ADD HL,DE
+  F9AF  LD E,(HL); INC HL; LD D,(HL); EX DE,HL  ; HL = $F9B8[level - 1]
+  F9B3  LD B,$0B                  ; 11 bytes
+  F9B5  JP $FA0A
+  ```
+  Table at `$F9B8` of 6 pointers to 11-byte per-level fanfares.
+
 ## Related
 
 - `$F9F9` — probably the "stop current SFX" / state-reset routine
   called before each `$FA0A` dispatch.
-- `$F974` — game-over screen, which likely also triggers SFX
-  (called by `$D8A8` when lives reach zero).

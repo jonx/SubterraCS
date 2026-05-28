@@ -570,6 +570,25 @@ public sealed class World
             b.X += b.DX;
             b.Length--;
             if (b.Length == 0 || (uint)b.X >= 256) { b.Alive = false; continue; }
+            // Collision against ENEMY SHIPS — player laser kills ships.
+            int beamByte = (b.X >> 3);
+            int beamWorldByte = (ScrollOffsetX + beamByte) & 0xFF;
+            for (int i = 0; i < EnemyShipTable.Slots.Length; i++)
+            {
+                if (!EnemyShipTable.IsAlive(i)) continue;
+                ref var ship = ref EnemyShipTable.Slots[i];
+                if (ship.X == beamWorldByte && Math.Abs(ship.Y - b.Y) < 10)
+                {
+                    ship.Status = 0;     // dead
+                    ship.Sub = 0x80;      // 128-frame respawn delay
+                    b.Alive = false;
+                    Score += 50;
+                    Sfx.Trigger(SfxKind.Explode);
+                    break;
+                }
+            }
+            if (!b.Alive) continue;
+
             // Collision against entities — the beam's CURRENT position
             // is a small 8×8 hit area at (b.X, b.Y).
             foreach (var e in Entities)
