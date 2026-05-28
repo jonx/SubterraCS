@@ -55,6 +55,107 @@ difference), has a short lifetime (`$40` ticks), and is drawn as
 a single-byte attribute flash that travels until either lifetime
 expires or it hits the player's bitmap.
 
+---
+
+## `$EC10` — boss / special-entity spawn + tick
+
+A single special entity slot at `$EE7D..$EE84` (8 bytes).  Lives
+parallel to the ship/bullet tables; processed by `$EC10` once per
+frame from the main loop's `$D81C CALL $DE2A` chain (actually
+through `$E8FD CALL $EC10` per re-check).
+
+```
+EC10  LD A,($EE7C); AND A
+EC14  JR NZ,$EC32           ; already spawned → jump to tick path
+
+EC16  LD HL,($EE74)          ; scroll-progress counter
+EC1A  LD HL,$4A38; XOR A; SBC HL,DE
+EC20  RET NC                 ; not far enough yet → bail
+
+EC21  LD A,R; CP $78; RET C  ; ~50% random gate
+
+EC26  CALL $F8F9              ; print "BOSS ALERT" message (print stream)
+EC29  LD HL,$EE83; INC (HL)   ; kill-count++
+EC2D  LD A,$01; LD ($EE7C),A  ; mark active
+
+EC32  LD A,($EE83); CP $0A
+EC37  JR NC,$EC42            ; if killed >= 10, skip throttle
+EC39  LD A,($EE82); XOR $01; LD ($EE82),A
+EC41  RET Z                   ; alternate frame skip
+
+EC42  CALL $EC4C              ; main boss-tick subroutine
+EC45  LD A,R; CP $16
+EC49  CALL C,$EC4C           ; extra tick with ~10% chance
+```
+
+So the boss is **scroll-progress-gated** (must travel `$4A38`
+units in `$EE74` before spawn becomes possible), then has a
+~50% random spawn chance per frame.  Once active, ticks via
+`$EC4C` (which walks `$EE7D..$EE8E`, the boss slot's 20-byte
+state).
+
+### Boss-related state addresses
+
+| Addr   | Meaning |
+| ------ | ------- |
+| `$EE7D..$EE84` | Boss slot (8 bytes: X, Y, status, sub, +4..+7) |
+| `$EE7C` | Boss-active flag (0 = not spawned, 1 = active) |
+| `$EE74` (word) | Scroll-progress counter; boss eligible when ≥ `$4A38` |
+| `$EE83` | Boss kill-count / cycle |
+| `$EE82` | Alternate-frame flag (toggles 0/1 each tick) |
+| `$EE7E..$EE8D` | Extended boss state (read at `$EC4D`) |
+
+`$F8F9` is the message-print routine called on first spawn.
+
+---
+
+## Complete inventory — main-loop entry-point map
+
+```
+D7FB main game loop
+  D7FE CALL $D827        scroll-distance accumulation ($EE74 update)
+  D801 CALL $D8C2        input + L-key fuel drain
+  D804 CALL $DCAC        sprite-context maintenance
+  D807 CALL $DC5D        player attribute paint
+  D80A CALL $F1A5        STATIC DECOR draw     (system A, $F2EB)
+  D80D CALL $D9C8        horizontal scroll
+  D810 CALL $DCF5        player XOR draw
+  D813 CALL $DFAF        ???
+  D816 CALL $E248        player MINI-MAP dot
+  D819 CALL $E8FD        ENTITY SUPERCALLER ← see below
+  D81C CALL $DE2A        player BULLETS ($E46B + $DE41 fire)
+  D81F CALL $EF02        WORKER SCHEDULE ($E75D) — pickup + mini-map dots
+  D822 CALL $E046        HUD attribute flash + bar update
+
+$E8FD entity supercaller
+  E8FD CALL $E213        mini-map dot draw for $E597 ships
+  E900 CALL $E920        SHIP per-frame AI (4-cycle slice, $E48B/$E5DB)
+  E903 CALL $EC10        BOSS spawn + tick (single slot at $EE7D)
+  E906 CALL $E213        mini-map again (alternation for blink)
+  E909 CALL $ED00        BULLET tick ($EE9E processor)
+  E90C CALL $DD4D        collision pass
+```
+
+---
+
+## C# port status
+
+| Subsystem | C# class | Status |
+| --------- | -------- | ------ |
+| `$F2EB` static decor | `LevelEntities` + `World.PlaceWorkersForLevel` | **DONE** |
+| `$E75D` workers | (TBD — currently shoehorned into `Entities[]`) | partial |
+| `$E597` ships | `EnemyShips` | **STUB** |
+| `$EE9E` bullets | `EnemyBullets` (was `EnemySwarm`) | **DONE** (rendering only — caller chain TBD) |
+| `$EE7D` boss | `BossEntity` (inside `EnemyShips.cs`) | **STUB** |
+
+Next implementation pass:
+1. Load `$E48D + level*32` asset into `EnemyShipTable.LoadFromInit`.
+2. Implement `$E213`'s mini-map dot draw.
+3. Implement `$E920` AI: 4-cycle dispatch, per-cycle sprite data
+   bank at `$E5DB`, ship movement, bullet firing via `$EBB2`.
+4. Implement `$EC10` boss spawn + `$EC4C` tick.
+5. Add `$EE74` scroll-progress counter (per `$D827`).
+
 ## Table layout — `$EE9E` (6 slots × 6 bytes)
 
 | Offset | Meaning |

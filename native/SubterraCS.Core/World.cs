@@ -54,7 +54,11 @@ public sealed class World
     public MiniMap MiniMap { get; set; } = new();
     public readonly LevelScroll Scroll = new();
     public readonly Explosion Explosion = new();
-    public readonly EnemyBullets Enemies = new();
+    public readonly EnemyBullets EnemyShots = new();
+    /// <summary>STUB — enemy ships at $E597.  See EnemyShips.cs.</summary>
+    public readonly EnemyShips EnemyShipTable = new();
+    /// <summary>STUB — boss entity at $EE7D.  See BossEntity in EnemyShips.cs.</summary>
+    public readonly BossEntity Boss = new();
     private bool _levelPainted;
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
@@ -471,11 +475,17 @@ public sealed class World
             }
         }
 
-        // Enemy ships — port of $EE9E table + $EBB2 spawn + $ED01
-        // tick + $EDC0 player-collide.  See docs/disasm/enemies.md.
+        // Per-frame entity supercaller — port of $E8FD.
+        // Order matches the cassette: ship AI → boss tick → bullet tick.
+        // Mini-map ship dots ($E213) are drawn in DrawPlaying.
         int playerByteX = (ScrollOffsetX + 15) & 0xFF;
-        Enemies.TrySpawn(Depth, ScrollOffsetX, playerByteX, PlayerY, _rng);
-        int hits = Enemies.Tick(ScrollOffsetX, playerByteX, PlayerY);
+        EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng);   // $E920 (STUB)
+        Boss.Tick(ScrollOffsetX, playerByteX, PlayerY, _rng);                            // $EC10 (STUB)
+
+        // Enemy BULLETS — port of $EE9E + $ED01.  These are the projectiles
+        // fired by the ships above, not the ships themselves.
+        EnemyShots.TrySpawn(Depth, ScrollOffsetX, playerByteX, PlayerY, _rng);
+        int hits = EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY);
         if (hits != 0 && !Invincible)
         {
             HitAccum -= 0x40;
@@ -664,7 +674,11 @@ public sealed class World
         MiniMap.SelectLevel(level);
         Scroll.Reset();
         ScrollOffsetX = 0;
-        Enemies.Reset();
+        EnemyShots.Reset();
+        // STUB: would call EnemyShipTable.LoadFromInit(initData, level)
+        // once we load the $E48D asset.
+        EnemyShipTable.Reset();
+        Boss.Reset();
         // Level scenery paint is deferred — see Scroll.PaintLevel call
         // gated by frame counter in TickPlaying, matching the emu's
         // scroll-in over f140..f200.
@@ -931,10 +945,16 @@ public sealed class World
             Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43);
         }
 
-        // Enemy ships draw before the HUD so the HUD chrome stays
+        // Ship sprites + mini-map dots (STUBS) — port of $E920 draw
+        // chain + $E213.
+        EnemyShipTable.TickAndDraw(fb, ScrollOffsetX, (ScrollOffsetX + 15) & 0xFF,
+                                    PlayerY, EnemyShots, _rng);
+        Boss.Draw(fb, ScrollOffsetX);
+
+        // Enemy BULLETS draw before the HUD so the HUD chrome stays
         // on top.  Single-byte attribute flashes per the cassette's
         // $ED95.
-        Enemies.Draw(fb, ScrollOffsetX);
+        EnemyShots.Draw(fb, ScrollOffsetX);
 
         Hud.Draw(fb, this);
 
