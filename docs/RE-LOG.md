@@ -2502,3 +2502,105 @@ Caller-search for `CALL $DD4A` returns no hits in the at-f100
 snapshot, so this routine is invoked from a context I haven't
 found yet.  Documented in
 [`disasm/collision.md`](disasm/collision.md).
+
+## 47. Two parallel entity systems, not one
+
+User feedback after the §43 entity re-enable: "all the entities
+are on the first screen and the rest of the level is empty, so
+you have to figure out the routine that loads the entities
+positions" — and then more pointedly: "this is probably not
+happened when I scroll but when the level is created".
+
+Tracing from the source revealed there are **two independent
+entity systems** in the cassette:
+
+### System A — `$F2EB+` static playfield records (8 bytes each)
+
+Loaded by `$F1BC` (just sets `($F1B9) = pointer`), drawn each
+frame by `$F1EF` using:
+
+```
+effective_address = TopAddr + (record.Y - ($E583))
+```
+
+Surprise discovery: **every TopAddr in the cassette has
+`x_byte = 0`** (verified for all 10 level-1 records).  The
+record's `+1` byte (which I had been labeling "Y") is in fact
+a *bitmap-byte offset added to TopAddr*.  Due to Spectrum's
+interleaved layout, adding ≤ 31 bytes advances x-byte within the
+same char-row; > 31 also shifts char-row.
+
+Worked example — level 1 record 0:
+- `type=$02 y=$11 topAddr=$48A0` → offset = 17
+- effective = $48A0 + 17 = $48B1 → pixel (136, 104)
+
+My old decode placed it at (0, 104) — flush left edge.  That's
+why entities visually clustered on the left of the screen.
+
+Level 1's 10 records all decode to screen X ∈ {88, 120, 128, 136,
+152} — all within the first visible 256-pixel screen.  This is
+**by design**: these are fixed PLAYFIELD DECOR (trees, pipes,
+stalactites at specific positions on the first page).
+
+### System B — `$E48D+` per-level init data (4 bytes each)
+
+Copied at level-load by `$E319`:
+
+```
+E319  LD HL,$E48D            ; per-level init-data base
+E31C  LD A,($E587)
+E31F  RLCA × 5               ; A = level * 32
+E324  LD E,A; LD D,$00
+E327  ADD HL,DE              ; HL = $E48D + level*32
+E328  LD DE,$E597            ; destination = LIVE entity table
+E32B  LD BC,$0020            ; 32 bytes
+E32E  LDIR                   ; copy
+```
+
+The destination `$E597` is the **live entity table** that the
+collision routine `$DD8C` walks and that `$E235` draws on the
+mini-map.
+
+Each 4-byte record at `$E597`:
+- `+0`: world X (0..255 byte cols across the 256-col level)
+- `+1`: Y (used by `$E235` as `30 - Y/4` to map to mini-map row)
+- `+2`: status (bit 7 = alive; bits 5..6 maybe type/colour)
+- `+3`: 0 (reserved)
+
+Level 1's init data (decoded from `at-f100.bin`):
+```
+(X=$50, Y=$58)   (X=$EA, Y=$60)   (X=$1B, Y=$68)   (X=$B9, Y=$08)
+(X=$27, Y=$10)   (X=$6F, Y=$10)   (X=$F2, Y=$08)   (X=$02, Y=$38)
+```
+
+X values span 2..242 — across the full 256-col world.  Most are
+off-screen at game start (only X=$27=39 lands in the first
+screen's 0..31 byte range after subtracting player byte-offset
+15); they come into reach as the player scrolls right.
+
+### `$E583` is the WORLD-SCROLL CURSOR
+
+`$DB06` is the routine that increments/decrements `$E583`:
+
+```
+DB06  LD A,($E583); ADD A,E; LD ($E583),A; RET
+```
+
+Called from:
+- `$DA54  LD E,$01; CALL $DB06`  (in `$DA23` = scroll left, ship moves right)
+- `$DA93  LD E,$FF; CALL $DB06`  (in `$DA62` = scroll right, ship moves left)
+
+The collision check at `$DD55` builds the player's world position
+as `($E583) + $0F` (= scroll cursor + 15 byte-offset).  So the
+player's world byte = `$E583 + 15` ranges 15..15+255 as the
+player scrolls.
+
+### Port status
+
+This commit ports System A correctly (`DecodeEntityPosition`
+using the `TopAddr + offset` formula).  System B (`$E48D`
+init-data → `$E597` live entities) is **not yet ported** — the
+asset is extracted to `assets/extracted/level-init-e48d.bin`
+(192 bytes = 6 × 32) but no loader uses it yet.  Adding System B
+will populate the world-positioned entities the user expects
+to encounter while scrolling.

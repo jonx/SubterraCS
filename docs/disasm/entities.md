@@ -67,27 +67,79 @@ F1EE  C9          RET
 Confirms **8-byte stride per entity** matching the IX layout
 documented in MEMORY-MAP §`$F1EF`.
 
-## `$F1EF` — per-entity processor (PARTIAL)
+## `$F1EF` — per-entity processor
 
 ```
 F1EF  00          NOP
 F1F0  FD 21 A0 F5 LD IY,$F5A0          ; entity-type table base
 F1F4  DD 5E 00    LD E,(IX+$00)        ; type id
 F1F7  16 00       LD D,$00
-F1F9  CB 23       SLA E; CB 23 SLA E    ; type × 4 (each F5A0 entry is 4 bytes)
+F1F9  CB 23       SLA E; CB 23 SLA E    ; type × 4 (each $F5A0 entry is 4 bytes)
 F1FD  FD 19       ADD IY,DE             ; IY = $F5A0 + type*4
 F1FF  DD 6E 02    LD L,(IX+$02)        ; frame index
-F202  3A 93 F5    LD A,($F593)         ; slice counter (from $F1A5)
-F205  A7          AND A
-F206  C2 13 F2    JP NZ,$F213          ; if slice != 0, skip to $F213
-F209  7D          LD A,L               ; A = frame
-... (not yet decoded — branches into per-type AI based on slice
-       and on frame index)
+
+F202  3A 93 F5    LD A,($F593); AND A
+F206  JP NZ,$F213                       ; if slice != 0, skip frame advance
+F209  LD A,L                            ; A = frame
+F20A  LD H,(IY+$02)                     ; H = max_frames
+F20D  DEC H
+F20E  INC A; AND H                      ; frame = (frame+1) & (max-1)
+F210  LD (IX+$02),A                     ; store advanced frame
+
+F213  LD H,$00
+F215  LD A,($F593); BIT 0,A
+F21A  RET NZ                            ; if bit 0 of slice set, no draw
+
+F21B  LD A,($E583); LD B,A
+F21F  LD A,(IX+$01)                     ; A = record's +1 byte ("Y")
+F222  SUB B                              ; A = recY - $E583
+F223  CP $1F                             ; if (recY - $E583) ≥ 31, skip draw
+F225  RET NC
+
+F226  EX AF,AF'                         ; save offset in A'
+F228  LD L,(IX+$02); LD H,$00
+F22D  ADD HL,HL × 5                     ; HL = frame × 32 (bytes per frame)
+F232  LD E,(IY+$00); LD D,(IY+$01)
+F238  ADD HL,DE                          ; HL = sprite data ptr
+...
+F26D  LD L,(IX+$03); LD H,(IX+$04)      ; HL = TopAddr
+F273  EX AF,AF'                          ; A = recY - $E583
+F274  LD C,A; F275 EX AF,AF'; F276 LD B,$00
+F278  ADD HL,BC                          ; HL = TopAddr + (recY - $E583)
+F279  CALL $F2BC                         ; blit 8-row sprite column at HL
 ```
 
-The branch on slice counter (`$F593`) at `$F206` means each
-entity gets DIFFERENT code per slice — implementing the 4-frame
-time-slicing of entity AI / animation.
+### KEY FINDING — entity screen position formula
+
+```
+effective_address = TopAddr + (record.Y - ($E583))
+```
+
+The per-level record's TopAddr is ALWAYS a scanline-start
+(verified — every TopAddr in level 1 decodes with x_byte=0).
+The record's `+1` byte (which I previously labeled "Y") is
+actually a **bitmap-byte offset added to TopAddr**.  Due to
+Spectrum's interleaved addressing, adding a byte can shift
+both X (within the char-row) and Y (when the byte-x overflows
+past 31 into char-row bits).
+
+`$E583` is a vertical-shift cursor; normally 0 during gameplay
+(verified across `at-fXXX.bin` from f50..f400 = all 0; only
+`at-f40.bin` had $E583=$20, before gameplay starts).
+
+### Worked example — level 1 record 0
+
+```
+record: type=$02 y=$11 frame=$01 topAddr=$48A0 botAddr=$48C0 flags=$0d
+```
+
+With $E583=0:
+- offset = $11 - 0 = 17
+- effective = $48A0 + 17 = $48B1
+- Decoded: pixel (136, 104)
+
+Without the offset (my earlier broken decode), the entity would
+have been placed at (0, 104) — flush against the left edge.
 
 ## Per-level entity records — 8-byte format
 

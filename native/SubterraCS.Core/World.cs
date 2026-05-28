@@ -666,8 +666,12 @@ public sealed class World
             slot.MaxFrames = TypeMaxFrames(rec.TypeId);
             slot.AgeFrames = 0;
             slot.Hp = 1;
-            // Decode (x, y) from the original's top-half screen address.
-            var (x, y) = LevelEntities.DecodeBitmapAddress(rec.TopAddr);
+            // Port of $F278: HL = TopAddr + (record.Y - $E583).  All
+            // per-level TopAddrs have x_byte=0, so the record's Y
+            // byte supplies the X-offset (and, via Spectrum interleaved
+            // addressing, can also shift the char-row).  $E583 is
+            // normally 0 during gameplay.
+            var (x, y) = LevelEntities.DecodeEntityPosition(rec.TopAddr, rec.Y, 0);
             slot.X = x;
             slot.Y = y;
             slot.DX = (rec.Flags & 0x40) != 0 ? -1 : 1;

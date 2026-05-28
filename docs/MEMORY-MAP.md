@@ -68,11 +68,23 @@ update player altitude (`$E584`).
 handler routine; the input dispatcher at `$D8F0` does
 `LD HL,($E461); JP (HL)`.
 
-## RAM ($E583)  — game state lock
+## RAM ($E583)  — game state lock / entity vertical-shift cursor
 
-If non-zero, the main loop's pre-step routine at `$F868` returns
-immediately; no scrolling, no enemy updates, no level advance. Used
-to freeze the world during animations / death / level-complete.
+Dual purpose:
+
+1. **Lock**: if non-zero, the main loop's pre-step routine at
+   `$F868` returns immediately; no scrolling, no enemy updates,
+   no level advance. Used to freeze the world during animations
+   / death / level-complete.
+
+2. **Entity draw offset**: `$F222 SUB B` uses `($E583)` as the
+   value B, subtracting it from each entity record's +1 byte to
+   produce the per-entity bitmap-offset.  So a non-zero `$E583`
+   shifts ALL entity sprites by the same amount within their
+   char-row.  Normally 0 during gameplay (verified across all
+   `at-fXXX.bin` snapshots f50..f400).  Only seen non-zero
+   pre-gameplay (e.g. `at-f40.bin` = $20 during title
+   transition).
 
 ## RAM ($E584)  — player altitude **= ship screen Y**
 
@@ -663,11 +675,47 @@ from the right.
 
 ## RAM ($E48D–$E54C) — per-level "init data" (192 bytes)
 
-Six 32-byte blocks, one per level. `$E319` copies the active
-level's block to `$E597`. Format unclear; records appear to be
-4-byte groups like `36 38 80 00 / 5E 60 A0 00 / 7E 40 80 00`
-which look position-like (x, y, ?, 0). Not the same as the
-spawn schedule at `$E69D`. Purpose TBD.
+Six 32-byte blocks, one per level.  `$E319` copies the active
+level's block to `$E597` at level-load.  Format: **8 records ×
+4 bytes** per level, where each record is:
+
+| Offset | Meaning |
+| ------ | ------- |
+| +0     | World X (0..255 byte cols across the 256-col world) |
+| +1     | Y (used by `$E235` as `30 - Y/4` to map to mini-map row) |
+| +2     | Status (bit 7 = alive; bits 5..6 maybe type/colour) |
+| +3     | Reserved (always 0 in observed data) |
+
+Verified by reading at-f100.bin level 1's block at `$E4AD`:
+```
+50 58 80 00   ea 60 a0 00   1b 68 e0 00   b9 08 80 00
+27 10 80 00   6f 10 80 00   f2 08 e0 00   02 38 80 00
+```
+
+These X values span 2..242, scattered across the wider-than-
+screen world — most are off-screen at game start and the player
+encounters them while scrolling.  This is distinct from the
+`$F2EB`-style records (fixed playfield decor; see
+[`disasm/entities.md`](disasm/entities.md)).
+
+## Code ($DB06) — world-scroll cursor update
+
+```
+DB06  LD A,($E583); ADD A,E; LD ($E583),A; RET
+```
+
+Called by both horizontal-scroll routines:
+- `$DA54  LD E,$01; CALL $DB06`   in `$DA23` (scroll left)
+- `$DA93  LD E,$FF; CALL $DB06`   in `$DA62` (scroll right)
+
+So `($E583)` is the WORLD-SCROLL CURSOR — increments by 1 when
+the player scrolls right (ship moves right through the level),
+decrements by 1 when scrolling left.
+
+The collision check at `$DD55` builds the player's world position
+as `($E583) + $0F` (= scroll cursor + 15-byte offset for the
+ship's screen position).  Entities at `$E597` are compared against
+this player world position.
 
 ## RAM ($F2E2–$F2E7) — per-level entity count
 
@@ -683,6 +731,31 @@ $F47B`. The first two pointers are only 3 bytes apart, so the
 entity records are NOT a uniform 8-byte stride. Variable-length
 or tagged format, format TBD. Read by `$F1BC` and stored in
 `($F1B9)` as the active entity-list base.
+
+## Per-level entity records — screen position formula
+
+Each 8-byte record (`$F2EB+` for level 1, etc.) encodes its
+entity's screen position as:
+
+```
+effective_screen_address = TopAddr + (record.Y - ($E583))
+```
+
+(Port of `$F278 ADD HL,BC`.)
+
+**Verified**: every TopAddr stored in the records has `x_byte=0`
+(scanline-start), so the record's "Y" byte (+1) is actually a
+**bitmap-byte offset added to TopAddr** — which, due to
+Spectrum's interleaved addressing, can shift both X (within
+the char-row) and char-row (when byte-x overflows past 31).
+
+The `CP $1F; RET NC` at `$F223` skips drawing if `(record.Y -
+$E583) >= 31` — so entities further than 31 bytes' offset from
+their TopAddr scanline-start are not drawn this frame.
+
+See [`disasm/entities.md`](disasm/entities.md) for the worked
+example (level 1 record 0: type=$02 y=$11 topAddr=$48A0 →
+effective $48B1 → pixel (136, 104)).
 
 ## RAM ($E463) — hit accumulator
 

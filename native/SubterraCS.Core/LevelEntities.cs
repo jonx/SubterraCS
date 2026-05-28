@@ -73,26 +73,33 @@ public sealed class LevelEntities
 
     /// <summary>
     /// Decode a Spectrum bitmap address back to its (x, y) pixel
-    /// coordinates.  The original stores entity positions as their
-    /// (top-half) Spectrum screen address rather than as plain (x, y),
-    /// because the engine works directly in screen-address space.
+    /// coordinates.  Spectrum interleaved layout:
+    /// bits 12,11 = y bits 7,6 (band); bits 10..8 = y bits 2..0 (pix-row);
+    /// bits 7..5 = y bits 5..3 (char-row); bits 4..0 = x byte.
     /// </summary>
     public static (int X, int Y) DecodeBitmapAddress(ushort addr)
     {
         int bitmapOffset = addr - 0x4000;
         if (bitmapOffset < 0 || bitmapOffset >= 0x1800) return (0, 0);
+        int yBand    = (bitmapOffset >> 5) & 0xC0;
+        int yPixRow  = (bitmapOffset >> 8) & 0x07;
+        int yCharRow = (bitmapOffset >> 2) & 0x38;
+        int xByte    = bitmapOffset & 0x1F;
+        return (xByte << 3, yBand | yCharRow | yPixRow);
+    }
 
-        // Inverse of (y, x) → addr.  Spectrum's interleaved layout:
-        // bits 12,11 = y bits 7,6 (band)
-        // bits 10..8 = y bits 2,1,0 (pixel row within char)
-        // bits 7..5  = y bits 5,4,3 (char row within band)
-        // bits 4..0  = x byte (x >> 3)
-        int yBand    = (bitmapOffset >> 5) & 0xC0;          // → y bits 7,6 (placed back)
-        int yPixRow  = (bitmapOffset >> 8) & 0x07;          // → y bits 2,1,0
-        int yCharRow = (bitmapOffset >> 2) & 0x38;          // → y bits 5,4,3
-        int xByte    = bitmapOffset & 0x1F;                 // → x / 8
-        int y = yBand | yCharRow | yPixRow;
-        int x = xByte << 3;
-        return (x, y);
+    /// <summary>
+    /// Decode an entity record's screen position.  Port of $F278's
+    /// <c>ADD HL,BC</c> where <c>HL = TopAddr</c> and <c>BC = record.Y
+    /// - ($E583)</c>.  All per-level TopAddrs are scanline-starts
+    /// (x_byte=0), and the record's "Y" byte is actually a BYTE OFFSET
+    /// added to TopAddr — which due to Spectrum interleaved addressing
+    /// can shift both X and char-row.  $E583 is a vertical-shift cursor
+    /// (zero during normal gameplay; non-zero during certain animations).
+    /// </summary>
+    public static (int X, int Y) DecodeEntityPosition(ushort topAddr, byte recordY, byte e583)
+    {
+        ushort effective = (ushort)(topAddr + (byte)(recordY - e583));
+        return DecodeBitmapAddress(effective);
     }
 }
