@@ -54,6 +54,7 @@ public sealed class World
     public MiniMap MiniMap { get; set; } = new();
     public readonly LevelScroll Scroll = new();
     public readonly Explosion Explosion = new();
+    public readonly EnemySwarm Enemies = new();
     private bool _levelPainted;
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
@@ -470,6 +471,24 @@ public sealed class World
             }
         }
 
+        // Enemy ships — port of $EE9E table + $EBB2 spawn + $ED01
+        // tick + $EDC0 player-collide.  See docs/disasm/enemies.md.
+        int playerByteX = (ScrollOffsetX + 15) & 0xFF;
+        Enemies.TrySpawn(Depth, ScrollOffsetX, playerByteX, PlayerY, _rng);
+        int hits = Enemies.Tick(ScrollOffsetX, playerByteX, PlayerY);
+        if (hits != 0 && !Invincible)
+        {
+            HitAccum -= 0x40;
+            if (HitAccum < 0)
+            {
+                HitAccum &= 0xFF;
+                Shield = Math.Max(0, Shield - 1);
+            }
+            Sfx.Trigger(SfxKind.Damage);
+            SetInvincible(20);
+            if (Shield <= 0) { TriggerDeath(); return; }
+        }
+
         // Lasers — port of $DE41 + $DEF0.  In the original, all 15
         // beam bytes are painted at fire time, then the trailing
         // (ship-side) byte is erased each frame so the visible beam
@@ -645,6 +664,7 @@ public sealed class World
         MiniMap.SelectLevel(level);
         Scroll.Reset();
         ScrollOffsetX = 0;
+        Enemies.Reset();
         // Level scenery paint is deferred — see Scroll.PaintLevel call
         // gated by frame counter in TickPlaying, matching the emu's
         // scroll-in over f140..f200.
@@ -910,6 +930,11 @@ public sealed class World
             // directly the altitude (no -4 offset).
             Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43);
         }
+
+        // Enemy ships draw before the HUD so the HUD chrome stays
+        // on top.  Single-byte attribute flashes per the cassette's
+        // $ED95.
+        Enemies.Draw(fb, ScrollOffsetX);
 
         Hud.Draw(fb, this);
 

@@ -130,15 +130,31 @@ DOWN input shows live enemies in the table.
 
 ## Port status
 
-Not yet ported.  The cassette's enemy system needs:
+Ported as `EnemySwarm` in `native/SubterraCS.Core/EnemySwarm.cs`:
 
-- A `EnemyTable` of 6 slots
-- `EBB2`-style spawn callable from the game loop
-- `ED01`-style per-frame tick (move toward player, lifetime,
-  scenery-collision, blink draw)
-- `EDC0`-style player-collision check that fires `TriggerDeath`
+- 6-slot table matching `$EE9E` layout (X, Y, Dx, Dy, Status, Lifetime)
+- `TrySpawn` mirrors `$EBB2`: random gate `rng.Next(0,16) >= level`,
+  finds free slot, places enemy 16..31 bytes ahead of the player's
+  world byte, computes Dx/Dy = sign-toward-player.  (The cassette
+  reads spawn X/Y from a caller-supplied pointer; the caller logic
+  is TBD, so we substitute a "spawn just off the right edge"
+  position for now.)
+- `Tick` mirrors `$ED01`: blink toggle, lifetime decrement, X += Dx
+  / Y += Dy, expire on Y wrap, scroll-window cull, player-collision
+  via byte-and-Y match — returns a hit bitmask the caller uses to
+  fire the damage chain.
+- `Draw` mirrors `$ED95` direction: single-byte bitmap dot + bright
+  white attribute cell at the resolved screen address.
 
-The current port renders System A static decor as 16×16 sprites
-— those are the trees, pipes, stalactites you see now.  Enemy
-ships will be SMALL attribute-flash dots that animate across the
-screen with a chase pattern.
+Wired in `World.TickPlaying` (calls `TrySpawn` + `Tick`, applies
+HitAccum damage on player-collision matching `$DDC4`'s drain
+semantics).  Reset on `LoadLevel`.
+
+What's NOT ported:
+- The exact spawn-source pointer chain (HL[-3], HL[-2] read by
+  `$EBB2`).
+- The blink-attribute cycling — we always draw bright white.
+- The `$EB62` scenery-collision check (currently the enemy passes
+  through cave walls).
+- The 4-slot blink-state animation at `$ED19`'s bit-6/bit-5 logic;
+  we just toggle bit 5.
