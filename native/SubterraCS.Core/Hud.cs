@@ -117,12 +117,38 @@ public static class Hud
             : ScaleToBar(world.Fuel);
         DrawBar(fb, 7 * 8, 152, fuelBarValue);
 
+        // Lives display — emu shows 4 small Stryker icons at row 16
+        // cols 21,24,27,30 with a slightly different byte arrangement
+        // than the in-game sprite (one-scanline shift/XOR pattern I
+        // haven't decoded yet).  Suppressed until I understand it.
+
         // Bottom decor strip (rows 20..23) — green-on-black attribute strip
         // matching the emulator's $5A80..$5AFF.  Pixel content is procedural
         // (built up by decor entities — see RE-LOG §26).
         for (int row = 20; row < 24; row++)
             for (int col = 0; col < 32; col++)
                 fb.Attributes[row * 32 + col] = 0x04;
+    }
+
+    /// <summary>Draw a 16×8 Stryker icon (overwrite, not XOR) for
+    /// the lives display.  Matches the emu's byte arrangement:
+    /// cols swapped vs in-game (left col = sprite bytes 8..15,
+    /// right col = sprite bytes 0..7), top scanline blanked.</summary>
+    private static void DrawShipIcon(Framebuffer fb, int x, int y, byte[] sprite)
+    {
+        for (int sl = 0; sl < 8; sl++)
+        {
+            byte leftByte  = sl == 0 ? (byte)0x00 : sprite[8 + sl];
+            byte rightByte = sl == 0 ? sprite[0]  : sprite[sl];
+            // Re-derive: at scanline 0 the right byte should also blank
+            // (emu shows just one pixel: 78 = 01111000).
+            if (sl == 0) { leftByte = 0x00; rightByte = sprite[0]; }
+            fb.Bitmap[Framebuffer.BitmapAddress(x, y + sl)] = leftByte;
+            if (x + 8 < Framebuffer.Width)
+                fb.Bitmap[Framebuffer.BitmapAddress(x + 8, y + sl)] = rightByte;
+        }
+        fb.Attributes[Framebuffer.AttributeAddress(x,     y)] = 0x46;
+        fb.Attributes[Framebuffer.AttributeAddress(x + 8, y)] = 0x46;
     }
 
     /// <summary>Draw text using the ROM font when available, otherwise
