@@ -49,6 +49,7 @@ internal static class Program
             MiniMap = assets.MiniMap,
             EnemyShipInitData = assets.EnemyShipInitData,
             WorkerScheduleData = assets.WorkerScheduleData,
+            FuelStationData = assets.FuelStationData,
         };
 
         // Pass music data through to whichever runner uses it.

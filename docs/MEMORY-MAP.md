@@ -673,6 +673,27 @@ the PAPER-0 attribute, which turns INK-X-on-PAPER-0 cells into
 INK-0-on-PAPER-0 → invisible. So full strength = rainbow, drain
 from the right.
 
+## RAM ($E58B–$E596) — per-level fuel-station positions
+
+12 bytes (6 levels × 2): per-level (X, Y) for a "fuel station"
+pickup spot.  Loaded at level-load by `$E2C6` into `($E589)`.
+
+When the player's world position matches via `$DFAF` test
+(`$E583+15 == ($E589) && altitude in [($E58A)-1..($E58A)]`),
+fuel refills via `$F90E` chime + `$E419` bar-fill animation.
+
+Verified positions (from at-f100.bin):
+```
+Level 0: X=$1B (27), Y=$44 (68)
+Level 1: X=$5C (92), Y=$3C (60)
+Level 2: X=$D5 (213), Y=$64 (100)
+Level 3: X=$31 (49), Y=$4C (76)
+Level 4: X=$F7 (247), Y=$5C (92)
+Level 5: X=$53 (83), Y=$0C (12)
+```
+
+Extracted to `assets/extracted/fuel-stations-e58b.bin`.
+
 ## RAM ($E48D–$E54C) — per-level mini-map+collision init data
 
 Six 32-byte blocks, one per level.  `$E319` copies the active

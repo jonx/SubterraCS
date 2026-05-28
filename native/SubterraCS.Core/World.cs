@@ -56,6 +56,8 @@ public sealed class World
     public byte[] EnemyShipInitData { get; set; } = Array.Empty<byte>();
     /// <summary>Per-level worker schedule raw ($E69D, 6 × 32 bytes).</summary>
     public byte[] WorkerScheduleData { get; set; } = Array.Empty<byte>();
+    /// <summary>Per-level fuel-station positions ($E58B, 6 × 2 bytes).</summary>
+    public byte[] FuelStationData { get; set; } = Array.Empty<byte>();
     public readonly LevelScroll Scroll = new();
     public readonly Explosion Explosion = new();
     public readonly EnemyBullets EnemyShots = new();
@@ -292,6 +294,25 @@ public sealed class World
             int playerRow = (PlayerY >> 3) & 0x0F;
             byte tile = MiniMap.Buffer[playerRow * 256 + playerWorldByte];
             if (tile == 0x01) { TriggerDeath(); return; }
+        }
+
+        // ---- Fuel-station pickup — port of $DFCD..$DFEB ----
+        // Per-level station position stored at $E58B + level*2 = (X, Y).
+        // If player world-X matches AND altitude is in [Y-1..Y], refill
+        // fuel via the $E419 animation (we just snap to BarMax).
+        if (FuelStationData.Length >= (Depth + 1) * 2)
+        {
+            byte stationX = FuelStationData[Depth * 2];
+            byte stationY = FuelStationData[Depth * 2 + 1];
+            int worldX = (ScrollOffsetX + 0x0F) & 0xFF;
+            if (worldX == stationX
+                && (Altitude == stationY || Altitude == stationY - 1)
+                && Fuel < BarMax)
+            {
+                Fuel = BarMax;
+                FuelAccum = 0xFF;
+                Sfx.Trigger(SfxKind.Pickup);
+            }
         }
 
         // ---- Vertical movement — port of $D95D ----

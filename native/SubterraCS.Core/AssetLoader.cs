@@ -72,10 +72,17 @@ public sealed class Assets
         // OriginalLevelSchedules SpawnSchedule[] interpretation).
         // Loaded into WorkerSchedule at level-load via $E2E5 port.
         WorkerScheduleData = File.ReadAllBytes(Path.Combine(assetsDir, "level-schedules-e69d.bin"));
+
+        // Per-level fuel-station positions ($E58B, 6 × 2 bytes).
+        // When player world-X+altitude match this, fuel refills via
+        // $DFEB → $E419.
+        FuelStationData = File.ReadAllBytes(Path.Combine(assetsDir, "fuel-stations-e58b.bin"));
     }
 
     /// <summary>Per-level worker schedule raw bytes (6 × 32 = 192).</summary>
     public byte[] WorkerScheduleData { get; private set; } = Array.Empty<byte>();
+    /// <summary>Per-level fuel-station positions (6 × 2 bytes = (X, Y)).</summary>
+    public byte[] FuelStationData { get; private set; } = Array.Empty<byte>();
 
     private static byte[] LoadOptionalScr(string dir, string name)
     {
