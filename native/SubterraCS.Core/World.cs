@@ -792,6 +792,10 @@ public sealed class World
         HitAccum = 0xFF;
         FuelAccum = 0xFF;
         SetInvincible(100);
+        // Port of cassette's $F6EF JP $F6C7 → $F6C8 CALL $E135:
+        // every respawn re-fires the dots-converge spawn-in
+        // animation, not just the initial LoadLevel.
+        Explosion.TriggerSpawnIn(Scroll.LevelColour);
         EnterState(GameState.Playing);
     }
 
@@ -1117,7 +1121,12 @@ public sealed class World
                           // by sampling f60..f400 in the emu — first
                           // visible byte at f232, right after $DB1A's
                           // 16 outer iterations finish.
-                          || !Scroll.ScrollComplete;
+                          || !Scroll.ScrollComplete
+                          // Port of cassette flow $F6C7..$F6D1: the
+                          // ship sprite isn't drawn until $E135
+                          // spawn-in returns and the main loop starts
+                          // at $D7F7.
+                          || Explosion.Spawning;
         if (!hidePlayer)
         {
             var playerSprite = FacingLeft ? PlayerSpriteLeft : PlayerSpriteRight;

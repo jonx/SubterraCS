@@ -35,15 +35,26 @@ public sealed class Explosion
     private byte _levelColor = 0x04;
     public bool Active { get; private set; }
 
-    /// <summary>The 8 starter velocities — outward fan, mirroring the
-    /// shape of the original's seed table at <c>$E861</c> (an 8-direction
-    /// burst).  Exact byte-extract is in <c>build/at-f100.bin</c>+32 at
-    /// $E861; we use the shape (8 outward directions) and let our
-    /// integer step replace the original's signed-byte add semantics.</summary>
+    /// <summary>Death-animation per-particle velocity, port of the
+    /// 32-byte seed table at <c>$E861</c>.  Cassette stores
+    /// 8 records of (X, Y, DX, DY); X is constant $80 (mid-screen),
+    /// Y is overridden to <c>$BF - altitude</c> per <c>$DBE5..$DBF7</c>,
+    /// so only (DX, DY) matters here.  Cassette DY is in BUS-COUNTER
+    /// space (visual Y = $BF - storedY), so positive cassette DY =
+    /// visual UP; we negate DY for port-screen coords.
+    ///
+    /// Cassette bytes (DX, DY):
+    ///   ( 0, -1), (+1, -2), (+2,  0), (+2, +3),
+    ///   ( 0, +2), (-1, +2), (-3,  0), (-2, -3)
+    /// Negated DY for port-screen:
+    ///   ( 0, +1), (+1, +2), (+2,  0), (+2, -3),
+    ///   ( 0, -2), (-1, -2), (-3,  0), (-2, +3)
+    /// The pattern is an asymmetric 8-direction burst with magnitudes
+    /// from 0..3 (NOT a uniform ±2 fan).</summary>
     private static readonly (int dx, int dy)[] Velocities =
     {
-        ( 2,  0), ( 2,  2), ( 0,  2), (-2,  2),
-        (-2,  0), (-2, -2), ( 0, -2), ( 2, -2),
+        ( 0, +1), (+1, +2), (+2,  0), (+2, -3),
+        ( 0, -2), (-1, -2), (-3,  0), (-2, +3),
     };
 
     /// <summary>Trigger the explosion at the given pixel coordinate
@@ -105,6 +116,13 @@ public sealed class Explosion
 
     private bool _converge;
 
+    /// <summary>True while the spawn-in animation is running (port of
+    /// the period between $F6C8 CALL $E135 and the first iteration of
+    /// the $D7FB main loop).  The ship sprite is not drawn until this
+    /// completes — matching the cassette's flow where $DCF5 doesn't
+    /// run until after $E135 returns at $F6CB.</summary>
+    public bool Spawning => Active && _converge;
+
     public void Reset()
     {
         Active = false;
@@ -118,7 +136,14 @@ public sealed class Explosion
         if (!Active) return;
         for (int i = 0; i < ParticleCount; i++)
         {
-            if (!_converge && _particles[i].Y < 0x41) continue;   // $DC1D
+            // Port of $DC1D: cassette's `LD A,(IX+1); CP $41; JR C,$DC31`
+            // skips the X/Y step when stored Y < $41.  Cassette Y is
+            // bus-counter inverted (visualY = $BF - storedY), so
+            // storedY < $41 → visualY > $7E = 126 — i.e. cull death
+            // particles that have fallen below the playfield bottom.
+            // (Previously this was misread as `Y < 0x41` in port-screen
+            // coords, which froze the UPPER half instead.)
+            if (!_converge && _particles[i].Y > 126) continue;
             _particles[i].X += _particles[i].Dx;
             _particles[i].Y += _particles[i].Dy;
         }
