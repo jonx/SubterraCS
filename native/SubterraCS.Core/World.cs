@@ -54,6 +54,8 @@ public sealed class World
     public MiniMap MiniMap { get; set; } = new();
     /// <summary>Per-level enemy-ship init data ($E48D, 6 × 32 bytes).</summary>
     public byte[] EnemyShipInitData { get; set; } = Array.Empty<byte>();
+    /// <summary>Per-level worker schedule raw ($E69D, 6 × 32 bytes).</summary>
+    public byte[] WorkerScheduleData { get; set; } = Array.Empty<byte>();
     public readonly LevelScroll Scroll = new();
     public readonly Explosion Explosion = new();
     public readonly EnemyBullets EnemyShots = new();
@@ -61,6 +63,8 @@ public sealed class World
     public readonly EnemyShips EnemyShipTable = new();
     /// <summary>STUB — boss entity at $EE7D.  See BossEntity in EnemyShips.cs.</summary>
     public readonly BossEntity Boss = new();
+    /// <summary>Workers at $E75D.  See WorkerSchedule.cs.</summary>
+    public readonly WorkerSchedule Workers = new();
     private bool _levelPainted;
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
@@ -507,6 +511,20 @@ public sealed class World
         EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth);  // $E920
         Boss.Tick(ScrollProgress, ScrollOffsetX, playerByteX, PlayerY, _rng);                  // $EC10
 
+        // Workers — port of $EF08.  Tick returns # rescued this frame;
+        // each rescue gives +50 score, RESCUED++; 8 → level cleared.
+        int newRescues = Workers.Tick(ScrollOffsetX, PlayerY);
+        if (newRescues > 0)
+        {
+            Score += newRescues * 50;
+            Rescued += newRescues;
+            Sfx.Trigger(SfxKind.Pickup);
+            if (Workers.RemainingThisLevel == 0)
+            {
+                EnterState(GameState.LevelClear);
+            }
+        }
+
         // Ship-vs-player collision (port of $EB7A → $DD4A).  Combined
         // with bullet hits below to apply HitAccum damage.
         int hits = EnemyShipTable.LastTickHits;
@@ -708,6 +726,7 @@ public sealed class World
         // the 7 ships' (X, Y, status, sub) into the live table.
         EnemyShipTable.LoadFromInit(EnemyShipInitData, level);
         Boss.Reset();
+        Workers.LoadFromSchedule(WorkerScheduleData, level);
         // Level scenery paint is deferred — see Scroll.PaintLevel call
         // gated by frame counter in TickPlaying, matching the emu's
         // scroll-in over f140..f200.
@@ -978,6 +997,7 @@ public sealed class World
         // + $E213 mini-map plot (called twice for blink alternation).
         EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
         Boss.Draw(fb, ScrollOffsetX);
+        Workers.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
 
         // Enemy BULLETS draw before the HUD so the HUD chrome stays
         // on top.  Single-byte attribute flashes per the cassette's

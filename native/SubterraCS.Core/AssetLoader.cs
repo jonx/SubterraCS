@@ -67,7 +67,15 @@ public sealed class Assets
         // Per-level enemy-ship init data (6 × 32 bytes = 192).
         // Loaded into EnemyShipTable at level-load via $E319 port.
         EnemyShipInitData = File.ReadAllBytes(Path.Combine(assetsDir, "level-init-e48d.bin"));
+
+        // Per-level worker schedule (raw bytes, distinct from the
+        // OriginalLevelSchedules SpawnSchedule[] interpretation).
+        // Loaded into WorkerSchedule at level-load via $E2E5 port.
+        WorkerScheduleData = File.ReadAllBytes(Path.Combine(assetsDir, "level-schedules-e69d.bin"));
     }
+
+    /// <summary>Per-level worker schedule raw bytes (6 × 32 = 192).</summary>
+    public byte[] WorkerScheduleData { get; private set; } = Array.Empty<byte>();
 
     private static byte[] LoadOptionalScr(string dir, string name)
     {

@@ -48,6 +48,7 @@ internal static class Program
             LevelEntities = assets.LevelEntities,
             MiniMap = assets.MiniMap,
             EnemyShipInitData = assets.EnemyShipInitData,
+            WorkerScheduleData = assets.WorkerScheduleData,
         };
 
         // Pass music data through to whichever runner uses it.
