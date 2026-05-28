@@ -154,12 +154,20 @@ public sealed class Explosion
         if (_frame >= maxFrames) Active = false;
     }
 
-    /// <summary>Paint particles for this frame.  Like the original's
-    /// `$E199`, this stamps the attribute cell for each particle's
-    /// (x, y) — bitmap untouched.  Alternates colour <c>$E57B</c> /
-    /// <c>$07</c> across frames to produce the strobing flash.
-    /// Spawn-in restricted to the playfield (y &lt; 128) so the
-    /// converging particles don't clobber the mini-map area.</summary>
+    /// <summary>Paint particles for this frame — port of <c>$E199</c>
+    /// dispatcher + <c>$E1C0</c> 4-corner pixel-XOR + <c>$E1DE</c>
+    /// single-pixel XOR.  Each particle is a 2×2 pixel block in the
+    /// BITMAP (XOR'd in), plus one attribute byte for the cell that
+    /// contains it.  The bitmap pixels are what gives the cassette its
+    /// crisp "tiny white square" look; flashing only the attribute
+    /// produces a big translucent 8×8 block — wrong.
+    ///
+    /// Cassette `$E1C0` paints (B, C), (B+1, C), (B+1, C+1), (B, C+1)
+    /// where B is the bus-counter Y (storedY).  INC B means storedY
+    /// goes up, visualY goes DOWN — so in port-screen coords the
+    /// block spans (x..x+1, y-1..y).  Guards: skip if `storedY >= $BD`
+    /// (visualY ≤ 2) or `storedY < $3F` (visualY > 128).  Translated
+    /// to port-screen Y, skip if `y &lt; 3 || y &gt; 128`.</summary>
     public void Draw(Framebuffer fb)
     {
         if (!Active) return;
@@ -170,11 +178,28 @@ public sealed class Explosion
         {
             int x = _particles[i].X;
             int y = _particles[i].Y;
-            if ((uint)x >= Framebuffer.Width) continue;
-            if ((uint)y >= Framebuffer.Height) continue;
-            // Don't paint into the HUD / mini-map area (y >= 128).
-            if (y >= 128) continue;
-            fb.Attributes[Framebuffer.AttributeAddress(x, y)] = attr;
+            // $E1C0 cassette guards (translated through bus-counter
+            // inversion) + safety clamp to keep the 2×2 block on
+            // the playfield.
+            if (y < 3 || y > 126) continue;
+            if (x < 0 || x >= Framebuffer.Width - 1) continue;
+            // 4-pixel XOR block — port of $E1C0's 4 calls to $E1DE.
+            XorPixel(fb, x,     y - 1);
+            XorPixel(fb, x + 1, y - 1);
+            XorPixel(fb, x,     y    );
+            XorPixel(fb, x + 1, y    );
+            // One attribute byte for the cell containing (x, y-1) —
+            // port of $E1B5 `LD (HL),A` after the bitmap draw.
+            fb.Attributes[Framebuffer.AttributeAddress(x, y - 1)] = attr;
         }
+    }
+
+    private static void XorPixel(Framebuffer fb, int x, int y)
+    {
+        if ((uint)x >= Framebuffer.Width) return;
+        if ((uint)y >= Framebuffer.Height) return;
+        int addr = Framebuffer.BitmapAddress(x, y);
+        byte mask = (byte)(0x80 >> (x & 7));
+        fb.Bitmap[addr] ^= mask;
     }
 }
