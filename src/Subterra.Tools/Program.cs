@@ -31,6 +31,7 @@ internal static class Program
             "player-dump"       => PlayerDumpCommand.Run(rest),
             "extract-all"       => ExtractAllCommand.Run(rest),
             "diff-frame"        => DiffFrameCommand.Run(rest),
+            "mem-write-trace"   => MemWriteTraceCommand.Run(rest),
             "-h" or "--help" or "help" => PrintHelp(),
             _ => Unknown(command),
         };

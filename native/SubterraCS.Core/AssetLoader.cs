@@ -21,6 +21,7 @@ public sealed class Assets
     public byte[] TitleMenuScr { get; }
     public RomFont RomFont { get; }
     public LevelEntities LevelEntities { get; }
+    public MiniMap MiniMap { get; }
 
     public Assets(string assetsDir)
     {
@@ -53,6 +54,12 @@ public sealed class Assets
         // counts at $F2E2 and pointers at $F594).  6-byte header
         // + 6 × N × 8 bytes of records.
         LevelEntities = LevelEntities.Load(Path.Combine(assetsDir, "level-entities-f2e8.bin"));
+
+        // Per-level mini-map source buffers (6 × 4 KB).  Each level's
+        // buffer is the static packed asset the original game ships
+        // in its $60F4 / $70F4 / etc. RAM regions — extracted directly
+        // from the boot snapshot.
+        MiniMap = MiniMap.LoadFromAsset(Path.Combine(assetsDir, "level-minimaps.bin"));
     }
 
     private static byte[] LoadOptionalScr(string dir, string name)

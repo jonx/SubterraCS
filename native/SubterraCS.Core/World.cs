@@ -44,7 +44,7 @@ public sealed class World
     public byte[] TitleMenuScr { get; set; } = Array.Empty<byte>();
     public RomFont? RomFont { get; set; }
     public LevelEntities? LevelEntities { get; set; }
-    public readonly MiniMap MiniMap = new();
+    public MiniMap MiniMap { get; set; } = new();
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
     // beyond that we hand off to the procedural generator so the game
@@ -387,7 +387,9 @@ public sealed class World
         Shield = 100;
         Fuel = Math.Min(100, Fuel + 25);
         SetInvincible(60);
-        MiniMap.Clear();
+        // Switch the active mini-map buffer to this level's packed
+        // bytes (port of the original's $E579 ← $E56D[level*2] step).
+        MiniMap.SelectLevel(level);
         PlaceWorkersForLevel(level);
         EnterState(GameState.Playing);
     }
@@ -561,9 +563,6 @@ public sealed class World
     {
         DrawLevelScenery(fb);
 
-        // Mini-map at the bottom strip (y=160..191) — port of $E104.
-        MiniMap.DrawTo(fb);
-
         foreach (var e in Entities)
         {
             if (!e.Alive) continue;
@@ -589,6 +588,12 @@ public sealed class World
         }
 
         Hud.Draw(fb, this);
+
+        // Mini-map at the bottom strip (y=160..191) — port of $E104.
+        // Drawn AFTER Hud which clears the HUD-region bitmap as part
+        // of its repaint pass; we layer the mini-map on top of the
+        // green-on-black attribute strip that Hud sets for rows 20-23.
+        MiniMap.DrawTo(fb);
     }
 
     /// <summary>

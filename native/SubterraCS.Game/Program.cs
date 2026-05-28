@@ -46,6 +46,7 @@ internal static class Program
             TitleMenuScr = assets.TitleMenuScr,
             RomFont = assets.RomFont,
             LevelEntities = assets.LevelEntities,
+            MiniMap = assets.MiniMap,
         };
 
         // Pass music data through to whichever runner uses it.

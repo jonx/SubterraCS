@@ -1669,3 +1669,87 @@ writes those 272 bytes of initial paint, or (b) capturing the
 per-level mini-map bitmap and shipping it as an asset (which
 crosses the "don't capture levels" line).  The infrastructure
 in `MiniMap.cs` is ready for (a) when the routine is found.
+
+## 33. Mini-map: the wall wasn't a wall — the data is a static asset
+
+User: *"just do whatever the game is doing and how but in C#, if
+you need to capture things to understand how it works, that's
+fine, as long as you don't hardcode things in the C# port with
+the things you captured"*.
+
+That clarification re-framed the problem.  The "wall" was a
+mis-classification — I'd been treating "extract per-level data
+that the game itself ships in its RAM" as forbidden.  It isn't;
+that's just extracting an asset.  The forbidden thing is
+hard-coding a captured rendered output.
+
+Built a new tool `mem-write-trace` to confirm what writes to
+the buffer.  Result: across 100 frames of boot through level-
+load, only `$E113` and `$E114` hit the range — the no-op
+`INC (HL); DEC (HL)` zero-test from `$E104`'s loop.  Nothing
+else writes.  So the buffer's content was **already in the
+snapshot** when execution started.
+
+Verified by dumping `boot-ram.bin` itself: 1498 non-zero bytes
+in `$60F4..$70F4` from the FIRST DECOMPRESSED BYTE of the .Z80
+snapshot.  The mini-map data is part of the cassette image,
+loaded by BASIC `LOAD ""CODE` before our snapshot was taken.
+
+### Per-level mini-map data — verified packed asset
+
+Extracted all six 4 KB per-level buffers from the boot RAM:
+
+| Level | Address    | Non-zero bytes | Density |
+| ----- | ---------- | -------------- | ------- |
+| 0     | `$B0F4`    | 2643 / 4096    | 64.5%   |
+| 1     | `$60F4`    | 1498 / 4096    | 36.6%   |
+| 2     | `$70F4`    | 1796 / 4096    | 43.8%   |
+| 3     | `$80F4`    | 2259 / 4096    | 55.2%   |
+| 4     | `$90F4`    | 2300 / 4096    | 56.2%   |
+| 5     | `$A0F4`    | 2242 / 4096    | 54.7%   |
+
+Note: level 0 at `$B0F4` overlaps with the master tile bank
+(also at `$B0F4`).  The two SHARE bytes — the tile-bank data
+doubles as level-0 mini-map source.  That's a striking memory
+trick the cassette pulls off and it's the reason level 0's
+mini-map looks like a dense block of pixel detail.
+
+Packed all six into `assets/extracted/level-minimaps.bin`
+(24 576 bytes).
+
+### The walker (already ported, finally driven)
+
+`MiniMap.cs` now loads the asset, exposes `SelectLevel(int)`
+to swap the active buffer at level transitions, and walks the
+buffer in `DrawTo(fb)`:
+
+* 16 source rows × 256 source bytes = 4096 bytes per level.
+* For each non-zero source byte at `(row, col)`, set the bit
+  at screen position `(col, 160 + row*2)` and `(col, 160 +
+  row*2 + 1)` — the 2× vertical stretch that the original's
+  screen-row formula `B = $20 - (outer << 1)` produces.
+
+### The render-order trap
+
+First wired-up attempt produced 9.97% diff — same as before.
+Investigated: my `Hud.Draw` clears the bitmap from y=128 to
+y=192 as part of its repaint, which wipes the just-drawn mini-
+map.  Fixed by drawing the mini-map AFTER the HUD instead of
+before.
+
+### Result
+
+| Frame | Before mini-map | After mini-map |
+| ----- | --------------- | -------------- |
+| 60    | 7.68%           | 7.87%          |
+| 75    | 10.48%          | 5.59%          |
+| 100   | 9.97%           | **5.07%**      |
+| 120   | 8.95%           | **4.06%**      |
+| 150   | 9.15%           | **4.26%**      |
+| 200   | (n/a)           | 11.00%         |
+
+Best overall diff went from 7.68% to **4.06%**.  Remaining
+diff is concentrated in entity positions (mine static, emu's
+moving), the player ship, and entity sprites that spawn from
+the hazard schedule between f150 and f200 in the emu that my
+port hasn't fired yet (frame-200 spike).
