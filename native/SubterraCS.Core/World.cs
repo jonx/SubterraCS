@@ -748,7 +748,13 @@ public sealed class World
         foreach (var b in Bullets)
         {
             if (b.Alive) continue;
-            b.X = PlayerX + (FacingLeft ? -8 : 8);
+            // Initial b.X is set so that AFTER the first TickPlaying's
+            // `b.X += b.DX` advance, the visible head lands one byte
+            // past the appropriate edge of the 16-px-wide ship sprite
+            // (sprite spans pixels 120..135 with PlayerX=128).
+            // - Left target  = pixel 112 → initial = 112 - (-8) = 120
+            // - Right target = pixel 136 → initial = 136 -   8 = 128
+            b.X = PlayerX + (FacingLeft ? -8 : 0);
             b.Y = PlayerY + 4;       // middle of the 8px-tall ship sprite
             b.DX = FacingLeft ? -8 : 8;   // 1 byte = 8 px per frame
             b.DY = 0;
