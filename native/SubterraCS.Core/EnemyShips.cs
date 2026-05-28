@@ -358,10 +358,13 @@ public sealed class BossEntity
         }
     }
 
-    /// <summary>Port of <c>$EC4C</c>'s draw section + EC4D: blit a
-    /// small sprite at the boss's screen position (offset from
-    /// scrollCursor).</summary>
-    public void Draw(Framebuffer fb, int scrollCursor)
+    /// <summary>Port of <c>$EC4C</c>'s draw section: blit the alien-ship
+    /// sprite (same as regular ships per <c>$E5DB</c>, since the
+    /// boss tick's <c>$E9AC</c> call inherits DE from the surrounding
+    /// $E920 chain).  Twice as wide as a regular ship — 16×8 instead
+    /// of 8×8 — since $EC60 calls $E9AC TWICE (left + right cells).
+    /// Bright RED attribute so it stands out as the boss.</summary>
+    public void Draw(Framebuffer fb, int scrollCursor, byte[] shipSpriteBanks, int cycle)
     {
         if (!Active) return;
         int offset = (X - scrollCursor) & 0xFF;
@@ -369,19 +372,20 @@ public sealed class BossEntity
         int sx = offset * 8;
         int sy = Y;
         if ((uint)sx >= Framebuffer.Width || (uint)sy >= Framebuffer.Height) return;
-        // Draw a small distinctive 8x8 pattern — the actual boss sprite
-        // is in $E5DB-style data we haven't located yet.  For now use
-        // a 'X' shape so the boss is visually identifiable.
-        ReadOnlySpan<byte> bossSprite = stackalloc byte[]
+        int spriteBase = cycle * 8;
+        if (spriteBase + 8 > shipSpriteBanks.Length) return;
+        // Two 8x8 cells side-by-side (=16x8 boss).
+        for (int cell = 0; cell < 2; cell++)
         {
-            0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81,
-        };
-        for (int row = 0; row < 8; row++)
-        {
-            int yy = sy + row;
-            if ((uint)yy >= Framebuffer.Height) break;
-            fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= bossSprite[row];
+            int cellX = sx + cell * 8;
+            if (cellX >= Framebuffer.Width) break;
+            for (int row = 0; row < 8; row++)
+            {
+                int yy = sy + row;
+                if ((uint)yy >= Framebuffer.Height) break;
+                fb.Bitmap[Framebuffer.BitmapAddress(cellX, yy)] ^= shipSpriteBanks[spriteBase + row];
+            }
+            fb.Attributes[Framebuffer.AttributeAddress(cellX, sy)] = 0x42;  // bright red = boss
         }
-        fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = 0x46;  // bright yellow
     }
 }

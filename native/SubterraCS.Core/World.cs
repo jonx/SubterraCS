@@ -602,6 +602,25 @@ public sealed class World
             }
             if (!b.Alive) continue;
 
+            // Player laser vs BOSS — 3 hits to kill (16x8 boss is
+            // roughly 2x the size of a normal ship).
+            if (Boss.Active
+                && (Boss.X == beamWorldByte || Boss.X + 1 == beamWorldByte)
+                && Math.Abs(Boss.Y - b.Y) < 12)
+            {
+                Boss.LifetimeCheck++;     // re-use as hit counter
+                b.Alive = false;
+                Score += 25;
+                Sfx.Trigger(SfxKind.Hit);
+                if (Boss.LifetimeCheck >= 3)
+                {
+                    Boss.Active = false;
+                    Score += 500;
+                    Sfx.Trigger(SfxKind.Explode);
+                }
+                continue;
+            }
+
             // Collision against entities — the beam's CURRENT position
             // is a small 8×8 hit area at (b.X, b.Y).
             foreach (var e in Entities)
@@ -1032,7 +1051,7 @@ public sealed class World
 
         // Playfield-only draws: ship sprites + boss + workers + bullets.
         EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
-        Boss.Draw(fb, ScrollOffsetX);
+        Boss.Draw(fb, ScrollOffsetX, EnemyShipTable.SpriteBanks, EnemyShipTable.Cycle);
         Workers.DrawPlayfield(fb, ScrollOffsetX);
         EnemyShots.Draw(fb, ScrollOffsetX);
 
