@@ -377,11 +377,13 @@ public sealed class World
             return;
         }
 
-        // Fuel drain — port of $D8D8..$D8EC.  The L key (horizontal
-        // input) drains the FuelAccum ($E465) by $20 each frame; on
-        // underflow, Fuel ($E466) DECs by 1.  So holding L for 8 frames
-        // costs 1 fuel unit.  At 60 fps and BarMax = 95, full tank
-        // depletes in ~12.7 seconds of held horizontal input.
+        // Ambient fuel drain — port of $D86C: $E465-- every frame
+        // (= 1 fuel unit per 256 frames ≈ 4.3 sec).
+        FuelAccum = (FuelAccum - 1) & 0xFF;
+        if (FuelAccum == 0xFF) Fuel = Math.Max(0, Fuel - 1);   // wrap = underflow
+
+        // L-key extra drain — port of $D8D8..$D8EC: holding horizontal
+        // drains FuelAccum by $20 per frame on top of the ambient.
         if (input.Horizontal)
         {
             FuelAccum -= 0x20;
@@ -391,6 +393,13 @@ public sealed class World
                 Fuel = Math.Max(0, Fuel - 1);
             }
         }
+
+        // Low-fuel + low-shield warning SFX — port of $D879 / $D88A
+        // (random gate; play Sfx.Damage if value < $20).
+        if (Fuel < 0x20 && _rng.Next(0, 256) == 0x7E)
+            Sfx.Trigger(SfxKind.Damage);
+        if (Shield < 0x20 && _rng.Next(0, 256) == 0x7E)
+            Sfx.Trigger(SfxKind.Damage);
 
         if (Fuel <= 0) { TriggerDeath(); return; }
 
