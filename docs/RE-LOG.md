@@ -1863,3 +1863,63 @@ entities accumulating via the spawn schedule + entity
 dispatcher.  Porting it properly needs the real `$EF02`
 executor and faithful per-type AI.  That's the next big chunk
 of RE work.
+
+## 36. The hill is a SCROLL — not entity accumulation
+
+Wrong assumption in §35.  Used `mem-write-trace` on frames
+f140..f150 (the window where the hill appears) over the bitmap
+range `$4000..$57FF`:
+
+```
+Total writes to range: 9932
+Distinct PCs writing: 3
+  PC=$DB93    8076 writes
+  PC=$DB9C    1088 writes
+  PC=$DB01     768 writes
+```
+
+`$DB93` and `$DB9C` are deep inside a routine at `$DB85`:
+
+```
+DB85  LD HL,$4000           ; HL = dest (band 0 top)
+DB88  LD DE,$4020           ; DE = src  (one char row below in band 0)
+DB8B  PUSH HL; PUSH DE
+DB8D  LD C,$0F              ; C = 15 (16 char rows)
+DB8F  LD B,$20              ; B = 32 cols
+DB91  LD A,(DE)             ; read byte from one char row below
+DB92  LD (HL),A             ; write to current char row
+DB93  LD A,C; AND $07; CP $01
+DB98  JR NZ,$DB9C           ; if (C & 7) != 1, skip
+DB9A  SUB A
+DB9B  LD (DE),A             ; zero out source (every 8th row)
+DB9C  INC HL; INC DE
+DB9E  DJNZ $DB91            ; loop 32 cols
+DBA0  DEC C; JR Z,$DBB5     ; row done
+... continues for the bottom bands ...
+DBB7  INC D; INC H
+DBB9  LD A,H; CP $48; JR NZ,$DB8B
+```
+
+So this is a **scroll-up routine** that pulls bitmap content
+from row N+1 into row N, working through the entire play area
+8 scanlines at a time.  Every 8th row zeros the source.
+
+**The hill silhouette IS the level scenery, scrolling up from
+below the visible area.**  Each scroll-frame pulls one more
+row of the hill into view.  This is also why the schedule
+state stays static during the burst — it's not the schedule;
+it's the scroll.
+
+What this means for the port:
+
+* The scroll routine `$DB85` should be ported as a level-
+  scroll method that runs each frame (or every N frames based
+  on altitude per the original's $E584 gate).
+* The source of the scrolling-in content lives in the bitmap
+  region BELOW the play area in offset terms.  Need to trace
+  what populates the off-screen buffer with level scenery.
+* Once scroll + scenery buffer are wired, the green hillside
+  will appear naturally as the level progresses.
+
+This is the next big port target.  The diff at f200 stays at
+10.59% until this is wired.
