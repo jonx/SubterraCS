@@ -2503,44 +2503,53 @@ snapshot, so this routine is invoked from a context I haven't
 found yet.  Documented in
 [`disasm/collision.md`](disasm/collision.md).
 
-## 47. Two parallel entity systems, not one
+## 47. Entities are gated by `$E583` — not pre-decoded coordinates
 
-User feedback after the §43 entity re-enable: "all the entities
-are on the first screen and the rest of the level is empty, so
-you have to figure out the routine that loads the entities
-positions" — and then more pointedly: "this is probably not
-happened when I scroll but when the level is created".
+User feedback after §43: "all the entities are on the first
+screen, the rest of the level is empty"; then more precisely:
+"it's possible that you start with 0 but something is reading
+the coords from somewhere to update".
+
+Right.  The records' coordinates DON'T change.  What changes is
+which records are *eligible to be drawn this frame*.
 
 Tracing from the source revealed there are **two independent
 entity systems** in the cassette:
 
-### System A — `$F2EB+` static playfield records (8 bytes each)
+### System A — `$F2EB+` static records (8 bytes each)
 
 Loaded by `$F1BC` (just sets `($F1B9) = pointer`), drawn each
-frame by `$F1EF` using:
+frame by `$F1EF`.  Verified facts:
 
-```
-effective_address = TopAddr + (record.Y - ($E583))
-```
+1. Every TopAddr stored in the cassette has `x_byte = 0` —
+   confirmed for all 5 playable levels (level 0 is anomalous).
+2. The record's `+1` byte is the entity's **world byte position**
+   (0..255 along the 256-byte-wide level).
+3. `$F1EF` gates rendering each frame:
+   ```
+   F222  SUB B        ; A = (rec.+1) - $E583
+   F223  CP $1F
+   F225  RET NC       ; skip when offset ≥ 31
+   ```
+4. When drawn: `screen_address = TopAddr + (rec.+1 − $E583)`
+   (`$F278 ADD HL,BC`).  Since TopAddr has x_byte=0, the offset
+   `(rec.+1 − $E583)` becomes the on-screen byte_x (= pixel/8).
 
-Surprise discovery: **every TopAddr in the cassette has
-`x_byte = 0`** (verified for all 10 level-1 records).  The
-record's `+1` byte (which I had been labeling "Y") is in fact
-a *bitmap-byte offset added to TopAddr*.  Due to Spectrum's
-interleaved layout, adding ≤ 31 bytes advances x-byte within the
-same char-row; > 31 also shifts char-row.
+So the model: each record is at fixed world-X (its `+1` byte)
+and fixed scanline-Y (from TopAddr).  The 32-byte-wide visible
+window slides over the world as `$E583` increments via `$DB06`.
 
-Worked example — level 1 record 0:
-- `type=$02 y=$11 topAddr=$48A0` → offset = 17
-- effective = $48A0 + 17 = $48B1 → pixel (136, 104)
+Level 1's `+1` byte values: 17, 48, 83, 83, 83, 139, 139, 179,
+208, 15.  At `$E583=0` only rec[0] (Y=17) and rec[9] (Y=15)
+pass the gate — confirmed by rendering `at-f100.bin` and seeing
+just two entity sprites on the playfield (the rest of the
+screen is level scenery tiles from `$DB1A`).
 
-My old decode placed it at (0, 104) — flush left edge.  That's
-why entities visually clustered on the left of the screen.
-
-Level 1's 10 records all decode to screen X ∈ {88, 120, 128, 136,
-152} — all within the first visible 256-pixel screen.  This is
-**by design**: these are fixed PLAYFIELD DECOR (trees, pipes,
-stalactites at specific positions on the first page).
+As the player scrolls right, `$E583` grows.  When `$E583` hits
+18, rec[1] (Y=48) enters the window.  At `$E583=53`, rec[2-4]
+(Y=83) become visible.  And so on out to rec[8] (Y=208) at
+`$E583=178`.  The 256-byte world is sliced into a 32-byte
+viewport.
 
 ### System B — `$E48D+` per-level init data (4 bytes each)
 

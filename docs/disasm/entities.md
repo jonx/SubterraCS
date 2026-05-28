@@ -109,37 +109,48 @@ F278  ADD HL,BC                          ; HL = TopAddr + (recY - $E583)
 F279  CALL $F2BC                         ; blit 8-row sprite column at HL
 ```
 
-### KEY FINDING — entity screen position formula
+### KEY FINDING — entity gate + screen position formula
 
 ```
-effective_address = TopAddr + (record.Y - ($E583))
+gate:       (rec.+1 − $E583) must be < $1F (else skip drawing)
+screen_addr = TopAddr + (rec.+1 − $E583)
 ```
 
-The per-level record's TopAddr is ALWAYS a scanline-start
-(verified — every TopAddr in level 1 decodes with x_byte=0).
-The record's `+1` byte (which I previously labeled "Y") is
-actually a **bitmap-byte offset added to TopAddr**.  Due to
-Spectrum's interleaved addressing, adding a byte can shift
-both X (within the char-row) and Y (when the byte-x overflows
-past 31 into char-row bits).
+Verified facts (all from disassembly + reading `at-fXXX.bin`):
 
-`$E583` is a vertical-shift cursor; normally 0 during gameplay
-(verified across `at-fXXX.bin` from f50..f400 = all 0; only
-`at-f40.bin` had $E583=$20, before gameplay starts).
+- Every `TopAddr` stored in the cassette has `x_byte = 0`
+  (verified across all 5 playable levels).
+- The record's `+1` byte is the entity's **world-byte position**
+  (0..255 along the 256-byte-wide level).
+- `$E583` is the **world-scroll cursor** updated by `$DB06`
+  (called from both scroll routines `$DA54` / `$DA93`).
+- The 32-byte visible window slides over the world as `$E583`
+  increments; entities outside `[E583, E583+31]` are not drawn
+  (and, since their +1 byte isn't transferred to any other
+  location, are not collidable either).
 
 ### Worked example — level 1 record 0
 
 ```
-record: type=$02 y=$11 frame=$01 topAddr=$48A0 botAddr=$48C0 flags=$0d
+record: type=$02 +1=$11 frame=$01 topAddr=$48A0 botAddr=$48C0 flags=$0d
 ```
 
-With $E583=0:
-- offset = $11 - 0 = 17
-- effective = $48A0 + 17 = $48B1
-- Decoded: pixel (136, 104)
+At `$E583=0`: offset = 17 < 31 → drawn at `$48A0 + 17 = $48B1` →
+pixel (136, 104).
 
-Without the offset (my earlier broken decode), the entity would
-have been placed at (0, 104) — flush against the left edge.
+At `$E583=18`: offset = -1 wraps as `($FF) → CP $1F` fails (NC)
+→ entity hidden.  Record dormant until `$E583` decreases.
+
+### Level 1 visibility table
+
+| `$E583` value | Visible records | Notes |
+| ------------- | --------------- | ----- |
+| 0   | rec[0] (Y=17), rec[9] (Y=15) | starting view |
+| 18  | rec[1] (Y=48) enters window | scroll right ~18 bytes |
+| 53  | rec[2-4] (Y=83) enter | several scrolls later |
+| 109 | rec[5-6] (Y=139) enter | further right |
+| 149 | rec[7] (Y=179) enters | |
+| 178 | rec[8] (Y=208) enters | near end of level |
 
 ## Per-level entity records — 8-byte format
 

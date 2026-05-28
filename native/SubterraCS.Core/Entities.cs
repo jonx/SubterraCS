@@ -5,19 +5,27 @@ namespace SubterraCS.Core;
 /// slot at <c>($F1B9)</c>, but unwrapped into named fields plus a few
 /// extras we need on top (HP, lifetime, cached MaxFrames) to drive the
 /// per-type AI table in <see cref="EntityAI"/>.
+///
+/// <para><b>WorldX</b> is the record's +1 byte (its world-byte position
+/// along the 256-byte-wide level).  The current screen X is computed
+/// per-frame as <c>(WorldX − ScrollCursor) * 8</c> and the entity is
+/// only drawn / collidable when that offset is in [0, 31] — matching
+/// the original's $F222 SUB B / CP $1F / RET NC gate.</para>
 /// </summary>
 public sealed class EntityInstance
 {
     public int TypeId;       // index into the EntityTypeTable
-    public int X;            // pixel column (0..255)
-    public int Y;            // pixel row (0..191)
+    public int X;            // pixel column (0..255) — recomputed per-frame from WorldX
+    public int Y;            // pixel row (0..191) — fixed at level-load from TopAddr
+    public int WorldX;       // record's +1 byte: world byte position (0..255)
     public int Frame;        // 0..MaxFrames-1
     public int DX, DY;       // signed per-frame velocity
     public int FrameTick;    // counts up; advance frame when > threshold
     public int AgeFrames;    // ticks since spawn — drives lifetimes / state
     public int Hp;           // hits to destroy (1 for fragile decor)
     public int MaxFrames;    // cached from EntityType for the AI tick path
-    public bool Alive;
+    public bool Alive;       // true if slot in use
+    public bool Visible;     // true if WorldX is within the current scroll window
 }
 
 /// <summary>The bullet/laser-beam list — port of the 4-slot table at

@@ -308,14 +308,25 @@ public sealed class World
             int delta = FacingLeft ? -1 : 1;
             ScrollOffsetX = (ScrollOffsetX + delta) & 0xFF;
             Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX);
-            // Entities are anchored to LEVEL columns, not screen cols.
-            // When the level scrolls right (delta=+1), the world slides
-            // RIGHT by 8 pixels — so visually the entities should move
-            // LEFT by 8 pixels.  Shift all alive entities accordingly.
-            int pixelDelta = -delta * 8;
-            foreach (var e in Entities)
+        }
+
+        // Port of $F1EF's $F222 SUB B / CP $1F / RET NC gate:
+        // recompute screen X and visibility for every entity each
+        // frame from its WorldX vs the scroll cursor.
+        // ScrollOffsetX = $E583.  Visible when (WorldX - $E583) in [0, 31].
+        foreach (var e in Entities)
+        {
+            if (!e.Alive) continue;
+            int offset = (e.WorldX - ScrollOffsetX) & 0xFF;
+            if (offset < 0x1F)
             {
-                if (e.Alive) e.X += pixelDelta;
+                e.Visible = true;
+                e.X = offset * 8;
+            }
+            else
+            {
+                e.Visible = false;
+                e.X = -16;       // park off-screen so no collision
             }
         }
 
@@ -405,7 +416,9 @@ public sealed class World
             }
         }
 
-        // Update every live entity.
+        // Update every live entity.  Off-window (invisible) entities
+        // still tick (for AI / lifetimes) but skip the collision check
+        // since their X is parked off-screen.
         foreach (var e in Entities)
         {
             if (!e.Alive) continue;
@@ -415,6 +428,7 @@ public sealed class World
                 e.Alive = false;
                 continue;
             }
+            if (!e.Visible) continue;
             // Port of $DD8C collision test: entity X within ±1 byte
             // (8 px) AND |entity.Y - player.Y| < 8 px.  This is much
             // tighter than the 24×24 box we had before — the original
@@ -666,14 +680,17 @@ public sealed class World
             slot.MaxFrames = TypeMaxFrames(rec.TypeId);
             slot.AgeFrames = 0;
             slot.Hp = 1;
-            // Port of $F278: HL = TopAddr + (record.Y - $E583).  All
-            // per-level TopAddrs have x_byte=0, so the record's Y
-            // byte supplies the X-offset (and, via Spectrum interleaved
-            // addressing, can also shift the char-row).  $E583 is
-            // normally 0 during gameplay.
-            var (x, y) = LevelEntities.DecodeEntityPosition(rec.TopAddr, rec.Y, 0);
-            slot.X = x;
+            // Port of $F1EF gate: the record's +1 byte is the world-X
+            // (= byte position 0..255 along the wider-than-screen
+            // level).  Entity is drawable each frame only when
+            // `(rec.Y - $E583) < $1F` ($F222 SUB B / $F223 CP $1F /
+            // $F225 RET NC).  So we store WorldX here; the per-frame
+            // tick recomputes screen X via UpdateEntityVisibility().
+            // Y is fixed at level-load from the TopAddr's scanline bits.
+            slot.WorldX = rec.Y;
+            var (_, y) = LevelEntities.DecodeBitmapAddress(rec.TopAddr);
             slot.Y = y;
+            slot.X = -16;       // placed off-screen until first tick
             slot.DX = (rec.Flags & 0x40) != 0 ? -1 : 1;
             slot.DY = 0;
             slot.Alive = true;
@@ -843,7 +860,7 @@ public sealed class World
 
         foreach (var e in Entities)
         {
-            if (!e.Alive) continue;
+            if (!e.Alive || !e.Visible) continue;
             if (e.TypeId < 0 || e.TypeId >= EntityTypes.Types.Length) continue;
             var type = EntityTypes.Types[e.TypeId];
             var sprite = EntityBank.Frame(type.SpritePointer, e.Frame);
