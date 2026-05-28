@@ -101,7 +101,7 @@ public sealed class EnemyBullets
     /// when the lifetime hits zero.  Returns the bitmask of slots
     /// that just collided with the player (used by the caller to
     /// fire the hit chain).</summary>
-    public int Tick(int scrollCursor, int playerByteX, int playerY)
+    public int Tick(int scrollCursor, int playerByteX, int playerY, byte[]? levelTiles = null)
     {
         int hitMask = 0;
         for (int i = 0; i < SlotCount; i++)
@@ -127,6 +127,15 @@ public sealed class EnemyBullets
             // Out-of-window cull: $ED8A checks (X - $E583) < $20.
             int offset = (e.X - scrollCursor) & 0xFF;
             if (offset >= 0x20) { e.Status = 0; continue; }
+
+            // Port of $EB62 scenery probe (called from $ED01 at $ED62):
+            // if the bullet entered a wall tile, expire.
+            if (levelTiles != null && levelTiles.Length >= 4096)
+            {
+                int row = (e.Y >> 3) & 0x0F;
+                byte tile = levelTiles[row * 256 + e.X];
+                if (tile != 0) { e.Status = 0; continue; }
+            }
 
             // Player collision — port of $EDC0.  Player's world byte
             // = scrollCursor + 15..16 (the 2 bytes the ship sprite

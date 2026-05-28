@@ -76,7 +76,7 @@ public sealed class Explosion
         for (int i = 0; i < ParticleCount; i++)
         {
             _particles[i].X = SpawnSeeds[i].X;
-            _particles[i].Y = SpawnSeeds[i].Y;
+            _particles[i].Y = SpawnSeeds[i].ScreenY;
             _particles[i].Dx = SpawnSeeds[i].Dx;
             _particles[i].Dy = SpawnSeeds[i].Dy;
         }
@@ -84,14 +84,23 @@ public sealed class Explosion
     }
 
     /// <summary>Spawn-in particle seed table — port of <c>$E841</c>.
-    /// 8 particles at scattered positions on the screen edges with
-    /// velocities pointing inward.  Verified bytes from at-f100.bin.</summary>
-    private static readonly (int X, int Y, int Dx, int Dy)[] SpawnSeeds =
+    /// The cassette stores Y as a BUS-COUNTER value: actual screen
+    /// scanline = $BF - storedY (per <c>$E1E4 LD A,$BF; SUB B</c>).
+    /// We pre-invert here so we can use Y directly as screen Y.
+    /// Cassette bytes:
+    ///   (X=$30 Y=$BC) → screen Y = $BF-$BC = 3
+    ///   (X=$58 Y=$44) → screen Y = $BF-$44 = 123
+    ///   (X=$08 Y=$94) → screen Y = $BF-$94 = 43
+    ///   (X=$30 Y=$6C) → screen Y = $BF-$6C = 83
+    /// Similarly for the four right-side particles.  Velocities are
+    /// kept as-is (they're added to the stored Y, which after
+    /// inversion needs Dy to act inverse too — see TriggerSpawnIn).</summary>
+    private static readonly (int X, int ScreenY, int Dx, int Dy)[] SpawnSeeds =
     {
-        (0x30, 0xBC, +2, +0),  (0x58, 0x44, +1, +3),
-        (0x08, 0x94, +3, +1),  (0x30, 0x6C, +2, +2),
-        (0xD0, 0x94, -2, +1),  (0xF8, 0x6C, -3, +2),
-        (0xD0, 0x44, -2, +3),  (0xD0, 0xBC, -2, +0),
+        (0x30, 3,   +2, +0),  (0x58, 123, +1, -3),
+        (0x08, 43,  +3, -1),  (0x30, 83,  +2, -2),
+        (0xD0, 43,  -2, -1),  (0xF8, 83,  -3, -2),
+        (0xD0, 123, -2, -3),  (0xD0, 3,   -2, +0),
     };
 
     private bool _converge;
@@ -123,7 +132,9 @@ public sealed class Explosion
     /// <summary>Paint particles for this frame.  Like the original's
     /// `$E199`, this stamps the attribute cell for each particle's
     /// (x, y) — bitmap untouched.  Alternates colour <c>$E57B</c> /
-    /// <c>$07</c> across frames to produce the strobing flash.</summary>
+    /// <c>$07</c> across frames to produce the strobing flash.
+    /// Spawn-in restricted to the playfield (y &lt; 128) so the
+    /// converging particles don't clobber the mini-map area.</summary>
     public void Draw(Framebuffer fb)
     {
         if (!Active) return;
@@ -136,6 +147,8 @@ public sealed class Explosion
             int y = _particles[i].Y;
             if ((uint)x >= Framebuffer.Width) continue;
             if ((uint)y >= Framebuffer.Height) continue;
+            // Don't paint into the HUD / mini-map area (y >= 128).
+            if (y >= 128) continue;
             fb.Attributes[Framebuffer.AttributeAddress(x, y)] = attr;
         }
     }

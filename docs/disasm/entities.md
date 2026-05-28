@@ -208,11 +208,33 @@ at `$F2EB`:
 | Offset | Meaning |
 | ------ | ------- |
 | +0     | Type id (index into the `$F5A0` table; × 4 → entry) |
-| +1     | y coordinate (in some y-scaled unit) |
+| +1     | World-X (= byte offset added to TopAddr at draw — see KEY FINDING above) |
 | +2     | Animation frame index |
-| +3, +4 | Top-half screen address (Spectrum bitmap, lo/hi) |
-| +5, +6 | Bottom-half screen address |
+| +3, +4 | Top-half scanline base address (always `x_byte=0`) |
+| +5, +6 | Bottom-half scanline base address |
 | +7     | Flag / facing byte |
 
 Native port extracted these to `assets/extracted/level-entities-f2e8.bin`
 and decodes them via `LevelEntities.cs`.
+
+## Type-to-sprite mapping (verified)
+
+The `$F5A0` table (extracted as `entity-types-f5a0.bin`, 23 × 4
+bytes) maps each type-id to a sprite pointer, frame count, and
+attribute byte.  Notable types:
+
+| Type | Sprite | Frames | Attr | What |
+| ---- | ------ | ------ | ---- | ---- |
+| `$01` | `$BAF4` | 16 | `$42` (red) | Common decor |
+| `$02` | `$BCF4` | 16 | `$43` (magenta) | Stalactite |
+| `$08` | `$C5F4` | 16 | `$46` (yellow) | Lava/sparks |
+| `$09` | `$C7F4` | 8  | `$45` (cyan) | Drip |
+| `$0A` | `$C8F4` | 8  | `$45` (cyan) | Drone |
+| `$12` | `$D6F4` | 4  | `$07` (white) | **Electric arc** (per user; protects doors) |
+
+The `attr = $07` (white) on type `$12` triggers the special
+animation branch at `$F252 CP $07 → $F258..$F26B` which adds
+`$80` to the sprite-data pointer when the level-cleared flag at
+`$E77D+level` is set.  So electric arcs SWITCH SPRITE (off vs
+on) based on whether all workers are rescued — the arcs
+disappear / change state once the door is unlocked.

@@ -521,7 +521,7 @@ public sealed class World
         // Order matches the cassette: ship AI → boss tick → bullet tick.
         // Mini-map ship dots ($E213) are drawn in DrawPlaying.
         int playerByteX = (ScrollOffsetX + 15) & 0xFF;
-        EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth);  // $E920
+        EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth, MiniMap.Buffer);  // $E920
         Boss.Tick(ScrollProgress, ScrollOffsetX, playerByteX, PlayerY, _rng);                  // $EC10
 
         // Workers — port of $EF08.  Tick returns # rescued this frame;
@@ -544,7 +544,7 @@ public sealed class World
 
         // Enemy BULLETS — $ED01 per-frame tick.  Bullets are spawned by
         // ships above via $EBB2 (= EnemyShots.TrySpawnAt), not random.
-        hits |= EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY);
+        hits |= EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY, MiniMap.Buffer);
         if (hits != 0 && !Invincible)
         {
             HitAccum -= 0x40;
@@ -1030,8 +1030,18 @@ public sealed class World
             Blitters.DrawPlayerXor(fb, PlayerX - 8, PlayerY, playerSprite, 0x43);
         }
 
-        // Mini-map BASE first (static level layout from $60F4+) — then
-        // ship/worker/boss dots draw ON TOP so they're visible.
+        // Playfield-only draws: ship sprites + boss + workers + bullets.
+        EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
+        Boss.Draw(fb, ScrollOffsetX);
+        Workers.DrawPlayfield(fb, ScrollOffsetX);
+        EnemyShots.Draw(fb, ScrollOffsetX);
+
+        // Hud.Draw clears y=128..191 then paints HUD chrome + bars.
+        Hud.Draw(fb, this);
+
+        // Mini-map AFTER Hud.Draw (which clears y=128..191) — port of
+        // $E104.  Paint the cave silhouette base, then ship/worker dots
+        // on top so they're visible.
         if (_frameCounter >= 80)
         {
             MiniMap.DrawTo(fb);
@@ -1042,19 +1052,8 @@ public sealed class World
             int rowsToDraw = 16 * progress / 30;
             MiniMap.DrawToPartial(fb, rowsToDraw);
         }
-
-        // Ship sprites + mini-map dots — port of $E9AC sprite blit
-        // + $E213 mini-map plot (called twice for blink alternation).
-        EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
-        Boss.Draw(fb, ScrollOffsetX);
-        Workers.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
-
-        // Enemy BULLETS draw before the HUD so the HUD chrome stays
-        // on top.  Single-byte attribute flashes per the cassette's
-        // $ED95.
-        EnemyShots.Draw(fb, ScrollOffsetX);
-
-        Hud.Draw(fb, this);
+        EnemyShipTable.DrawMiniMapDots(fb, ScrollOffsetX);
+        Workers.DrawMiniMapDots(fb);
 
         // Death-explosion attribute particles draw LAST so they overlay
         // the HUD chrome (matches the original's $DBC8 timing where

@@ -99,7 +99,9 @@ public sealed class WorkerSchedule
     /// in the original (level-color + white for blink); we use a
     /// single bright-yellow pass for simplicity.
     /// Also port of <c>$F02E</c> mini-map dot at (X, mini-map row).</summary>
-    public void Draw(Framebuffer fb, int scrollCursor, byte levelAttr)
+    /// <summary>Draw playfield 8×8 sprites only (mini-map dots come
+    /// via <see cref="DrawMiniMapDots"/> after the mini-map base).</summary>
+    public void DrawPlayfield(Framebuffer fb, int scrollCursor)
     {
         // Worker sprite from $F071 (the white "draw" variant) —
         // verified bytes from at-f100.bin.  $F0F1 is the level-color
@@ -117,32 +119,34 @@ public sealed class WorkerSchedule
             if ((w.Status & 0x80) != 0) continue;          // picked → hidden
 
             int offset = (w.X - scrollCursor) & 0xFF;
-            // Playfield sprite (range gate, $EF52: SUB; CP $20; RET NC)
-            if (offset < 0x20)
+            if (offset >= 0x20) continue;
+            int sx = offset * 8;
+            int sy = w.Row * 8;
+            if (sy + 8 > 128) continue;
+            for (int row = 0; row < 8; row++)
             {
-                int sx = offset * 8;
-                int sy = w.Row * 8;
-                if (sy + 8 <= 128)
-                {
-                    for (int row = 0; row < 8; row++)
-                    {
-                        int yy = sy + row;
-                        fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= sprite[row];
-                    }
-                    fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = 0x46;  // bright yellow
-                }
+                int yy = sy + row;
+                fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= sprite[row];
             }
+            fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = 0x46;  // bright yellow
+        }
+    }
 
-            // Mini-map dot at (w.X, mini-map row).  Port of $F02E
-            // alternation skipped — single non-flashing dot.
+    /// <summary>Mini-map worker dots — call AFTER MiniMap.DrawTo so
+    /// they appear on top of the cave silhouette.</summary>
+    public void DrawMiniMapDots(Framebuffer fb)
+    {
+        for (int i = 0; i < SlotCount; i++)
+        {
+            ref var w = ref Slots[i];
+            if ((w.Status & 0x80) != 0) continue;          // picked → hidden
             int miniX = (w.X + 1) & 0xFF;
-            int miniY = 0xA1 + (w.Row * 2);   // row direct → 2 rows of mini-map per char-row
-            if (miniY >= 160 && miniY < 192)
-            {
-                int addr = Framebuffer.BitmapAddress(miniX, miniY);
-                byte bit = (byte)(0x80 >> (miniX & 7));
-                fb.Bitmap[addr] ^= bit;
-            }
+            int miniY = 0xA1 + (w.Row * 2);
+            if (miniY < 160 || miniY >= 192) continue;
+            int addr = Framebuffer.BitmapAddress(miniX, miniY);
+            byte bit = (byte)(0x80 >> (miniX & 7));
+            fb.Bitmap[addr] |= bit;
+            fb.Attributes[Framebuffer.AttributeAddress(miniX, miniY)] = 0x46;  // bright yellow
         }
     }
 }

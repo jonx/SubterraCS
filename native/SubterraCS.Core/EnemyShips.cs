@@ -74,15 +74,13 @@ public sealed class EnemyShips
         };
     }
 
-    /// <summary>Port of <c>$E8FD</c> entity supercaller (partial):
-    /// mini-map dots × 2 (blink alternation) + ship-sprite blit.
-    /// AI tick and bullet/collision are handled by the caller.</summary>
+    /// <summary>Draw the PLAYFIELD ship sprites only.  Called from
+    /// the main draw loop BEFORE Hud.Draw (which clears y=128..191).
+    /// Mini-map dots come via <see cref="DrawMiniMapDots"/> AFTER
+    /// the HUD + MiniMap.DrawTo base layer.</summary>
     public void Draw(Framebuffer fb, int scrollCursor, byte levelAttr)
     {
-        DrawMiniMapDots(fb, scrollCursor);     // $E213 first pass
         DrawShipSprites(fb, scrollCursor, levelAttr);
-        DrawMiniMapDots(fb, scrollCursor);     // $E213 second pass — XOR
-                                               //   toggle = blink effect
     }
 
     /// <summary>Port of <c>$E213</c>/<c>$E235</c>/<c>$E1DE</c>:
@@ -102,9 +100,17 @@ public sealed class EnemyShips
             int pixelX = (Slots[i].X + 1) & 0xFF;
             int pixelY = 0xA1 + (Slots[i].Y >> 2);   // 161 + Y/4
             if (pixelY < 160 || pixelY >= 192) continue;
+            // OR the pixel (not XOR) so it stays visible even if the
+            // mini-map underneath already had this bit set.
             int addr = Framebuffer.BitmapAddress(pixelX, pixelY);
             byte bit = (byte)(0x80 >> (pixelX & 7));
-            fb.Bitmap[addr] ^= bit;
+            fb.Bitmap[addr] |= bit;
+            // Bright RED attribute on this cell so the dot stands out
+            // against the green mini-map background.  (The cassette
+            // uses the bottom-strip's existing attribute, which makes
+            // the dot same-colour-as-background — not great visibility
+            // in our port either, so we override.)
+            fb.Attributes[Framebuffer.AttributeAddress(pixelX, pixelY)] = 0x42;  // bright red
         }
     }
 
@@ -133,7 +139,8 @@ public sealed class EnemyShips
     public int LastTickHits { get; private set; }
 
     public void TickAi(int scrollCursor, int playerByteX, int playerY,
-                        EnemyBullets bullets, Random rng, int level)
+                        EnemyBullets bullets, Random rng, int level,
+                        byte[]? levelTiles = null)
     {
         LastTickHits = 0;
         // $E924: XOR $01; LD ($EE73),A; RET Z — only proceed every 2 frames.
@@ -181,7 +188,27 @@ public sealed class EnemyShips
             // Bit 6 of Sub = X direction.  Move 1 byte per cycle.
             int dx = (s.Sub & 0x40) != 0 ? +1 : -1;
             int newX = (s.X + dx) & 0xFF;
-            s.X = (byte)newX;
+            // Port of $EB5B → $EB62: probe scenery at the ship's NEW
+            // (X, Y).  If tile is non-zero (= wall), reverse X-dir
+            // via $EB47 (toggle bit 6 of Sub) and don't move this
+            // frame.
+            if (levelTiles != null && levelTiles.Length >= 4096)
+            {
+                int row = (s.Y >> 3) & 0x0F;
+                byte tile = levelTiles[row * 256 + newX];
+                if (tile != 0)
+                {
+                    s.Sub ^= 0x40;        // reverse X direction
+                }
+                else
+                {
+                    s.X = (byte)newX;
+                }
+            }
+            else
+            {
+                s.X = (byte)newX;
+            }
 
             // $EB99 fire-bullet gate: random gated by level.
             // (the original also checks the slot's sub-byte; we use the
