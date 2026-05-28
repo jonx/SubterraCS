@@ -50,6 +50,7 @@ internal static class Program
             EnemyShipInitData = assets.EnemyShipInitData,
             WorkerScheduleData = assets.WorkerScheduleData,
             FuelStationData = assets.FuelStationData,
+            LevelColourData = assets.LevelColourData,
         };
 
         // Pass music data through to whichever runner uses it.

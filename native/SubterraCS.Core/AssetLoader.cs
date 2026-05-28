@@ -77,12 +77,24 @@ public sealed class Assets
         // When player world-X+altitude match this, fuel refills via
         // $DFEB → $E419.
         FuelStationData = File.ReadAllBytes(Path.Combine(assetsDir, "fuel-stations-e58b.bin"));
+
+        // Per-level active-colour byte ($E57C..$E581, 6 × 1 byte).
+        // Loaded into $E57B at level-start by $F706 — drives every
+        // attribute write that pulls "level colour" (scenery, ship
+        // sprites, spawn-in / death particles).  Cassette levels 0..5
+        // are $07 $04 $03 $06 $02 $01 (white, green, magenta, yellow,
+        // red, blue).
+        LevelColourData = File.ReadAllBytes(Path.Combine(assetsDir, "level-speed-e57c.bin"));
     }
 
     /// <summary>Per-level worker schedule raw bytes (6 × 32 = 192).</summary>
     public byte[] WorkerScheduleData { get; private set; } = Array.Empty<byte>();
     /// <summary>Per-level fuel-station positions (6 × 2 bytes = (X, Y)).</summary>
     public byte[] FuelStationData { get; private set; } = Array.Empty<byte>();
+    /// <summary>Per-level active-colour byte ($E57C..$E581, 6 bytes).
+    /// Maps to $E57B at level-start; cassette values are
+    /// $07 $04 $03 $06 $02 $01 for levels 0..5.</summary>
+    public byte[] LevelColourData { get; private set; } = Array.Empty<byte>();
 
     private static byte[] LoadOptionalScr(string dir, string name)
     {

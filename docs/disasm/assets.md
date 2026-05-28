@@ -24,8 +24,8 @@ extracted by separate one-shot commands listed below.
 | [udgs-e62b.bin](#udgs-e62bbin)                     | `$E62B`  |  168 | `UdgBank`                       | 21 user-defined cave glyphs (8×8) used by HUD print |
 | [player-e63b.bin](#player-e63bbin)                 | `$E63B`  |   96 | `World.PlayerSpriteRight/Left` (first 32 bytes)  | Stryker right/left sprites + post-bank effects |
 | [entity-types-f5a0.bin](#entity-types-f5a0bin)     | `$F5A0`  |   92 | `EntityTypeTable`               | (sprite-ptr, frame-count, attr) × 23 entity types |
-| [level-spriteptr-e56d.bin](#level-spriteptr-e56dbin) | `$E56D` | 12   | (currently unused)              | 6 × pointer to per-level tile-data bank |
-| [level-speed-e57c.bin](#level-speed-e57cbin)       | `$E57C`  |  6   | (currently unused)              | 6 × per-level scroll-speed / colour byte |
+| [level-spriteptr-e56d.bin](#level-spriteptr-e56dbin) | `$E56D` | 12   | (info only — mapping hardcoded in `MiniMap.SelectLevel`) | 6 × pointer to per-level tile-index buffer (`$B0F4`, `$60F4`, `$70F4`, `$80F4`, `$90F4`, `$A0F4`) |
+| [level-speed-e57c.bin](#level-speed-e57cbin)       | `$E57C`  |  6   | `World.LevelColourData` → `Scroll.LevelColour` per `LoadLevel` | 6 × per-level cave-colour attribute byte (`$07 $04 $03 $06 $02 $01`) |
 | [fuel-stations-e58b.bin](#fuel-stations-e58bbin)   | `$E58B`  | 12   | `World.FuelStationData`         | 6 × (X, Y) fuel-station position per level |
 | [level-init-e48d.bin](#level-init-e48dbin)         | `$E48D`  | 192  | `EnemyShips.LoadFromInit`       | 6 × 32 bytes of enemy-ship init data (LDIR'd to `$E597`) |
 | [level-schedules-e69d.bin](#level-schedules-e69dbin) | `$E69D` | 192  | `OriginalLevels` + `WorkerScheduleData` | 6 × 32 bytes of worker / spawn schedule |
@@ -149,22 +149,46 @@ RAM footprint after game-init.
 ## level-spriteptr-e56d.bin
 
 - **Cassette source:** `$E56D..$E578` (12 bytes = 6 × 2-byte LE pointers)
-- **What it is:** per-level pointer to that level's tile-bank
-  variant.  Level 0's pointer is `$B0F4` (= the master tile bank).
-- **Consumer:** `$DB1A` reads `($E56D + level*2)` to pick the
-  level-specific tile source ([level-paint.md](level-paint.md)).
-- **Port:** NOT currently loaded.  The port always uses the master
-  bank at `$B0F4`; per-level variants aren't yet decoded.
+- **What it is:** per-level pointer to that level's
+  tile-index buffer.  Bytes decode to:
+  ```
+  L0  $B0F4  ← actually points at the master TILE BANK (not a
+              4 KB index buffer); level 0 is the anomalous one
+  L1  $60F4
+  L2  $70F4
+  L3  $80F4
+  L4  $90F4
+  L5  $A0F4
+  ```
+- **Consumer:** `$DB1A` reads `($E56D + level*2)` to find the
+  base of the per-level index buffer it iterates ([level-paint.md](level-paint.md)).
+- **Port:** info-only.  The same mapping is hardcoded inside
+  `MiniMap.SelectLevel` (which switches `MiniMap.Buffer` to
+  `PerLevelBuffers[level]`).  The file is kept so future code
+  can validate the addresses match.
 
 ## level-speed-e57c.bin
 
 - **Cassette source:** `$E57C..$E581` (6 bytes = 1 byte per level)
-- **What it is:** per-level scroll-speed or colour byte.  Loaded
-  into `$E57B` (active colour) at level start by `$F706 LD A,(HL); LD ($E57B),A`.
-- **Consumer:** `$DBFC` death animation colour; `$E14A` spawn-in
-  colour; `$DB6C` scenery-paint attribute.
-- **Port:** NOT loaded as a separate file; the port hard-codes
-  one level colour through `Scroll.LevelColour`.
+- **What it is:** per-level **cave-colour** attribute byte.  Loaded
+  into `$E57B` (active colour) at level start by
+  `$F706 LD A,(HL); LD ($E57B),A`.  Despite the file name (a
+  legacy guess of "speed"), the bytes are colour attributes:
+  ```
+  L0  $07  bright white
+  L1  $04  green
+  L2  $03  magenta
+  L3  $06  yellow
+  L4  $02  red
+  L5  $01  blue
+  ```
+- **Consumers:** `$DB6C` scenery-paint attribute, `$DBFC` death-
+  animation colour, `$E14A` spawn-in colour, `$E9BE` ship-sprite
+  attribute.  Anything that reads `($E57B)` for its INK colour.
+- **Port loader:** `World.LevelColourData = File.ReadAllBytes(...)`.
+  `World.LoadLevel` applies `Scroll.LevelColour =
+  LevelColourData[level % 6]` — before this was a hardcoded
+  `0x04` (green) for every level.
 
 ## fuel-stations-e58b.bin
 
@@ -342,8 +366,8 @@ canonical source because:
 | `$B0F4..$BCF3`             | `tiles-b0f4.bin`        | `TileBank`                    |
 | `$B8F4..$D6F3`             | `entity-banks-b8f4.bin` | `EntityBank`                  |
 | `$E48D..$E54C`             | `level-init-e48d.bin`   | `EnemyShips`                  |
-| `$E56D..$E578`             | `level-spriteptr-e56d.bin` | (unused — single bank only) |
-| `$E57C..$E581`             | `level-speed-e57c.bin`  | (unused)                      |
+| `$E56D..$E578`             | `level-spriteptr-e56d.bin` | (info only — `MiniMap.SelectLevel` hardcodes equivalent mapping) |
+| `$E57C..$E581`             | `level-speed-e57c.bin`  | `World.LevelColourData` → `Scroll.LevelColour` |
 | `$E58B..$E596`             | `fuel-stations-e58b.bin` | `World.FuelStationData` |
 | `$E62B..$E6D2`             | `udgs-e62b.bin`         | `UdgBank`                     |
 | `$E63B..$E69A`             | `player-e63b.bin`       | `World.PlayerSpriteRight/Left`|
@@ -359,3 +383,25 @@ state at `$E597+`, the spawn-in / death particle scratch at
 `$E881`, etc.) or hard-coded in the port (the cassette's
 `$E841` / `$E861` particle seed tables, which the port stores
 inline in `Explosion.cs`).
+
+## Wired status
+
+| File | Status | Reason if not fully wired |
+| ---- | ------ | ------------------------- |
+| `tiles-b0f4.bin`             | ✅ wired |  |
+| `entity-banks-b8f4.bin`      | ✅ wired |  |
+| `udgs-e62b.bin`              | ✅ wired |  |
+| `player-e63b.bin` (bytes 0..31) | ✅ wired | right + left sprites only |
+| `entity-types-f5a0.bin`      | ✅ wired |  |
+| `fuel-stations-e58b.bin`     | ✅ wired |  |
+| `level-init-e48d.bin`        | ✅ wired |  |
+| `level-schedules-e69d.bin`   | ✅ wired |  |
+| `level-entities-f2e8.bin`    | ✅ wired |  |
+| `level-minimaps.bin`         | ✅ wired |  |
+| `rom-font.bin`               | ✅ wired |  |
+| `splash-scr.bin`             | ✅ wired |  |
+| `title-menu-scr.bin`         | ✅ wired |  |
+| `level-speed-e57c.bin`       | ✅ wired | per-level cave colour (wired in this pass) |
+| `level-spriteptr-e56d.bin`   | 🟡 info only | the level→index-buffer mapping is hardcoded in `MiniMap.SelectLevel`; file kept for validation |
+| `music-5e88.bin`             | 🟡 loaded, not played | porting the Follin player + tune-stream interpreter is a separate large project (see [sound.md](sound.md)); the port uses its own SFX synth instead |
+| `player-e63b.bin` (bytes 32..95) | 🟡 unused tail | post-bank effects (laser-stage RAM, bus-counter scratch); the port uses simpler equivalents in `Explosion.cs` and `World` |

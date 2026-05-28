@@ -58,6 +58,10 @@ public sealed class World
     public byte[] WorkerScheduleData { get; set; } = Array.Empty<byte>();
     /// <summary>Per-level fuel-station positions ($E58B, 6 × 2 bytes).</summary>
     public byte[] FuelStationData { get; set; } = Array.Empty<byte>();
+    /// <summary>Per-level cave-colour byte ($E57C..$E581).  Applied to
+    /// <see cref="LevelScroll.LevelColour"/> at level-load — port of
+    /// <c>$F706 LD A,(HL); LD ($E57B),A</c>.</summary>
+    public byte[] LevelColourData { get; set; } = Array.Empty<byte>();
     public readonly LevelScroll Scroll = new();
     public readonly Explosion Explosion = new();
     public readonly EnemyBullets EnemyShots = new();
@@ -840,6 +844,11 @@ public sealed class World
         // Switch the active mini-map buffer to this level's packed
         // bytes (port of the original's $E579 ← $E56D[level*2] step).
         MiniMap.SelectLevel(level);
+        // Per-level cave colour — port of $F706 LD A,(HL); LD ($E57B),A.
+        // Cassette bytes for L0..L5: $07 $04 $03 $06 $02 $01 (white,
+        // green, magenta, yellow, red, blue).
+        if (LevelColourData.Length > 0)
+            Scroll.LevelColour = LevelColourData[level % LevelColourData.Length];
         Scroll.Reset();
         ScrollOffsetX = 0;
         ScrollProgress = 0;
