@@ -127,9 +127,15 @@ public sealed class EnemyShips
     ///    permits (matches <c>$EADE</c>'s respawn).</summary>
     private byte OddFrameToggle;   // $EE73
 
+    /// <summary>Bitmask of slot indices that just rammed the player
+    /// during the last <see cref="TickAi"/> call.  Caller uses this to
+    /// fire damage (port of <c>$EB7A → $DD4A</c> chain).</summary>
+    public int LastTickHits { get; private set; }
+
     public void TickAi(int scrollCursor, int playerByteX, int playerY,
                         EnemyBullets bullets, Random rng, int level)
     {
+        LastTickHits = 0;
         // $E924: XOR $01; LD ($EE73),A; RET Z — only proceed every 2 frames.
         OddFrameToggle ^= 0x01;
         if (OddFrameToggle == 0) return;
@@ -166,6 +172,15 @@ public sealed class EnemyShips
             if (rng.Next(0, 16) < level)
             {
                 bullets.TrySpawnAt(s.X, s.Y, playerByteX, playerY);
+            }
+
+            // Port of $EB7A: ship-vs-player collision.  Original tests
+            // by SCREEN ADDRESS match against $E8C9; we test by world-X
+            // match within a small Y window since our ship coords are
+            // already in world-space.
+            if (s.X == playerByteX && Math.Abs(s.Y - playerY) < 16)
+            {
+                LastTickHits |= (1 << i);
             }
         }
     }

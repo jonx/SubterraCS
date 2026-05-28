@@ -507,9 +507,13 @@ public sealed class World
         EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth);  // $E920
         Boss.Tick(ScrollProgress, ScrollOffsetX, playerByteX, PlayerY, _rng);                  // $EC10
 
+        // Ship-vs-player collision (port of $EB7A → $DD4A).  Combined
+        // with bullet hits below to apply HitAccum damage.
+        int hits = EnemyShipTable.LastTickHits;
+
         // Enemy BULLETS — $ED01 per-frame tick.  Bullets are spawned by
         // ships above via $EBB2 (= EnemyShots.TrySpawnAt), not random.
-        int hits = EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY);
+        hits |= EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY);
         if (hits != 0 && !Invincible)
         {
             HitAccum -= 0x40;
