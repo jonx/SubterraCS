@@ -860,6 +860,37 @@ sub-position when `altitude & 7 != 0`.  Keeps the player's
 draw addresses coherent as altitude moves through fractional
 char-rows.
 
+## Code ($F8F9 / $F93A / $F90E) — print-stream alerts
+
+Print-stream routines that emit a fixed text message via
+`$FA0A` (the print-stream interpreter):
+
+- `$F8F9` — 11-byte msg at `$F904` (called by `$EC10` on boss spawn)
+- `$F93A` — 13-byte msg at `$F945` (called by `$E920`'s `$E97A`
+  path = "no more spawns" / max-density warning?)
+- `$F90E` — 9-byte msg at `$F919` (called by `$DFAF` fuel pickup)
+
+Text content TBD (depends on the print-stream opcode set).
+
+## Code ($E419) — bar-fill refill animation
+
+```
+E419  LD A,$FF; LD ($E463),A; LD ($E465),A   ; reset hit/fuel accumulators
+E421  XOR A; LD B,$30                          ; B = 48 iterations
+E424  PUSH BC
+E425  ADD A,$02                                ; value += 2 each iter
+E427  LD ($E464),A; LD ($E466),A               ; shield + fuel = value
+E42A..E43B  per-iter beep (descending pitch)
+E43D  CALL $E0AB                                ; redraw HUD bars
+E440..E444  POP BC; DJNZ $E424                  ; loop
+E446  LD A,$5F; ($E466) = ($E464) = $5F        ; final cap
+E44E  LD A,$FF; ($E465) = ($E463) = $FF
+E456  RET
+```
+
+Used for both level-start refill AND fuel-pickup refill (called
+from `$DFEB` after `$DFAF` detects worker overlap with low fuel).
+
 ## Code ($EBB2) — enemy ship spawn
 
 Random-rate spawner: `LD A,R; AND $0F; CP B(level); RET NC`.

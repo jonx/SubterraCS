@@ -505,7 +505,7 @@ public sealed class World
         // Mini-map ship dots ($E213) are drawn in DrawPlaying.
         int playerByteX = (ScrollOffsetX + 15) & 0xFF;
         EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth);  // $E920
-        Boss.Tick(ScrollOffsetX, playerByteX, PlayerY, _rng);                                  // $EC10 (STUB)
+        Boss.Tick(ScrollProgress, ScrollOffsetX, playerByteX, PlayerY, _rng);                  // $EC10
 
         // Enemy BULLETS — $ED01 per-frame tick.  Bullets are spawned by
         // ships above via $EBB2 (= EnemyShots.TrySpawnAt), not random.

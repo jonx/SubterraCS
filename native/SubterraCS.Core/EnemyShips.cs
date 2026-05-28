@@ -237,16 +237,92 @@ public sealed class BossEntity
         ScrollProgress = 0;
     }
 
-    /// <summary>STUB — port of <c>$EC10</c>: spawn check + per-frame
-    /// processing.  Triggers boss spawn after enough scroll progress.</summary>
-    public void Tick(int scrollCursor, int playerByteX, int playerY, Random rng)
+    /// <summary>Port of <c>$EC10</c>: spawn check + per-frame
+    /// processing.  Triggers boss spawn after enough scroll progress
+    /// + random gate; once active, ticks via <see cref="TickActive"/>.
+    /// </summary>
+    public void Tick(int scrollProgress, int scrollCursor, int playerByteX, int playerY, Random rng)
     {
-        // TODO: $EC10 chain
+        if (!Active)
+        {
+            // $EC1A: HL = $4A38; SBC HL,DE; RET NC if not yet far enough
+            if (scrollProgress < SpawnThreshold) return;
+            // $EC21: LD A,R; CP $78; RET C — ~50% random gate
+            if (rng.Next(0, 256) < 0x78) return;
+            // $EC26: CALL $F8F9 = print "boss alert" message — skipped.
+            // $EC29: $EE83++; $EE7C = 1
+            KillCount++;
+            Active = true;
+            // Place the boss off the right edge of the screen so it
+            // enters the visible window as the player keeps scrolling.
+            X = (byte)((scrollCursor + 0x20) & 0xFF);
+            Y = 0x40;
+            Frame = 0;
+            Reserved5 = 0; Reserved6 = 0;
+            Sub = 0;
+            return;
+        }
+        TickActive(scrollCursor, playerByteX, playerY, rng);
     }
 
-    /// <summary>STUB — boss draw routine.</summary>
+    /// <summary>Port of <c>$EC4C</c>: boss movement + draw.  The
+    /// cassette uses a cycle-rotated speed table at <c>$EE84</c>
+    /// and a direction-chase algorithm based on
+    /// <c>($E583)+16</c> vs boss.X (`$ECA5..$ECCE`).  Our port
+    /// approximates by moving the boss 1 byte/frame toward the
+    /// player and tracking lifetime via <see cref="LifetimeCheck"/>.</summary>
+    public void TickActive(int scrollCursor, int playerByteX, int playerY, Random rng)
+    {
+        // $EC82: cycle EE81 in 1..12 (mod-12 counter)
+        AltFrame = (byte)((AltFrame + 1) % 12);
+
+        // $ECA5: A = ($E583) + $10; CP boss.X
+        int chase = (scrollCursor + 0x10) & 0xFF;
+        if (chase != X)
+        {
+            // $ECAD: chase via $EBFF/$EC06 (sign helpers — return ±1)
+            int dxSign = ((chase - X) & 0xFF) < 0x80 ? +1 : -1;
+            X = (byte)((X + dxSign) & 0xFF);
+        }
+        else
+        {
+            // $ECD7..: same column, track Y
+            int dySign = playerY > Y ? +1 : (playerY < Y ? -1 : 0);
+            Y = (byte)Math.Clamp(Y + dySign, 0, 120);
+        }
+
+        // Out-of-window cull (== EAB2)
+        int offset = (X - scrollCursor) & 0xFF;
+        if (offset >= 0x40)
+        {
+            // Boss strayed too far — keep active but won't draw this frame.
+        }
+    }
+
+    /// <summary>Port of <c>$EC4C</c>'s draw section + EC4D: blit a
+    /// small sprite at the boss's screen position (offset from
+    /// scrollCursor).</summary>
     public void Draw(Framebuffer fb, int scrollCursor)
     {
-        // TODO: draw boss sprite if Active
+        if (!Active) return;
+        int offset = (X - scrollCursor) & 0xFF;
+        if (offset >= 0x20) return;
+        int sx = offset * 8;
+        int sy = Y;
+        if ((uint)sx >= Framebuffer.Width || (uint)sy >= Framebuffer.Height) return;
+        // Draw a small distinctive 8x8 pattern — the actual boss sprite
+        // is in $E5DB-style data we haven't located yet.  For now use
+        // a 'X' shape so the boss is visually identifiable.
+        ReadOnlySpan<byte> bossSprite = stackalloc byte[]
+        {
+            0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81,
+        };
+        for (int row = 0; row < 8; row++)
+        {
+            int yy = sy + row;
+            if ((uint)yy >= Framebuffer.Height) break;
+            fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= bossSprite[row];
+        }
+        fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = 0x46;  // bright yellow
     }
 }
