@@ -45,6 +45,7 @@ public sealed class World
     public RomFont? RomFont { get; set; }
     public LevelEntities? LevelEntities { get; set; }
     public MiniMap MiniMap { get; set; } = new();
+    public readonly LevelScroll Scroll = new();
 
     // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
     // beyond that we hand off to the procedural generator so the game
@@ -216,6 +217,9 @@ public sealed class World
         // don't match the emulator.  Disabled until we port the real
         // executor.  Keep TickHazardSchedule as code for future plug-in.
         // TickHazardSchedule();
+
+        // (Scroll runs during Draw, not Tick — it operates on the
+        // framebuffer.)
 
         // Update every live entity.
         foreach (var e in Entities)
@@ -396,6 +400,7 @@ public sealed class World
         // Switch the active mini-map buffer to this level's packed
         // bytes (port of the original's $E579 ← $E56D[level*2] step).
         MiniMap.SelectLevel(level);
+        Scroll.Reset();
         PlaceWorkersForLevel(level);
         EnterState(GameState.Playing);
     }
@@ -574,6 +579,18 @@ public sealed class World
     private void DrawPlaying(Framebuffer fb)
     {
         DrawLevelScenery(fb);
+
+        // Level scroll — port of $DBC8 + $DAF2.  Advance the
+        // persistent scenery buffer once every 5 frames, starting
+        // around f140 to match the emulator's observed cadence
+        // ($DDA7 / $DDC0 CP $08; JP C,$DBC8 — exact trigger TBD).
+        if (_frameCounter >= 140 && (_frameCounter % 5) == 0 && MiniMap.Buffer.Length > 0)
+        {
+            Scroll.Tick(Tiles, MiniMap.Buffer);
+        }
+        // Blit the persistent play-area bitmap into the framebuffer
+        // (replacing the cleared bytes from World.Draw's fb.Clear).
+        Scroll.Blit(fb);
 
         foreach (var e in Entities)
         {
