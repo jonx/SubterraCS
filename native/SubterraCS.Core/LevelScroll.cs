@@ -1,117 +1,90 @@
 namespace SubterraCS.Core;
 
 /// <summary>
-/// Level-scroll system — port of the original's <c>$DBC8</c> /
-/// <c>$DB85</c> routines that scroll the play area UP and bring
-/// new scenery rows in from below.  RE-LOG §36 has the full trace.
+/// Level scenery painter — port of <c>$DB1A</c> (the level-load
+/// paint routine).
 ///
-/// Pipeline matched to the original:
-/// 1. <see cref="DrawBottomTileRow"/> — port of <c>$DAF2</c>.
-///    Reads 32 tile indices from the per-level scenery buffer (the
-///    same <c>$60F4..$70F4</c> data we use for the mini-map) and
-///    blits 8 scanlines from the master tile bank at <c>$B0F4</c>
-///    into the bottom char-row of the play area.
-/// 2. <see cref="ScrollUpOneCharRow"/> — port of <c>$DB85</c>.
-///    Copies char row N+1 into char row N for each of the 16 char
-///    rows in the play area.  Content moves up; the bottom row is
-///    overwritten by the next call to <see cref="DrawBottomTileRow"/>.
+/// What `$DB1A` does, per RE-LOG §37/§38 disassembly:
 ///
-/// Source advance: each scroll consumes 32 tile indices from the
-/// source buffer (one tile row).  4096 bytes / 32 = 128 source rows
-/// per level, which is ~5 screen-heights of vertical scenery.
+/// 1. Read the per-level source pointer from <c>$E56D + level*2</c>
+///    (e.g. <c>$60F4</c> for level 1).  Stored in IX.
+/// 2. Loop 16 times (one per char row of the play area):
+///    a. Scroll the bitmap + attributes UP by 8 scanlines
+///       (<c>$DB7A</c>).
+///    b. Read 32 tile indices from <c>(IX..IX+31)</c>, blit each
+///       tile from the master bank at <c>$B0F4</c> into the
+///       bottom char row of the play area (y=120..127) via
+///       <c>$DAF2</c>.
+///    c. Paint 32 attribute cells in the bottom row with the
+///       per-level colour byte from <c>$E57B</c>.
+///    d. Advance IX by <c>$E0</c> (224 bytes).
+/// 3. RET.
+///
+/// After all 16 iterations, the level's scenery is fully drawn
+/// in the play area.  Each char row's tile indices live at
+/// <c>$60F4 + (row * 256)</c> in the source buffer — verified by
+/// matching the EXACT tile indices the emu draws on screen.
+///
+/// In the native port we drop the scroll/scroll-and-draw idiom
+/// (it was just an implementation detail to fit the Z80's
+/// stride math) and paint directly: for each char row 0..15,
+/// blit 32 tiles from the master bank using the tile indices at
+/// <c>(level buffer) + row * 256 + col</c>.
 /// </summary>
 public sealed class LevelScroll
 {
-    /// <summary>Current row offset into the scenery source.  Advances
-    /// each scroll.  Wraps at the buffer end.</summary>
-    public int SourceRow { get; private set; }
+    /// <summary>Bytes per source row (32 tile indices + 224-byte stride).</summary>
+    public const int SourceStride = 256;
 
-    /// <summary>
-    /// Persistent play-area bitmap.  Mirrors the same Spectrum
-    /// bitmap layout as <see cref="Framebuffer.Bitmap"/> but is
-    /// owned by World rather than cleared every frame.
-    /// 4096 bytes covers bands 0 + 1 (y=0..127).
-    /// </summary>
+    /// <summary>Number of char rows the play area covers.</summary>
+    public const int CharRows = 16;
+
+    /// <summary>Per-level colour attribute (from <c>$E57C+level</c>).</summary>
+    public byte LevelColour { get; set; } = 0x04;     // green ink on black
+
+    /// <summary>Persistent play-area bitmap.  Loaded from the level
+    /// at <see cref="PaintLevel"/> time, then static for the level.
+    /// Same Spectrum-interleaved layout as <see cref="Framebuffer.Bitmap"/>;
+    /// covers bands 0+1 (y=0..127).</summary>
     public byte[] PlayBitmap { get; } = new byte[4096];
 
     public void Reset()
     {
-        SourceRow = 0;
         Array.Clear(PlayBitmap, 0, PlayBitmap.Length);
     }
 
     /// <summary>
-    /// One scroll tick.  Order matches the original's <c>$DBC8</c>:
-    /// the new bottom row is drawn FIRST (so the just-drawn content
-    /// scrolls up next frame), then the play area is scrolled.
+    /// Paint the entire level's scenery into <see cref="PlayBitmap"/>.
+    /// Call this once at level-load.  For each char row 0..15 the
+    /// tile indices are at <c>levelBuffer[row * SourceStride .. + 32]</c>.
+    /// Each tile is 8 bytes from <c>tileBank</c>.
     /// </summary>
-    public void Tick(TileBank tileBank, byte[] sceneryBuffer)
+    public void PaintLevel(TileBank tileBank, byte[] levelBuffer)
     {
-        DrawBottomTileRow(PlayBitmap, tileBank, sceneryBuffer, SourceRow);
-        ScrollUpOneCharRow(PlayBitmap);
-        SourceRow = (SourceRow + 1) % 128;  // 4096 / 32 cols = 128 rows
+        Array.Clear(PlayBitmap, 0, PlayBitmap.Length);
+        if (levelBuffer.Length < CharRows * SourceStride) return;
+
+        for (int row = 0; row < CharRows; row++)
+        {
+            int srcRowBase = row * SourceStride;
+            int destY = row * 8;
+            for (int col = 0; col < 32; col++)
+            {
+                byte tileIdx = levelBuffer[srcRowBase + col];
+                if (tileIdx == 0 || tileIdx >= tileBank.TileCount) continue;
+                var tile = tileBank[tileIdx];
+                for (int sl = 0; sl < 8; sl++)
+                {
+                    PlayBitmap[Framebuffer.BitmapAddress(col * 8, destY + sl)] = tile[sl];
+                }
+            }
+        }
     }
 
     /// <summary>Copy the persistent play-area bitmap into the
-    /// framebuffer's bitmap region.  Called every frame after the
-    /// framebuffer is cleared, before HUD and entities draw.</summary>
+    /// framebuffer each draw frame.</summary>
     public void Blit(Framebuffer fb)
     {
-        // PlayBitmap covers bands 0 + 1 ($0..$0FFF in offset terms).
-        // Use Spectrum interleaved addressing so the bytes line up.
         Buffer.BlockCopy(PlayBitmap, 0, fb.Bitmap, 0, PlayBitmap.Length);
-    }
-
-    /// <summary>
-    /// Port of <c>$DAF2</c>: read 32 tile indices from the source
-    /// buffer at <c>sourceRow * 32</c>, blit each 8-byte tile from
-    /// the master bank into the bottom char-row of the play area
-    /// (y=120..127).
-    /// </summary>
-    private static void DrawBottomTileRow(
-        byte[] bitmap, TileBank tileBank, byte[] sceneryBuffer, int sourceRow)
-    {
-        if (sceneryBuffer.Length < (sourceRow + 1) * 32) return;
-        int bottomY = World.PlayfieldBottom - 8;          // y=120
-        for (int col = 0; col < 32; col++)
-        {
-            byte tileIdx = sceneryBuffer[sourceRow * 32 + col];
-            var tile = tileIdx < tileBank.TileCount
-                ? tileBank[tileIdx]
-                : ReadOnlySpan<byte>.Empty;
-            if (tile.IsEmpty) continue;
-            for (int sl = 0; sl < 8; sl++)
-            {
-                bitmap[Framebuffer.BitmapAddress(col * 8, bottomY + sl)] = tile[sl];
-            }
-        }
-    }
-
-    /// <summary>
-    /// Port of <c>$DB85</c>: scroll the play area UP by 8 scanlines
-    /// (one char row).  Each char row N gets the content from char
-    /// row N+1; the bottom char row is cleared (the next call to
-    /// <see cref="DrawBottomTileRow"/> repaints it).
-    /// </summary>
-    private static void ScrollUpOneCharRow(byte[] bitmap)
-    {
-        const int Bottom = World.PlayfieldBottom;          // 128
-        for (int y = 0; y < Bottom - 8; y++)
-        {
-            int srcY = y + 8;
-            for (int col = 0; col < 32; col++)
-            {
-                int src = Framebuffer.BitmapAddress(col * 8, srcY);
-                int dst = Framebuffer.BitmapAddress(col * 8, y);
-                bitmap[dst] = bitmap[src];
-            }
-        }
-        for (int y = Bottom - 8; y < Bottom; y++)
-        {
-            for (int col = 0; col < 32; col++)
-            {
-                bitmap[Framebuffer.BitmapAddress(col * 8, y)] = 0;
-            }
-        }
     }
 }
