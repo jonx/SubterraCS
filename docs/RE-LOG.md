@@ -2893,3 +2893,87 @@ Headless test runner (`HeadlessTestRunner.cs`) now calls
 `world.Draw(fb)` *every* frame instead of only render-drop
 frames, because the XOR-overlap flag latches at Draw time —
 sparse Draw cadence would silently change game state vs SDL2.
+
+## 52. Level-start sequencing — slide-in → spawn-in → main loop
+
+User: *"investigate how the level is supposed to slide in
+including the entities, and how the ship appears, it's
+supposed to appear from dots that form the ship"*.
+
+Per the iterate loop: re-read `RE-LOG` (found §38 traced
+`$DB1A` as a 16-iteration scroll-and-paint = the slide-in
+itself), then disasm `$F6F2 → $F6C7..$F6EF` to verify the
+ordering.
+
+### Cassette sequence (verified from `$F6F2..$F6CB` disasm)
+
+```
+F731  CALL $DB1A   ; ★ 16-iteration scenery slide-in (~1 sec)
+F734  CALL $F891   ; print "LEVEL N" line
+F737  CALL $DC5D   ; player attribute paint (4 quadrant cells colourized)
+F73A  RET           ; $F6F2 returns
+F6C8  CALL $E135   ; ★ 40-frame spawn-in dots converging
+F6CB  CALL $F891   ; print line again (post-spawn-in)
+F6CE  CALL $DC5D   ; refresh player attribute
+F6D1  CALL $D7F7   ; ENTER MAIN LOOP — $DCF5 draws ship, $F1A5 draws entities
+```
+
+And after death, `$F6EF JP $F6C7` loops back through the same
+chain, with `$F6EC CALL $DB1A` repainting the scenery from
+scratch (so the slide-in replays on EVERY respawn).
+
+So the strict ordering is:
+1. Scenery slides up from bottom (16 rows, ~1 sec)
+2. Dots converge toward ship position (8 particles, 40 frames)
+3. Ship sprite + entities + workers + bullets all start drawing
+
+### Port gaps before this pass
+
+1. **Slide-in was deferred** to global `_frameCounter >= 140`
+   instead of starting at Playing-state entry.  After title +
+   fire input (~f30), the slide-in didn't start until f140 —
+   over 100 frames of black playfield.
+2. **Spawn-in triggered at `LoadLevel`** = concurrent with the
+   slide-in.  Dots tried to converge over an empty (black)
+   cave.
+3. **Entity / worker / ship / bullet draws** ran unconditionally
+   from frame 0.  User saw worker sprites floating in black
+   space before the cave appeared.
+4. **`Respawn` skipped the slide-in.**  Cassette's
+   `$F6EC CALL $DB1A` was unmapped — after death the cave just
+   reappeared instantly with no slide-up.
+5. **`TriggerSpawnIn` called twice** — once in `LoadLevel`,
+   once in `Respawn` — both before the slide-in had finished.
+
+### Fixes
+
+- `World.TickPlaying` drives the slide-in off `StateTicks` so
+  it starts immediately on every Playing-state entry (initial
+  level + every respawn).
+- Same loop fires `Explosion.TriggerSpawnIn` exactly when
+  `Scroll.ScrollComplete` flips true — matches the cassette
+  flow where `$F6C8 CALL $E135` runs right after `$F731 CALL
+  $DB1A` returns.
+- `Respawn` calls `Scroll.Reset()` so the slide-in replays
+  after death (matches `$F6EC`).
+- `DrawPlaying` wraps the entity foreach + worker / ship / boss
+  / bullet draws in `if (Scroll.ScrollComplete)` so they're
+  hidden during the slide-in.
+- `LoadLevel` and `Respawn` no longer call `TriggerSpawnIn`
+  directly — the slide-in completion handles it.
+
+### Visible result
+
+Captured at seed=42 with `keys="10-30:FIRE"`:
+
+| Global frame | StateTicks (Playing) | Visible |
+| ------------ | -------------------- | ------- |
+| f30  |  2 | HUD only, single bottom row of cave just painted |
+| f60  | 32 | Cave fills lower half of playfield |
+| f75  | 47 | Cave fills most of playfield |
+| f88  | 60 | Slide-in COMPLETE → spawn-in fires |
+| f105 | 77 | Full cave + spawn-in dots in upper area, NO ship yet |
+| f128 | 100 | Spawn-in done → main loop active |
+| f150 | 122 | Ship + entities visible |
+
+Title-screen diff vs emu at f100 still 0%.

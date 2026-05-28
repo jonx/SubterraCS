@@ -162,8 +162,11 @@ character.
 | -------- | ----------- | ----- |
 | `$E135` | `Explosion.TriggerSpawnIn` + 40-frame `Tick` loop | seeds match `$E841` (port pre-inverts Y/DY) |
 | `$DBC8`/`$DBDA` death | `Explosion.Trigger` + 64-frame `Tick` loop | seeds now match `$E861` (DY pre-negated); we still only run 1 pass vs cassette's 4 |
-| `$F6C8 CALL $E135` (level start) | `World.LoadLevel` calls `TriggerSpawnIn` | |
-| `$F6EF JP $F6C7 → $F6C8` (every respawn) | `World.Respawn` calls `TriggerSpawnIn` | added in this pass |
+| `$F731 CALL $DB1A` (level slide-in) | `World.TickPlaying` drives `Scroll.ScrollOneStep` over 60 frames using `StateTicks` | each `ScrollOneStep` ports one outer iteration of $DB1A (scroll up + paint new bottom row) |
+| `$F6EC CALL $DB1A` (respawn slide-in) | `World.Respawn` calls `Scroll.Reset()`; TickPlaying loop replays the slide-in | matches cassette's $F6EC..$F6EF JP $F6C7 loop |
+| `$F6C8 CALL $E135` (level start spawn-in) | `World.TickPlaying` fires `TriggerSpawnIn` on the frame `Scroll.ScrollComplete` flips true | matches the cassette flow $F731 returns → $F6C8 calls $E135 |
+| `$F6EF JP $F6C7 → $F6C8` (every respawn spawn-in) | Same — slide-in completes after respawn → triggers spawn-in | |
+| Entity / worker / ship / bullet draws gated until `Scroll.ScrollComplete` | `DrawPlaying` wraps the entity foreach + ship/worker/boss/bullet draws | matches cassette's $D7F7 main loop NOT starting until $E135 returns at $F6CB; $F1A5 entity dispatcher first runs from $D80A in the loop body |
 | Ship sprite hidden during spawn-in | `hidePlayer` includes `Explosion.Spawning` | port of the cassette flow where `$DCF5` doesn't run until after `$E135` returns |
 | `$DC1D` Y < $41 cull (death) | `Explosion.Tick`: `if (!_converge && Y > 126) continue;` | bus-counter inversion was previously misread as `Y < 0x41` in port-screen, freezing wrong half |
 | `$E199` particle painter | `Explosion.Draw` 8-cell attribute paint | bitmap untouched (cassette only flashes attributes) |
@@ -191,3 +194,24 @@ but had three faithfulness bugs vs the cassette:
    particle's X/Y step when storedY < $41 — which in bus-counter
    space means visualY > $7E (below playfield).  The port had
    the literal `Y < 0x41` check, freezing the upper half instead.
+
+5. **The level-start sequencing was wrong.**  Cassette is strictly
+   sequential per `$F6F2..$F6CB`: slide-in scenery → spawn-in dots
+   → main loop (ship + entities draw).  The port had the slide-in
+   gated by a 140-frame global delay (`_frameCounter >= 140`),
+   triggered spawn-in concurrently with the slide-in (= dots
+   converging into empty cave), and drew entities + workers + ships
+   + bullets from frame 0 even before scenery existed.  Also,
+   `Respawn` skipped the slide-in entirely.  Fixed by:
+   - Driving the slide-in off `StateTicks` (per-state entry) so it
+     starts on every Playing-state entry (initial level + every
+     respawn) and runs over 60 frames.
+   - Firing `TriggerSpawnIn` from `TickPlaying` exactly when the
+     slide-in completes (matches `$F731 → $F6C8`).
+   - Resetting `Scroll` in `Respawn` so the slide-in replays after
+     death (matches `$F6EC CALL $DB1A`).
+   - Wrapping entity / worker / ship / bullet draws in
+     `if (Scroll.ScrollComplete)` so they only appear once the
+     main loop would have started in the cassette.
+   - Removing the redundant `Explosion.TriggerSpawnIn` calls from
+     `LoadLevel` and `Respawn` (slide-in completion handles it).

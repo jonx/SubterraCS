@@ -474,22 +474,27 @@ public sealed class World
             BarFillOverride = 0;
         }
 
-        // Animate the level scroll-in: target 16 steps spread across
-        // 60 frames between f140 and f200 — matches the emulator's
-        // observed 3.75-frames-per-row average.  Rate-based: each
-        // frame compute the target step count; if it's ahead of the
-        // current count, advance.
-        const int ScrollStartFrame = 140;
+        // Level slide-in animation — port of $DB1A's 16-iteration
+        // outer loop (scroll-up + paint-new-bottom-row).  Cassette
+        // runs synchronously inside $F731 (level start) and $F6EC
+        // (every respawn), so the user always sees the cave slide UP
+        // before play begins.  We drive it off StateTicks (per-state
+        // entry) so it restarts on every Playing-state entry —
+        // matching the cassette's $F6F2 / $F6EC fall-through.
+        // 16 rows over 60 frames = ~3.75 frames/row (the cadence the
+        // emu's $DB1A produces given its inline sound delays).
         const int ScrollTotalFrames = 60;
-        if (_frameCounter >= ScrollStartFrame && !Scroll.ScrollComplete
-            && MiniMap.Buffer.Length > 0)
+        if (!Scroll.ScrollComplete && MiniMap.Buffer.Length > 0)
         {
-            int elapsed = _frameCounter - ScrollStartFrame;
             int targetSteps = Math.Min(LevelScroll.CharRows,
-                elapsed * LevelScroll.CharRows / ScrollTotalFrames + 1);
+                (int)(StateTicks * LevelScroll.CharRows / ScrollTotalFrames) + 1);
             while (Scroll.ScrolledRows < targetSteps && !Scroll.ScrollComplete)
             {
                 Scroll.ScrollOneStep(Tiles, MiniMap.Buffer);
+                // On the iteration that completes the slide-in, fire
+                // the spawn-in animation — port of $F6C8 CALL $E135
+                // which runs immediately after $DB1A returns.
+                if (Scroll.ScrollComplete) Explosion.TriggerSpawnIn(Scroll.LevelColour);
             }
         }
 
@@ -792,10 +797,12 @@ public sealed class World
         HitAccum = 0xFF;
         FuelAccum = 0xFF;
         SetInvincible(100);
-        // Port of cassette's $F6EF JP $F6C7 → $F6C8 CALL $E135:
-        // every respawn re-fires the dots-converge spawn-in
-        // animation, not just the initial LoadLevel.
-        Explosion.TriggerSpawnIn(Scroll.LevelColour);
+        // Port of cassette's $F6EC CALL $DB1A + $F6EF JP $F6C7 → $E135:
+        // every respawn re-runs the scenery slide-in AND the spawn-in
+        // dot-converge animation.  Resetting Scroll triggers
+        // TickPlaying's slide-in loop on the next tick; that loop
+        // fires TriggerSpawnIn when the slide-in completes.
+        Scroll.Reset();
         EnterState(GameState.Playing);
     }
 
@@ -842,11 +849,10 @@ public sealed class World
         EnemyShipTable.LoadFromInit(EnemyShipInitData, level);
         Boss.Reset();
         Workers.LoadFromSchedule(WorkerScheduleData, level);
-        // Spawn-in animation: port of $E135 — 8 particles converge
-        // from scattered screen positions to the centre over 40
-        // frames.  Reuses the Explosion class with the spawn-seed
-        // table from $E841.
-        Explosion.TriggerSpawnIn(Scroll.LevelColour);
+        // Spawn-in animation ($E135) is fired by TickPlaying on the
+        // frame the slide-in completes — matches the cassette flow
+        // $F731 (CALL $DB1A returns) → $F6C8 (CALL $E135).  See
+        // docs/disasm/spawn-in.md.
         // Level scenery paint is deferred — see Scroll.PaintLevel call
         // gated by frame counter in TickPlaying, matching the emu's
         // scroll-in over f140..f200.
@@ -1063,56 +1069,66 @@ public sealed class World
         // by Scroll.PaintLevel — port of $DB1A) into the framebuffer.
         Scroll.Blit(fb);
 
-        bool levelCleared = Workers.RemainingThisLevel == 0;
-        foreach (var e in Entities)
+        // Entities / workers / ships / bullets are NOT drawn during the
+        // level slide-in.  Cassette sequence per spawn-in.md:
+        //   $DB1A scenery slide-in  → scenery-only on screen
+        //   $E135 spawn-in dots     → scenery + dots
+        //   $D7F7 main loop         → scenery + ship + entities
+        // The first iteration of $D7FB ($D80A CALL $F1A5) is what
+        // first draws entities.  Until then, only scenery is visible.
+        if (Scroll.ScrollComplete)
         {
-            if (!e.Alive || !e.Visible) continue;
-            if (e.TypeId < 0 || e.TypeId >= EntityTypes.Types.Length) continue;
-            // Electric arc (type $12 = 18) blocks the door UNTIL all
-            // workers are rescued — port of $F252 CP $07 chain: arc
-            // sprite swaps to "off" state when $E77D[level] bit 0 is
-            // set.  We just hide it entirely once cleared.
-            if (e.TypeId == 0x12 && levelCleared) continue;
-            var type = EntityTypes.Types[e.TypeId];
-            var sprite = EntityBank.Frame(type.SpritePointer, e.Frame);
-            if (sprite.IsEmpty) continue;
-            // Draw at (e.X, e.Y) = sprite top-left, matching $F26D..$F2A8
-            // where HL = TopAddr + offset is the TL byte and $F2BC walks
-            // INC H 8 times (= 8 scanlines down from TL).
-            Blitters.DrawSprite16x16(fb, e.X, e.Y, sprite, type.Attribute);
-        }
-
-        foreach (var b in Bullets)
-        {
-            if (!b.Alive) continue;
-            // Draw the bolt with a trail capped to the number of bytes
-            // the bolt has actually traveled (= MaxLength - Length),
-            // so the trail never extends BEHIND the ship's fire-time
-            // position into the ship sprite.  The color is the per-
-            // shot random attribute from $DEC3.
-            int dir = b.DX > 0 ? 1 : -1;
-            int baseX = b.X & ~7;
-            const int MaxTrail = 4;
-            int trail = Math.Min(Bullet.MaxLength - b.Length, MaxTrail);
-            for (int i = 0; i < trail; i++)
+            bool levelCleared = Workers.RemainingThisLevel == 0;
+            foreach (var e in Entities)
             {
-                int x = baseX - i * 8 * dir;
-                if ((uint)x >= 256) continue;
-                Blitters.DrawBulletXor(fb, x, b.Y, b.Pattern, b.Attr);
+                if (!e.Alive || !e.Visible) continue;
+                if (e.TypeId < 0 || e.TypeId >= EntityTypes.Types.Length) continue;
+                // Electric arc (type $12 = 18) blocks the door UNTIL all
+                // workers are rescued — port of $F252 CP $07 chain: arc
+                // sprite swaps to "off" state when $E77D[level] bit 0 is
+                // set.  We just hide it entirely once cleared.
+                if (e.TypeId == 0x12 && levelCleared) continue;
+                var type = EntityTypes.Types[e.TypeId];
+                var sprite = EntityBank.Frame(type.SpritePointer, e.Frame);
+                if (sprite.IsEmpty) continue;
+                // Draw at (e.X, e.Y) = sprite top-left, matching $F26D..$F2A8
+                // where HL = TopAddr + offset is the TL byte and $F2BC walks
+                // INC H 8 times (= 8 scanlines down from TL).
+                Blitters.DrawSprite16x16(fb, e.X, e.Y, sprite, type.Attribute);
             }
-        }
 
-        // Playfield-only draws: ship sprites + boss + workers + bullets.
-        // Draw entities FIRST so the player's XOR-overlap probe (in
-        // DrawPlayerXor below) catches collisions with their pixels.
-        // The cassette's main loop calls $DCF5 (player draw) BEFORE
-        // $E8FD (entities), but its bitmap retains last-frame entity
-        // pixels — same net effect.  Since XOR is commutative the
-        // final pixel state is identical regardless of order.
-        EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
-        Boss.Draw(fb, ScrollOffsetX, EnemyShipTable.SpriteBanks, EnemyShipTable.Cycle);
-        Workers.DrawPlayfield(fb, ScrollOffsetX);
-        EnemyShots.Draw(fb, ScrollOffsetX);
+            foreach (var b in Bullets)
+            {
+                if (!b.Alive) continue;
+                // Draw the bolt with a trail capped to the number of bytes
+                // the bolt has actually traveled (= MaxLength - Length),
+                // so the trail never extends BEHIND the ship's fire-time
+                // position into the ship sprite.  The color is the per-
+                // shot random attribute from $DEC3.
+                int dir = b.DX > 0 ? 1 : -1;
+                int baseX = b.X & ~7;
+                const int MaxTrail = 4;
+                int trail = Math.Min(Bullet.MaxLength - b.Length, MaxTrail);
+                for (int i = 0; i < trail; i++)
+                {
+                    int x = baseX - i * 8 * dir;
+                    if ((uint)x >= 256) continue;
+                    Blitters.DrawBulletXor(fb, x, b.Y, b.Pattern, b.Attr);
+                }
+            }
+
+            // Playfield-only draws: ship sprites + boss + workers + bullets.
+            // Draw entities FIRST so the player's XOR-overlap probe (in
+            // DrawPlayerXor below) catches collisions with their pixels.
+            // The cassette's main loop calls $DCF5 (player draw) BEFORE
+            // $E8FD (entities), but its bitmap retains last-frame entity
+            // pixels — same net effect.  Since XOR is commutative the
+            // final pixel state is identical regardless of order.
+            EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
+            Boss.Draw(fb, ScrollOffsetX, EnemyShipTable.SpriteBanks, EnemyShipTable.Cycle);
+            Workers.DrawPlayfield(fb, ScrollOffsetX);
+            EnemyShots.Draw(fb, ScrollOffsetX);
+        }
 
         bool hidePlayer = State == GameState.Dying
                           || (Invincible && (_frameCounter & 2) == 0)
