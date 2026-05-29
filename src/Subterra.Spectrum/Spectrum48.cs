@@ -24,6 +24,11 @@ public sealed class Spectrum48 : IZ80Bus
     /// <summary>Last value written to port $FE (border colour in low 3 bits).</summary>
     public byte LastUlaPortWrite { get; private set; }
 
+    /// <summary>Captures every transition of bit 4 of port $FE — the
+    /// beeper output — for later resampling to PCM audio.  Lossless:
+    /// records the CPU cycle of every edge.  See BeeperRecorder.cs.</summary>
+    public BeeperRecorder Beeper { get; } = new();
+
     /// <summary>
     /// Keyboard half-row state. Index = half-row 0..7, value = 5 bits set
     /// to 1 for "released" / 0 for "pressed" (matching the bus convention).
@@ -120,6 +125,7 @@ public sealed class Spectrum48 : IZ80Bus
         if ((port & 0x0001) == 0)
         {
             LastUlaPortWrite = value;
+            Beeper.OnPortWrite(Cpu.Cycles, value);
         }
     }
 

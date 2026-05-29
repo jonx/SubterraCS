@@ -3084,3 +3084,78 @@ the player draw — so the cave + every entity slide together and
 the player remains pinned to screen X=128.  Diff vs emu still 0%
 (post-shift is a no-op while `SubPixelScroll == 0`, which is
 every non-Shift frame).
+
+## 56. Audio — beeper capture + WAV + live Avalonia playback
+
+User: *"now you're going to look closely into music and sound
+effects. for this we have two unused assets. I understand that
+you have to do a faithfull recreation of the sound system and
+chip... so do that and also add it to the emulator..."*.
+
+The cassette plays its whole sound system — Follin music engine
+at `$5E88`, every SFX entry (`$F8B4` fuel-low, `$F8D8` shield-low,
+`$F8F9` boss alert, `$F90E` fuel pickup, `$F93A` warning,
+`$F974` game-over, `$F99F` per-level fanfare), the tape loader's
+clicks — through one bit: bit 4 of values written to port `$FE`.
+The Spectrum's ULA hardware is a 1-bit DAC.  So a byte-faithful
+sound system in our emulator just needs to RECORD every transition
+of that bit and RESAMPLE the recording to PCM at the host audio
+device's sample rate.  That's it.  No need to re-implement the
+Follin engine — the cassette's own code is running it; we just
+relay what it emits.
+
+### Capture
+
+[`Subterra.Spectrum.BeeperRecorder`](disasm/../../src/Subterra.Spectrum/BeeperRecorder.cs)
+keeps a `(cycle, high)` edge log populated from
+`Spectrum48.WritePort` whenever a write hits port `$FE`.  Coalesces
+consecutive same-value writes — only transitions are stored — so
+the Follin pulse-width trick at `$FA47..$FA56` (which can hammer
+the port every 5 T-states) doesn't blow up the log.
+
+### Resampler
+
+`BeeperRecorder.RenderPcm(startCycle, endCycle, sampleRate, amp)`
+walks samples in lockstep with edges and outputs `±amp` based on
+the current beeper level.  Pure square wave — no anti-aliasing —
+matching the actual ULA which can only drive the speaker fully
+HIGH or fully LOW.  Tim Follin's PWM-slide trick relies on
+exactly that.
+
+### Sinks
+
+1. **WAV file (offline)** — `subterra run-emu -wav=path`
+   resamples the full run to a mono 16-bit PCM RIFF/WAVE.
+   Test: 800 frames with `keys="10-50:ENTER,80-110:1"` produced
+   6757 edges and 704651 samples = ~16 seconds of audio.
+2. **Live audio (Avalonia EMU)** — new
+   [`Subterra.Game/Sdl2Audio.cs`](../../src/Subterra.Game/Sdl2Audio.cs)
+   has self-contained SDL2 audio P/Invokes (push-mode:
+   `SDL_OpenAudioDevice` + `SDL_QueueAudio`, no callback).
+   `MainWindow.OnTick` queues per-frame PCM after each `RunFrame`,
+   throttled to ≤200 ms backlog so we don't get audio drift
+   ahead of video.  Recorder trim every tick keeps the edge log
+   bounded.  Best-effort: `DllNotFoundException` falls back to
+   silent.
+
+### Why "two unused assets" became one wire-up
+
+The user pointed to `music-5e88.bin` and the SFX byte tables in
+ROM as the two unused inputs.  Both are CONSUMED by the cassette
+when it runs; the emulator was already running them.  We were
+just dropping the output.  Now we capture it.
+
+### What is NOT done
+
+A pure C# port of the Follin player itself (so the native runner
+could play the same music without embedding the Z80 emu) would
+consume the `music-5e88.bin` tune stream and produce the same
+edge sequence directly.  That's a separate, much bigger task —
+the Follin player is ~1 KB of dense Z80 code with PWM tricks
+that depend on exact T-state timing — and probably not worth
+doing if the goal is "hear the cassette's music in our port",
+because the EMU + capture path already does that faithfully.
+The native runner's `SfxQueue` keeps its synthesised effects
+(fire / hit / damage / pickup / explode).
+
+Diff vs emu at f100 still 0%.

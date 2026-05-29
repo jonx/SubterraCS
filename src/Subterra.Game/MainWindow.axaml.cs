@@ -14,6 +14,8 @@ public partial class MainWindow : Window
     private readonly Spectrum48? _machine;
     private readonly WriteableBitmap _bitmap;
     private readonly DispatcherTimer _timer;
+    private readonly Sdl2Audio? _audio;
+    private long _lastPcmCycle;
     private int _framesRun;
 
     public MainWindow()
@@ -30,6 +32,20 @@ public partial class MainWindow : Window
         try
         {
             _machine = LoadMachine();
+            // Open SDL2 audio device for live beeper playback.  Best-
+            // effort — if SDL2 isn't installed or the device fails to
+            // open we keep running silently.  See Sdl2Audio.cs +
+            // Subterra.Spectrum.BeeperRecorder for the design.
+            try
+            {
+                _audio = new Sdl2Audio(sampleRate: 44100);
+                if (!_audio.Ready) _audio = null;
+            }
+            catch (DllNotFoundException)
+            {
+                // SDL2 shared lib not installed — emulator still runs.
+                _audio = null;
+            }
             BlitFrame();
             _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(20),
                 DispatcherPriority.Background,
@@ -62,10 +78,40 @@ public partial class MainWindow : Window
     private void OnTick(object? sender, EventArgs e)
     {
         if (_machine is null) return;
+        long startCycle = _machine.Cpu.Cycles;
         _machine.RunFrame();
         _framesRun++;
         BlitFrame();
-        StatusBar.Text = $"frame {_framesRun}   PC=${_machine.Cpu.PC:X4}   cycles={_machine.Cpu.Cycles}";
+
+        // Drain this frame's beeper edges into PCM, push to SDL2.
+        // The cassette's $5E88 Follin player + every $F8B4/$F8D8/$F8F9/
+        // $F90E/$F93A/$F974/$F99F SFX entry runs inside RunFrame() and
+        // writes its OUT $FE,A; we capture every transition with its
+        // CPU cycle stamp and resample to 44.1 kHz mono 16-bit PCM.
+        if (_audio is not null)
+        {
+            // Catch up from any previously-rendered cycle to now.
+            long from = Math.Max(_lastPcmCycle, startCycle);
+            long to = _machine.Cpu.Cycles;
+            if (to > from)
+            {
+                var pcm = _machine.Beeper.RenderPcm(from, to, _audio.SampleRate);
+                // Keep the device queue from running ahead by more than
+                // ~200 ms — if we're behind, skip queueing this frame
+                // (acceptable: 50 Hz frame = 20 ms of audio).
+                uint queuedBytes = _audio.QueuedBytes;
+                int safeBytesPerSec = _audio.SampleRate * sizeof(short);
+                if (queuedBytes < safeBytesPerSec / 5)   // ≤ 200 ms backlog
+                {
+                    _audio.Queue(pcm);
+                }
+                _lastPcmCycle = to;
+            }
+            // Trim the edge log behind us so it doesn't grow forever.
+            _machine.Beeper.Trim(Math.Max(0, _machine.Cpu.Cycles - 2 * BeeperRecorder.CpuFrequencyHz));
+        }
+
+        StatusBar.Text = $"frame {_framesRun}   PC=${_machine.Cpu.PC:X4}   cycles={_machine.Cpu.Cycles}   audio={(_audio?.Ready == true ? "on" : "off")}";
     }
 
     private void BlitFrame()

@@ -71,11 +71,73 @@ sounds requires a Follin-player port, not yet ported.
 
 ## C# port status
 
-Not yet ported.  Native plays its own SDL beep effects via
-`SfxQueue` triggered at gameplay events; the cassette's Follin
-player isn't emulated.  Adding it requires a tick driver that
-consumes the message data at the same cadence as the cassette
-($FA32 driven by the Z80 R-register through speaker toggles).
+**Beeper-faithful audio is now live in the EMU runtime.**  The
+cassette's whole sound system — Follin player, every SFX entry,
+the loading-screen tape sounds — comes through bit 4 of the
+value written to port `$FE`.  Capturing every transition of that
+bit with its CPU-cycle stamp and resampling to PCM produces a
+byte-faithful reproduction without re-implementing the Follin
+engine; the cassette's own code is doing the work, we just
+record what it emits.
+
+### Capture
+
+[`Subterra.Spectrum.BeeperRecorder`](../../src/Subterra.Spectrum/BeeperRecorder.cs)
+keeps an edge log `(cycle, high)` populated from
+`Spectrum48.WritePort` whenever a write hits port `$FE`.  Edges
+are coalesced — only transitions are stored — so the Follin
+pulse-width trick at `$FA47..$FA56` (which can hammer the port
+every few T-states) doesn't bloat the log.
+
+### Resampler
+
+`BeeperRecorder.RenderPcm(startCycle, endCycle, sampleRate, amplitude)`
+walks samples in lockstep with edges: at sample i (cycle =
+`startCycle + i * 3.5MHz / sampleRate`) it advances the edge
+cursor up to that cycle and outputs `±amplitude` based on the
+current beeper level.  Pure square wave — no anti-aliasing, no
+low-pass filter — matching the actual ULA hardware which can
+only drive the speaker fully HIGH or fully LOW.  Tim Follin's
+PWM trick relies on exactly that.
+
+### Sinks
+
+| Sink | Location | How |
+| ---- | -------- | --- |
+| WAV file (offline)        | [`Subterra.Spectrum.WavWriter`](../../src/Subterra.Spectrum/WavWriter.cs) + `subterra run-emu -wav=<path>` | Renders the full cycle range `[0, Cpu.Cycles)` to mono 16-bit PCM at 44.1 kHz (default) and writes a RIFF/WAVE file. |
+| Live audio (Avalonia EMU) | [`Sdl2Audio`](../../src/Subterra.Game/Sdl2Audio.cs) + `MainWindow.OnTick` push loop | Per-frame: render only `[lastPcmCycle, Cpu.Cycles)` so RenderPcm doesn't redo work; `SDL_QueueAudio` pushes into the device's internal queue; the queue is throttled to ≤200 ms backlog; edges older than ~2 sec are trimmed.  SDL2 audio runs in its own thread but we never share the recorder across threads — all the rendering happens on the UI thread that owns the emulator. |
+| Live audio (native SDL2 runner) | [`Sdl2BeeperAudio`](../../native/SubterraCS.Platform/Sdl2BeeperAudio.cs) + `BeeperSynth` | The native port doesn't run the cassette so there's nothing to capture from; instead `SfxQueue` triggers a per-effect synth.  Predates the Subterra.Spectrum capture work above. |
+
+### Example
+
+```sh
+dotnet run --project src/Subterra.Tools -- run-emu \
+    original/rom/48k.rom original/dumps/SUBSTRYK.Z80 800 \
+    -keys="10-50:ENTER,80-110:1" \
+    -wav=renders/cassette-boot.wav
+# → 6757 edges, 704651 samples @ 44100 Hz, ~16s of audio
+```
+
+Or just run the Avalonia game with `dotnet run --project src/Subterra.Game`
+and you'll hear the loading tape squeak + title menu + gameplay
+SFX live.  The status bar shows `audio=on` or `audio=off`
+depending on whether SDL2 is installed on the system.
+
+### What's NOT done
+
+- **The Follin player itself is NOT separately ported.**  The
+  cassette's `$5E88..` code is what synthesises the music; we
+  just relay its bit-4 toggles.  A pure C# port of the player
+  (so the native runner could play the same music without the
+  Z80 emulator) would consume the `music-5e88.bin` tune stream
+  and produce the same edge sequence directly — that's a
+  separate, much bigger task and probably not worth doing.
+- **The native runner's `SfxQueue`** still uses its own
+  synthesised effects (fire / hit / damage / pickup / explode).
+  Bringing the cassette's SFX bytes through the same beeper
+  recorder path would require either embedding the Z80 emu in
+  the native port OR re-implementing the Follin player.  Out of
+  scope here.
 
 ## Longer tunes — `$F974` / `$F99F`
 

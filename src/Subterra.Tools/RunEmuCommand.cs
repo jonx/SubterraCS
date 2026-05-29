@@ -27,6 +27,8 @@ internal static class RunEmuCommand
 
         int stride = 0;
         string? ramOut = null;
+        string? wavOut = null;
+        int wavSampleRate = 44100;
         for (int i = 3; i < args.Length; i++)
         {
             if (args[i].StartsWith("-stride=", StringComparison.Ordinal))
@@ -36,6 +38,14 @@ internal static class RunEmuCommand
             else if (args[i].StartsWith("-ram=", StringComparison.Ordinal))
             {
                 ramOut = args[i].Substring("-ram=".Length);
+            }
+            else if (args[i].StartsWith("-wav=", StringComparison.Ordinal))
+            {
+                wavOut = args[i].Substring("-wav=".Length);
+            }
+            else if (args[i].StartsWith("-wav-rate=", StringComparison.Ordinal))
+            {
+                wavSampleRate = int.Parse(args[i].Substring("-wav-rate=".Length), CultureInfo.InvariantCulture);
             }
         }
 
@@ -76,6 +86,17 @@ internal static class RunEmuCommand
         {
             File.WriteAllBytes(ramOut, sys.RamView().ToArray());
             Console.WriteLine($"RAM dump: {ramOut}");
+        }
+        if (wavOut is not null)
+        {
+            // Resample the full beeper-edge log to PCM at the requested
+            // rate.  The cassette plays sound by toggling bit 4 of port
+            // $FE; we captured every edge with its CPU cycle stamp, so
+            // a square-wave resampler reproduces the actual sound the
+            // user would hear from the Spectrum's speaker.
+            var pcm = sys.Beeper.RenderPcm(0, sys.Cpu.Cycles, wavSampleRate);
+            WavWriter.WriteMono16(wavOut, pcm, wavSampleRate);
+            Console.WriteLine($"Beeper WAV: {wavOut} ({sys.Beeper.EdgeCount} edges, {pcm.Length} samples @ {wavSampleRate} Hz, {(double)pcm.Length / wavSampleRate:F2}s)");
         }
         return 0;
     }
