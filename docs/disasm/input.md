@@ -154,10 +154,8 @@ The port hijacks SHIFT for a different role:
   while held.  Step sizes:
   - Up / Down: **1 pixel** of altitude per edge (the smallest
     altitude unit `($E584)` supports).
-  - Horizontal (L / Left / Right): **1 byte = 1 char column =
-    8 pixels** of scroll per edge (the cassette's scroll is
-    byte-aligned; sub-byte horizontal scrolling isn't a thing
-    in `$DA23`/`$DA62`, so 1 byte is the precision floor here).
+  - Horizontal (L / Left / Right): **1 pixel** of scroll per
+    edge — port-only sub-byte composition (see below).
 - To step again, RELEASE the direction key, then RE-PRESS it
   (while still holding SHIFT).  Continuous hold = exactly one
   step then frozen.
@@ -195,3 +193,36 @@ for the per-key previous-state cache (which the original game
 doesn't allocate).  This is purely a port quality-of-life
 feature; the diff-vs-emu harness is unaffected because the
 emulator never receives a SHIFT keystroke.
+
+### Sub-byte horizontal scrolling (port-only)
+
+The cassette's horizontal scroll routines `$DA23` (bitmap
+LEFT/ship RIGHT) and `$DA62` (bitmap RIGHT/ship LEFT) use
+`LDIR`/`LDDR` over 31 bytes per scanline — each call shifts the
+entire bitmap by **exactly 1 byte = 8 pixels**.  Verified by
+disasm: both routines have a single entry path from `$D9C8`,
+no caller invokes them more than once per frame, and there's
+no other scroll mechanism in the ROM.  So the cassette CAN'T
+scroll horizontally at sub-byte precision.
+
+This is fine in the original game because all walls + tile art
+are byte-aligned (8 px grid), so the player and obstacles share
+the same granularity.  But the Shift precision modifier in the
+port aims for literal 1-pixel control, so we add an extension:
+
+- `World.SubPixelScroll` (0..7) tracks the pixel offset within
+  the current byte.  Total world-pixel X =
+  `ScrollOffsetX * 8 + SubPixelScroll`.
+- `LevelScroll.PaintLevelAtOffset` takes an optional
+  `subPixelOffset`; when non-zero, each output byte composes
+  bits from TWO adjacent source tiles via a bit-shift
+  (`composed = (left << sub) | (right >> (8 - sub))`).  When
+  `subPixelOffset == 0` it's the original byte-aligned path,
+  so the diff-vs-emu harness sees no change.
+- Shift+Horizontal edge advances `SubPixelScroll` by 1; on
+  overflow it wraps and bumps `ScrollOffsetX`.
+- LoadLevel resets both `ScrollOffsetX` and `SubPixelScroll`
+  to 0.
+
+Non-Shift L still uses the cassette's byte-aligned 8 px/frame
+path — sub-pixel composition is gated on `Shift` being held.

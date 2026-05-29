@@ -122,6 +122,14 @@ public sealed class World
     /// 256-column-wide source data.  Wraps at 256.</summary>
     public int ScrollOffsetX;
 
+    /// <summary>Port-only sub-byte scroll offset (0..7 pixels).  The
+    /// cassette's $DA23/$DA62 only scroll in whole-byte (8 px) chunks,
+    /// but the Shift precision modifier exposes 1-pixel-per-edge
+    /// horizontal nudges.  Total world-pixel X = ScrollOffsetX * 8 +
+    /// SubPixelScroll.  When SubPixelScroll crosses 0 or 8, the byte
+    /// offset wraps and SubPixelScroll resets to the modulus.</summary>
+    public int SubPixelScroll;
+
     /// <summary>$EE74 — scroll-progress counter (16-bit).  Incremented
     /// each frame by <c>$D827</c> at level-scaled step.  Boss at
     /// <c>$EC10</c> spawns when this reaches <c>$4A38</c>.</summary>
@@ -390,20 +398,36 @@ public sealed class World
         if (input.Left) { FacingLeft = true;  DirectionState |= 1; }
         else if (input.Right) { FacingLeft = false; DirectionState &= ~1; }
 
-        // Port-only Shift precision: only fire the scroll on the
-        // false→true edge of Horizontal.  Cassette scroll is byte-
-        // aligned (one char column = 8 pixels per L-press), so the
-        // smallest possible step in this axis is 1 byte rather than
-        // 1 literal pixel — that's the precision floor we expose.
-        bool scrollThisFrame =
-            input.Shift
-                ? (input.Horizontal && !_prevHorizontal)
-                : input.Horizontal;
-        if (scrollThisFrame && Fuel > 0 && MiniMap.Buffer.Length > 0)
+        // Horizontal scroll:
+        //   - Non-Shift: every frame Horizontal is held, advance
+        //     ScrollOffsetX by 1 byte = 8 px (faithful $D9C8 → $DA23).
+        //   - Shift: on each Horizontal press-edge, advance by 1 PIXEL
+        //     using the port-only sub-byte composition in
+        //     PaintLevelAtOffset.  SubPixelScroll wraps 0..7; on
+        //     overflow it bumps ScrollOffsetX by 1 byte.
+        if (Fuel > 0 && MiniMap.Buffer.Length > 0)
         {
-            int delta = FacingLeft ? -1 : 1;
-            ScrollOffsetX = (ScrollOffsetX + delta) & 0xFF;
-            Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX);
+            int dir = FacingLeft ? -1 : 1;
+            bool doPaint = false;
+            if (input.Shift)
+            {
+                if (input.Horizontal && !_prevHorizontal)
+                {
+                    SubPixelScroll += dir;
+                    if (SubPixelScroll >= 8) { SubPixelScroll -= 8; ScrollOffsetX = (ScrollOffsetX + 1) & 0xFF; }
+                    else if (SubPixelScroll < 0) { SubPixelScroll += 8; ScrollOffsetX = (ScrollOffsetX - 1) & 0xFF; }
+                    doPaint = true;
+                }
+            }
+            else if (input.Horizontal)
+            {
+                ScrollOffsetX = (ScrollOffsetX + dir) & 0xFF;
+                doPaint = true;
+            }
+            if (doPaint)
+            {
+                Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX, SubPixelScroll);
+            }
         }
 
         // Snapshot direction-key state for next frame's edge detection.
@@ -880,6 +904,7 @@ public sealed class World
             Scroll.LevelColour = LevelColourData[level % LevelColourData.Length];
         Scroll.Reset();
         ScrollOffsetX = 0;
+        SubPixelScroll = 0;
         ScrollProgress = 0;
         EnemyShots.Reset();
         // Port of $E319's LDIR from $E48D + level*32 → $E597.  Loads

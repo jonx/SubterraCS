@@ -115,37 +115,65 @@ public sealed class LevelScroll
     /// Each tile is 8 bytes from <c>tileBank</c>.
     /// </summary>
     public void PaintLevel(TileBank tileBank, byte[] levelBuffer)
-        => PaintLevelAtOffset(tileBank, levelBuffer, 0);
+        => PaintLevelAtOffset(tileBank, levelBuffer, 0, 0);
 
     /// <summary>
-    /// Paint the level scenery with a horizontal scroll offset (0..255).
-    /// Each source row has 256 tile-index bytes; the visible window is
-    /// 32 cols starting at <paramref name="offsetX"/>, wrapping at 256.
+    /// Paint the level scenery with a horizontal scroll offset
+    /// (<paramref name="offsetX"/> in bytes, 0..255) plus an optional
+    /// <paramref name="subPixelOffset"/> (0..7) for port-only pixel-
+    /// precision scrolling.
     ///
-    /// Port of $DA23 / $DA62 (which shift the entire bitmap one byte
-    /// left/right per L-press and paint a fresh column at the exposed
-    /// edge).  We track the offset directly and re-paint, which is
-    /// simpler and equivalent to the Z80 chain.
+    /// When subPixelOffset is 0 this is a faithful port of
+    /// $DA23 / $DA62 (which shift the entire bitmap one byte
+    /// left/right per L-press) — every output byte equals one source
+    /// tile byte at the byte-aligned column.
+    ///
+    /// When subPixelOffset is non-zero each output byte composes
+    /// bits from TWO adjacent source tiles via a bit-shift, giving
+    /// 1-pixel horizontal precision the cassette doesn't support.
+    /// Used by the Shift precision modifier in World — see input.md.
     /// </summary>
-    public void PaintLevelAtOffset(TileBank tileBank, byte[] levelBuffer, int offsetX)
+    public void PaintLevelAtOffset(TileBank tileBank, byte[] levelBuffer, int offsetX, int subPixelOffset = 0)
     {
         Array.Clear(PlayBitmap, 0, PlayBitmap.Length);
         if (levelBuffer.Length < CharRows * SourceStride) return;
 
         offsetX &= 0xFF;
+        int sub = subPixelOffset & 7;
+        int rightShift = 8 - sub;
         for (int row = 0; row < CharRows; row++)
         {
             int srcRowBase = row * SourceStride;
             int destY = row * 8;
             for (int col = 0; col < 32; col++)
             {
-                int srcCol = (col + offsetX) & 0xFF;
-                byte tileIdx = levelBuffer[srcRowBase + srcCol];
-                if (tileIdx == 0 || tileIdx >= tileBank.TileCount) continue;
-                var tile = tileBank[tileIdx];
-                for (int sl = 0; sl < 8; sl++)
+                int srcColL = (col + offsetX) & 0xFF;
+                byte leftIdx = levelBuffer[srcRowBase + srcColL];
+                var leftTile = (leftIdx > 0 && leftIdx < tileBank.TileCount)
+                    ? tileBank[leftIdx] : ReadOnlySpan<byte>.Empty;
+                if (sub == 0)
                 {
-                    PlayBitmap[Framebuffer.BitmapAddress(col * 8, destY + sl)] = tile[sl];
+                    if (leftTile.IsEmpty) continue;
+                    for (int sl = 0; sl < 8; sl++)
+                        PlayBitmap[Framebuffer.BitmapAddress(col * 8, destY + sl)] = leftTile[sl];
+                }
+                else
+                {
+                    // Sub-byte composition: each output byte takes
+                    // (8-sub) high bits from the LEFT source tile and
+                    // (sub) low bits from the RIGHT source tile, so
+                    // the visible window slides 1 pixel per sub++.
+                    int srcColR = (col + offsetX + 1) & 0xFF;
+                    byte rightIdx = levelBuffer[srcRowBase + srcColR];
+                    var rightTile = (rightIdx > 0 && rightIdx < tileBank.TileCount)
+                        ? tileBank[rightIdx] : ReadOnlySpan<byte>.Empty;
+                    for (int sl = 0; sl < 8; sl++)
+                    {
+                        byte l = leftTile.IsEmpty ? (byte)0 : leftTile[sl];
+                        byte r = rightTile.IsEmpty ? (byte)0 : rightTile[sl];
+                        byte composed = (byte)((l << sub) | (r >> rightShift));
+                        PlayBitmap[Framebuffer.BitmapAddress(col * 8, destY + sl)] = composed;
+                    }
                 }
             }
         }
