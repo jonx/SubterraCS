@@ -89,23 +89,39 @@ are coalesced — only transitions are stored — so the Follin
 pulse-width trick at `$FA47..$FA56` (which can hammer the port
 every few T-states) doesn't bloat the log.
 
-### Resampler
+### Resampler — area sampling (duty-cycle averaging)
 
 `BeeperRecorder.RenderPcm(startCycle, endCycle, sampleRate, amplitude)`
-walks samples in lockstep with edges: at sample i (cycle =
-`startCycle + i * 3.5MHz / sampleRate`) it advances the edge
-cursor up to that cycle and outputs `±amplitude` based on the
-current beeper level.  Pure square wave — no anti-aliasing, no
-low-pass filter — matching the actual ULA hardware which can
-only drive the speaker fully HIGH or fully LOW.  Tim Follin's
-PWM trick relies on exactly that.
+computes each output sample as the **time-weighted average** of
+the beeper level over that sample's CPU-cycle window.  Walking
+edges in lockstep with samples: for each output sample, sum
+`highCycles` over its window, then output
+`amplitude · (2·highCycles/sampleSpan − 1)` — duty 1 → +amp,
+duty 0 → −amp, duty 0.5 → 0.
+
+This is a perfect box-filter low-pass: anything above the
+Nyquist frequency that would otherwise alias as harsh distortion
+gets averaged out.  Tim Follin's pulse-width-modulation trick
+still works because we preserve the duty cycle of every sample
+window — a window that's 70% HIGH and 30% LOW comes out at
++0.4·amp, exactly what the Spectrum's natural speaker low-pass
+would produce.
+
+(An earlier version used **nearest-neighbor sampling** — each
+sample = the latest beeper level at that cycle, no averaging.
+The cassette's Follin player tops 10 kHz easily and pushes
+significant content above Nyquist; nearest-neighbor aliased all
+of that into the audible range as harsh distortion.  The user
+described it as "stressful but not random" — exactly the
+signature of structured-but-aliased audio.  Area sampling fixed
+it.)
 
 ### Sinks
 
 | Sink | Location | How |
 | ---- | -------- | --- |
 | WAV file (offline)        | [`Subterra.Spectrum.WavWriter`](../../src/Subterra.Spectrum/WavWriter.cs) + `subterra run-emu -wav=<path>` | Renders the full cycle range `[0, Cpu.Cycles)` to mono 16-bit PCM at 44.1 kHz (default) and writes a RIFF/WAVE file. |
-| Live audio (Avalonia EMU) | [`Sdl2Audio`](../../src/Subterra.Game/Sdl2Audio.cs) + `MainWindow.OnTick` push loop | Per-frame: render only `[lastPcmCycle, Cpu.Cycles)` so RenderPcm doesn't redo work; `SDL_QueueAudio` pushes into the device's internal queue; the queue is throttled to ≤200 ms backlog; edges older than ~2 sec are trimmed.  SDL2 audio runs in its own thread but we never share the recorder across threads — all the rendering happens on the UI thread that owns the emulator. |
+| Live audio (Avalonia EMU) | [`Sdl2Audio`](../../src/Subterra.Game/Sdl2Audio.cs) + `MainWindow.OnTick` push loop | Per-frame: render only `[lastPcmCycle, Cpu.Cycles)` so RenderPcm doesn't redo work; `SDL_QueueAudio` pushes into the device's internal queue; throttle kicks in only at **≥ 500 ms backlog** so we don't drop chunks mid-tune (earlier 200 ms threshold caused audible gaps); edges older than ~2 sec are trimmed.  SDL2 audio runs in its own thread but we never share the recorder across threads — all the rendering happens on the UI thread that owns the emulator.  **M key** toggles the queueing on/off; the keypress also forwards to the Spectrum keyboard so the cassette's `$F637` title-music gate (`IN A,$7FFE; AND $0C`) still sees the M press it needs. |
 | Live audio (native SDL2 runner) | [`Sdl2BeeperAudio`](../../native/SubterraCS.Platform/Sdl2BeeperAudio.cs) + `BeeperSynth` | The native port doesn't run the cassette so there's nothing to capture from; instead `SfxQueue` triggers a per-effect synth.  Predates the Subterra.Spectrum capture work above. |
 
 ### Example
@@ -120,8 +136,21 @@ dotnet run --project src/Subterra.Tools -- run-emu \
 
 Or just run the Avalonia game with `dotnet run --project src/Subterra.Game`
 and you'll hear the loading tape squeak + title menu + gameplay
-SFX live.  The status bar shows `audio=on` or `audio=off`
-depending on whether SDL2 is installed on the system.
+SFX live.  Status bar shows `audio=ON` or `audio=OFF` and
+`(M toggles)`.
+
+### Title-music gate — `$F637`
+
+Cassette code at `$F637..$F63D` reads port `$7FFE`, masks bits 2
+and 3 (M and N keys on row 7), and `RET Z` if neither is pressed.
+The title-music ticks at `$F64E` / `$F65D` (and `$F641 CALL $F973`
+which is actually a `RET` no-op) live AFTER that gate, so the
+cassette's title music ONLY plays while M or N is held.  The
+Avalonia emulator's **M key** doubles as both the audio toggle
+AND a forwarded Spectrum M keypress — pressing M while at the
+title fires the cassette's music gate at the same time as
+toggling our own audio output.  Hold M during title to hear the
+intro music; tap M during gameplay if you just want to mute.
 
 ### What's NOT done
 

@@ -17,6 +17,12 @@ public partial class MainWindow : Window
     private readonly Sdl2Audio? _audio;
     private long _lastPcmCycle;
     private int _framesRun;
+    /// <summary>M-key toggle: when false we skip queueing PCM to SDL2
+    /// (the emulator + recorder still run; audio just doesn't reach the
+    /// device).  The M key still forwards to the Spectrum keyboard so
+    /// the cassette's $F637 title-music gate (`IN A,$7FFE; AND $0C`)
+    /// still sees the keypress.  Default ON.</summary>
+    private bool _audioEnabled = true;
 
     public MainWindow()
     {
@@ -87,21 +93,21 @@ public partial class MainWindow : Window
         // The cassette's $5E88 Follin player + every $F8B4/$F8D8/$F8F9/
         // $F90E/$F93A/$F974/$F99F SFX entry runs inside RunFrame() and
         // writes its OUT $FE,A; we capture every transition with its
-        // CPU cycle stamp and resample to 44.1 kHz mono 16-bit PCM.
+        // CPU cycle stamp and resample to 44.1 kHz mono 16-bit PCM via
+        // area sampling (duty-cycle averaging — see BeeperRecorder).
         if (_audio is not null)
         {
-            // Catch up from any previously-rendered cycle to now.
             long from = Math.Max(_lastPcmCycle, startCycle);
             long to = _machine.Cpu.Cycles;
             if (to > from)
             {
                 var pcm = _machine.Beeper.RenderPcm(from, to, _audio.SampleRate);
-                // Keep the device queue from running ahead by more than
-                // ~200 ms — if we're behind, skip queueing this frame
-                // (acceptable: 50 Hz frame = 20 ms of audio).
+                // Throttle ONLY at a dangerously high backlog (~500 ms),
+                // so we don't drop chunks mid-tune (which previously
+                // made things sound like "playing inverted" gaps).
                 uint queuedBytes = _audio.QueuedBytes;
-                int safeBytesPerSec = _audio.SampleRate * sizeof(short);
-                if (queuedBytes < safeBytesPerSec / 5)   // ≤ 200 ms backlog
+                int halfSecondBytes = _audio.SampleRate * sizeof(short) / 2;
+                if (_audioEnabled && queuedBytes < halfSecondBytes)
                 {
                     _audio.Queue(pcm);
                 }
@@ -111,7 +117,7 @@ public partial class MainWindow : Window
             _machine.Beeper.Trim(Math.Max(0, _machine.Cpu.Cycles - 2 * BeeperRecorder.CpuFrequencyHz));
         }
 
-        StatusBar.Text = $"frame {_framesRun}   PC=${_machine.Cpu.PC:X4}   cycles={_machine.Cpu.Cycles}   audio={(_audio?.Ready == true ? "on" : "off")}";
+        StatusBar.Text = $"frame {_framesRun}   PC=${_machine.Cpu.PC:X4}   cycles={_machine.Cpu.Cycles}   audio={(_audioEnabled && _audio?.Ready == true ? "ON" : "OFF")} (M toggles)";
     }
 
     private void BlitFrame()
@@ -142,15 +148,26 @@ public partial class MainWindow : Window
     {
         if (_machine is null) return;
         if (e.Key == Key.Escape) { Close(); return; }
+        // M toggles the SDL2 audio output on the press-edge.  Avalonia's
+        // event-repeat policy may fire OnKeyDown multiple times while
+        // M is held; throttle with an own "M was already down" tracker.
+        if (e.Key == Key.M && !_mKeyDownLatched)
+        {
+            _audioEnabled = !_audioEnabled;
+            _mKeyDownLatched = true;
+        }
         foreach (var key in MapKey(e.Key))
         {
             _machine.PressKey(key);
         }
     }
 
+    private bool _mKeyDownLatched;
+
     private void OnKeyUp(object? sender, KeyEventArgs e)
     {
         if (_machine is null) return;
+        if (e.Key == Key.M) _mKeyDownLatched = false;
         foreach (var key in MapKey(e.Key))
         {
             _machine.ReleaseKey(key);

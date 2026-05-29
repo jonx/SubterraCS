@@ -52,17 +52,23 @@ public sealed class BeeperRecorder
 
     /// <summary>Resample the captured edges to mono 16-bit PCM at
     /// <paramref name="sampleRate"/> Hz over the cycle range
-    /// [<paramref name="startCycle"/>, <paramref name="endCycle"/>).
-    /// Each sample equals ±<paramref name="amplitude"/> based on the
-    /// latest beeper level at or before that sample's cycle.
+    /// [<paramref name="startCycle"/>, <paramref name="endCycle"/>),
+    /// using <b>area sampling</b>: each output sample equals the
+    /// time-weighted average of the beeper level over that sample's
+    /// cycle window, scaled to ±<paramref name="amplitude"/>.
     ///
-    /// This is a SQUARE-WAVE resampler — no low-pass filter, no
-    /// anti-aliasing.  Matches the actual ULA hardware: the speaker
-    /// either crackles HIGH or LOW with nothing in between, and the
-    /// "tone" we hear is the average pulse-width.  Tim Follin's
-    /// pulse-width-modulation trick relies on exactly that.
+    /// This is a perfect box-filter low-pass — anything above the
+    /// Nyquist frequency that would otherwise alias as harsh
+    /// distortion gets averaged out instead.  Tim Follin's
+    /// pulse-width-modulation trick still works: a window that's
+    /// 70% HIGH and 30% LOW produces a sample at +0.4·amp, exactly
+    /// what the Spectrum's natural speaker low-pass would produce.
+    ///
+    /// (Nearest-neighbor sampling — which an earlier version used —
+    /// produced very harsh aliasing for any signal above ~5 kHz,
+    /// which the cassette emits constantly via the Follin player.)
     /// </summary>
-    public short[] RenderPcm(long startCycle, long endCycle, int sampleRate, int amplitude = 8000)
+    public short[] RenderPcm(long startCycle, long endCycle, int sampleRate, int amplitude = 5000)
     {
         if (endCycle <= startCycle) return Array.Empty<short>();
         long span = endCycle - startCycle;
@@ -71,27 +77,49 @@ public sealed class BeeperRecorder
         if (sampleCount <= 0) return Array.Empty<short>();
         var pcm = new short[sampleCount];
 
-        // Walk edges in parallel with samples.  For each sample i,
-        // find the latest edge with cycle ≤ sampleCycle and use its
-        // High level.
+        // Initial level from the most recent edge BEFORE startCycle.
         int evtIdx = 0;
         bool currentHigh = false;
-        // Initialize currentHigh from the most recent edge BEFORE
-        // startCycle, if any.
         while (evtIdx < _edges.Count && _edges[evtIdx].Cycle < startCycle)
         {
             currentHigh = _edges[evtIdx].High;
             evtIdx++;
         }
+
+        long prevSampleCycle = startCycle;
         for (int i = 0; i < sampleCount; i++)
         {
-            long sampleCycle = startCycle + (long)i * CpuFrequencyHz / sampleRate;
-            while (evtIdx < _edges.Count && _edges[evtIdx].Cycle <= sampleCycle)
+            long sampleEndCycle = startCycle + (long)(i + 1) * CpuFrequencyHz / sampleRate;
+            long sampleSpan = sampleEndCycle - prevSampleCycle;
+            if (sampleSpan <= 0)
             {
+                pcm[i] = currentHigh ? (short)amplitude : (short)-amplitude;
+                continue;
+            }
+
+            // Sum the HIGH-time within the sample window.  Walk every
+            // edge with cycle ∈ [prevSampleCycle, sampleEndCycle); each
+            // edge ends a HIGH or LOW stretch and starts the opposite.
+            long highCycles = 0;
+            long lastCycle = prevSampleCycle;
+            while (evtIdx < _edges.Count && _edges[evtIdx].Cycle < sampleEndCycle)
+            {
+                long edgeCycle = _edges[evtIdx].Cycle;
+                if (edgeCycle < lastCycle) edgeCycle = lastCycle;   // clamp pre-window edges
+                if (currentHigh) highCycles += edgeCycle - lastCycle;
+                lastCycle = edgeCycle;
                 currentHigh = _edges[evtIdx].High;
                 evtIdx++;
             }
-            pcm[i] = currentHigh ? (short)amplitude : (short)-amplitude;
+            if (currentHigh) highCycles += sampleEndCycle - lastCycle;
+
+            // Duty cycle ∈ [0, 1] → output ∈ [-amp, +amp].
+            //   duty = highCycles / sampleSpan
+            //   pcm  = amp · (2·duty − 1)
+            //        = amp · (2·highCycles − sampleSpan) / sampleSpan
+            long pcmValue = amplitude * (2 * highCycles - sampleSpan) / sampleSpan;
+            pcm[i] = (short)pcmValue;
+            prevSampleCycle = sampleEndCycle;
         }
         return pcm;
     }
