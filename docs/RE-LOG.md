@@ -2977,3 +2977,110 @@ Captured at seed=42 with `keys="10-30:FIRE"`:
 | f150 | 122 | Ship + entities visible |
 
 Title-screen diff vs emu at f100 still 0%.
+
+## 53. Particle paint = 2×2 pixel block, not 8×8 attribute
+
+User: *"it's more like a big semi transparent char when the
+original had smaller white squares"*.
+
+Re-disasm of `$E199`/`$E1C0`/`$E1DE`/`$E1E4` showed the cassette
+draws each particle as a **2×2 PIXEL block** via 4 `$E1DE`
+single-pixel XORs at `(C, B)`, `(C, B-1)`, `(C+1, B-1)`,
+`(C+1, B)` (with bus-counter inversion), plus one attribute
+byte for the containing char cell.  The port previously only
+flipped the attribute cell — that's the 8×8 translucent block
+the user noticed.  Now `Explosion.Draw` XORs the 4 pixels into
+the bitmap and stamps one attribute byte, giving the cassette's
+crisp tiny-square look.
+
+Also ported `$E1C0`'s playfield-edge guards (skip `visualY ≤ 2`
+or `> 128`), translated through the bus-counter inversion.
+
+## 54. assets.md inventory + duplicate purge + per-level cave colour
+
+Inventoried every file in `assets/extracted/`: cassette `$addr`,
+byte size, exact format, consumers, port loader, cross-links to
+the relevant disasm doc.  New
+[`docs/disasm/assets.md`](disasm/assets.md) is the single source
+of truth; at-a-glance + per-asset + cross-cutting tables.
+
+Cleanup:
+
+- `level-secondptr-e58b.bin` was a byte-identical legacy duplicate
+  of `fuel-stations-e58b.bin` from an earlier extract pass.
+  Deleted; `ExtractAllCommand` now emits the surviving name.
+- `level-speed-e57c.bin` (mis-named — the bytes are actually
+  **per-level cave-colour attributes**, not a speed table) was
+  loaded but ignored.  Now plumbed through
+  `Assets.LevelColourData` → `World.LevelColourData` → `LoadLevel`
+  applying `Scroll.LevelColour = data[level % 6]`.  Cassette
+  values for L0..L5: `$07 $04 $03 $06 $02 $01` (white, green,
+  magenta, yellow, red, blue).  Port previously hardcoded `$04`
+  (green) for every level — every cave looked the same.
+
+Other unwired files documented with reason:
+- `level-spriteptr-e56d.bin` — same level→buffer mapping is
+  hardcoded in `MiniMap.SelectLevel`; file kept for validation.
+- `music-5e88.bin` — Follin player is its own large RE project.
+- `player-e63b.bin` bytes 32..95 — post-bank effects scratch the
+  port doesn't need.
+
+## 55. Shift precision modifier (port-only) — 1-pixel nudge per press
+
+User: *"when I stay pressed on shift, no matter the direction I'll
+go, the ship will only move one pixel at a time"*.
+
+Cassette `$D8F4` treats SHIFT as part of the LEFT key-group (any
+of SHIFT/Z/X/C/V = LEFT, per the `IN A,($FE)` read of `$FEFE`).
+The port hijacks SHIFT for an edge-triggered precision modifier
+— a port-only quality-of-life feature, gated so the diff-vs-emu
+harness never sees it.
+
+- `GameInput.Shift` held-state flag.
+- `Sdl2InputPump` maps `SDLK_LSHIFT`/`SDLK_RSHIFT`.
+- `World` keeps `_prevUp`/`_prevDown`/`_prevHorizontal` across
+  frames; the Shift branch fires on `input.X && !_prevX` edges
+  only.  Steps: 1 pixel altitude, 1 pixel horizontal.
+- `HeadlessTestRunner` accepts `SHIFT` in `--keys=` schedules
+  for reproducible tests.
+
+Verified at seed=42 (50 frames of A held):
+  no Shift  → altitude 0 → 80 (acceleration ramp)
+  + Shift   → altitude 0 →  1 (single edge, then frozen)
+  + Shift + 10 pulse-edges → altitude 0 → 10
+
+### Sub-pixel horizontal — pass 1 (compose during PaintLevel)
+
+After verifying via re-disasm that `$DA23`/`$DA62` are
+byte-aligned (the user pushed back twice on the claim), I added
+sub-byte composition INSIDE `PaintLevelAtOffset`: each output
+byte composed bits from two adjacent source tiles via
+`(left << sub) | (right >> (8-sub))`.  Verified the byte-aligned
+path (`sub=0`) was unchanged — diff vs emu still 0% — and Shift+L
+gave 1 px/edge.
+
+### Sub-pixel horizontal — pass 2 (post-shift fixes anchored entities)
+
+User: *"when I'm using the shift trick, when I get close to a
+miner, the miner move away from the ship as a side effect"*.
+
+Trace: PaintLevel was shifting the cave by `subPx` pixels but
+every entity draw (`Workers.DrawPlayfield`, `EnemyShipTable.Draw`,
+`Boss.Draw`, `EnemyShots.Draw`, decor entities) computed
+`sx = offset * 8` (byte-aligned).  So workers stayed pinned to
+the byte grid while the level shifted underneath = visual
+"miner drifts away from the player by 1 px each Shift+L press".
+
+Fix: reverted `PaintLevelAtOffset` to byte-aligned only, and
+moved the sub-byte shift to a single post-process pass over the
+WHOLE playfield bitmap (`y=0..127`):
+
+  ApplyPlayfieldSubPixelShift(fb, SubPixelScroll)
+  → for each scanline: out[col] = (in[col] << subPx)
+                                | (in[col+1] >> (8-subPx))
+
+Called in `DrawPlaying` AFTER all entities + level paint, BEFORE
+the player draw — so the cave + every entity slide together and
+the player remains pinned to screen X=128.  Diff vs emu still 0%
+(post-shift is a no-op while `SubPixelScroll == 0`, which is
+every non-Shift frame).

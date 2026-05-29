@@ -402,31 +402,46 @@ public sealed class World
         //   - Non-Shift: every frame Horizontal is held, advance
         //     ScrollOffsetX by 1 byte = 8 px (faithful $D9C8 → $DA23).
         //   - Shift: on each Horizontal press-edge, advance by 1 PIXEL
-        //     using the port-only sub-byte composition in
-        //     PaintLevelAtOffset.  SubPixelScroll wraps 0..7; on
-        //     overflow it bumps ScrollOffsetX by 1 byte.
+        //     by bumping SubPixelScroll (0..7).  When it wraps it bumps
+        //     ScrollOffsetX by 1 byte.  The level is always painted
+        //     byte-aligned; the sub-byte shift is applied in
+        //     DrawPlaying as a post-process over the WHOLE playfield
+        //     (after entities draw, before player) so workers / ships /
+        //     bullets stay anchored to the cave instead of lagging by
+        //     SubPixelScroll pixels.
         if (Fuel > 0 && MiniMap.Buffer.Length > 0)
         {
             int dir = FacingLeft ? -1 : 1;
-            bool doPaint = false;
+            bool repaintLevel = false;
             if (input.Shift)
             {
                 if (input.Horizontal && !_prevHorizontal)
                 {
                     SubPixelScroll += dir;
-                    if (SubPixelScroll >= 8) { SubPixelScroll -= 8; ScrollOffsetX = (ScrollOffsetX + 1) & 0xFF; }
-                    else if (SubPixelScroll < 0) { SubPixelScroll += 8; ScrollOffsetX = (ScrollOffsetX - 1) & 0xFF; }
-                    doPaint = true;
+                    if (SubPixelScroll >= 8)
+                    {
+                        SubPixelScroll -= 8;
+                        ScrollOffsetX = (ScrollOffsetX + 1) & 0xFF;
+                        repaintLevel = true;
+                    }
+                    else if (SubPixelScroll < 0)
+                    {
+                        SubPixelScroll += 8;
+                        ScrollOffsetX = (ScrollOffsetX - 1) & 0xFF;
+                        repaintLevel = true;
+                    }
+                    // Sub-pixel-only step: no level repaint needed;
+                    // post-shift in DrawPlaying does the visible move.
                 }
             }
             else if (input.Horizontal)
             {
                 ScrollOffsetX = (ScrollOffsetX + dir) & 0xFF;
-                doPaint = true;
+                repaintLevel = true;
             }
-            if (doPaint)
+            if (repaintLevel)
             {
-                Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX, SubPixelScroll);
+                Scroll.PaintLevelAtOffset(Tiles, MiniMap.Buffer, ScrollOffsetX);
             }
         }
 
@@ -1124,6 +1139,32 @@ public sealed class World
         MiniFont.DrawCentered(fb, 96, "PRESS FIRE", 0x47);
     }
 
+    /// <summary>Shift every scanline of the playfield (y=0..127) left
+    /// by <paramref name="subPx"/> pixels (0..7).  Used by the Shift
+    /// precision modifier so the visible cave + entities slide by
+    /// 1 pixel per Shift+Horizontal edge.  In-place left-to-right —
+    /// each output byte = `(byte_at_col << subPx) | (byte_at_col+1 >> (8-subPx))`.
+    /// Column 31 has no right neighbour; bits 0..subPx-1 fill with 0.
+    /// No-op when subPx is 0.</summary>
+    private static void ApplyPlayfieldSubPixelShift(Framebuffer fb, int subPx)
+    {
+        subPx &= 7;
+        if (subPx == 0) return;
+        int rightShift = 8 - subPx;
+        for (int y = 0; y < 128; y++)
+        {
+            for (int col = 0; col < 32; col++)
+            {
+                int addr = Framebuffer.BitmapAddress(col * 8, y);
+                byte cur = fb.Bitmap[addr];
+                byte next = col + 1 < 32
+                    ? fb.Bitmap[Framebuffer.BitmapAddress((col + 1) * 8, y)]
+                    : (byte)0;
+                fb.Bitmap[addr] = (byte)((cur << subPx) | (next >> rightShift));
+            }
+        }
+    }
+
     private void DrawPlaying(Framebuffer fb)
     {
         DrawLevelScenery(fb);
@@ -1191,6 +1232,18 @@ public sealed class World
             Boss.Draw(fb, ScrollOffsetX, EnemyShipTable.SpriteBanks, EnemyShipTable.Cycle);
             Workers.DrawPlayfield(fb, ScrollOffsetX);
             EnemyShots.Draw(fb, ScrollOffsetX);
+
+            // Port-only sub-pixel scroll: now that level + entities are
+            // all painted into the playfield, shift the WHOLE 256×128
+            // top half left by SubPixelScroll pixels (0..7) so the
+            // cave + workers + ships move together by the precision
+            // amount.  Player is drawn AFTER this shift, so it stays
+            // at fixed screen X=128.  Bug it fixes: previously the
+            // level was painted with sub-byte composition but
+            // entities were drawn byte-aligned, so workers appeared
+            // to "move away" from the ship by SubPixelScroll pixels
+            // each Shift+L press.
+            ApplyPlayfieldSubPixelShift(fb, SubPixelScroll);
         }
 
         bool hidePlayer = State == GameState.Dying

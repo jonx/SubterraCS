@@ -213,16 +213,30 @@ port aims for literal 1-pixel control, so we add an extension:
 - `World.SubPixelScroll` (0..7) tracks the pixel offset within
   the current byte.  Total world-pixel X =
   `ScrollOffsetX * 8 + SubPixelScroll`.
-- `LevelScroll.PaintLevelAtOffset` takes an optional
-  `subPixelOffset`; when non-zero, each output byte composes
-  bits from TWO adjacent source tiles via a bit-shift
-  (`composed = (left << sub) | (right >> (8 - sub))`).  When
-  `subPixelOffset == 0` it's the original byte-aligned path,
-  so the diff-vs-emu harness sees no change.
 - Shift+Horizontal edge advances `SubPixelScroll` by 1; on
-  overflow it wraps and bumps `ScrollOffsetX`.
-- LoadLevel resets both `ScrollOffsetX` and `SubPixelScroll`
+  overflow it wraps and bumps `ScrollOffsetX`, which triggers a
+  fresh `PaintLevelAtOffset` (byte-aligned, cassette-faithful).
+- `LoadLevel` resets both `ScrollOffsetX` and `SubPixelScroll`
   to 0.
+- `DrawPlaying` applies a post-shift over the **entire playfield
+  bitmap** (`y=0..127`) after the level + every entity has been
+  drawn — `ApplyPlayfieldSubPixelShift(fb, SubPixelScroll)`.
+  Each scanline is bit-rotated left by `subPx` pixels in one
+  pass (`out[col] = (in[col] << subPx) | (in[col+1] >> (8-subPx))`).
+  Player is drawn AFTER this shift so it stays at fixed
+  screen X=128.
+
+**Why post-shift instead of compose-during-paint?**  An earlier
+attempt did the sub-byte composition inside `PaintLevelAtOffset`
+only, which shifted the LEVEL by 1 px but left workers / ships /
+bullets / decor entities at byte-aligned positions.  Result: as
+the user pressed Shift+L the level shifted but workers stayed
+put, looking like "the miner moves away from the ship".  Doing
+the shift on the composite playfield bitmap fixes that — the
+cave + all entities shift together.  The player is the only thing
+exempted (drawn after the shift), preserving the "ship stays at
+fixed screen X" invariant.
 
 Non-Shift L still uses the cassette's byte-aligned 8 px/frame
-path — sub-pixel composition is gated on `Shift` being held.
+path.  `SubPixelScroll` stays 0 in normal play, so the post-shift
+is a no-op — diff-vs-emu unaffected (verified 0% at f100/f300).

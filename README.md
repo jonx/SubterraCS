@@ -297,28 +297,76 @@ need to look in here.
 
 ## The native port
 
-There is now a **second, emulator-free C# port** alongside the
-Avalonia-wrapping `Subterra.Game`. It lives in
-[`native/`](native/) — a standalone three-project solution
+A **second, emulator-free C# port** lives alongside the
+Avalonia-wrapping `Subterra.Game`.  It's in [`native/`](native/) —
+a standalone three-project solution
 ([`SubterraCS.slnx`](native/SubterraCS.slnx)) with a hand-rolled
 SDL2 wrapper (~250 LoC of P/Invokes, no NuGet packages), the four
 sprite-blitters ported as C# methods, the entity / spawn / level
 systems re-implemented natively, and a **procedural level
 generator** that takes over once the original's six pages have
-been exhausted — giving infinite seeded levels keyed on depth.
+been exhausted.  As of RE-LOG §55, every gameplay subsystem from
+level-load through death has been disasm'd, documented in
+[`docs/disasm/`](docs/disasm/), and ported faithfully — verified by a
+0% diff-vs-emu at f100 and f300 (title + early frames).
 
 <p align="center">
-  <img src="renders/native-headless-f00525_20260528-013851.png" alt="Native C# port — gameplay frame showing green stalactites and red lava droplets falling, magenta cave-roof formations, player Stryker mid-screen, HUD reading DEPTH:002 SCORE:00275" width="384"/><br/>
-  <em>A frame from the native port — no emulator, no Avalonia,
-  no Z80 in sight; just SDL2 + ~1.2k lines of game C#. See
-  <a href="native/README.md">native/README.md</a>.</em>
+  <img src="renders/comparison-emu-vs-native_20260529-023449.png" alt="Side-by-side comparison: cassette emulator (left) and native C# port (right), both showing the same cave silhouette with tree, hill profile, HUD bars, and mini-map" width="640"/><br/>
+  <em>EMU (left) vs native C# port (right) at the same level-1
+  gameplay state.  Same cave silhouette, tree, hill profile, and
+  HUD bars — produced by completely independent code paths: a
+  Z80 running the 1985 binary on the left, ~1.5k lines of game
+  C# on the right.</em>
 </p>
+
+Recent native port milestones (full narrative in
+[`docs/RE-LOG.md`](docs/RE-LOG.md), per-subsystem ASM traces in
+[`docs/disasm/`](docs/disasm/)):
+
+- **Damage** ([damages.md](docs/disasm/damages.md)) — `$DCF5`
+  XOR-overlap shadow-carry flag is the cassette's PRIMARY damage
+  trigger; `$DD4D` coord walker is INSTANT-DEATH; `$DDC4` has no
+  per-hit invincibility.  Port has all three ($DCF5 + $EB7A/$EDC0
+  address-match + $DD4D coord walker), with the artifact
+  `SetInvincible(20)` cooldown removed.
+- **Spawn-in + slide-in** ([spawn-in.md](docs/disasm/spawn-in.md))
+  — `$DB1A` 16-row scroll-and-paint slide-in, `$E135` dots-converge
+  (8 particles, 40 frames), correct level-start sequencing per
+  `$F6F2..$F6CB` and respawn loop at `$F6C7..$F6EF`.  Particles
+  drawn as 2×2 pixel XOR blocks (port of `$E1C0`'s 4-corner
+  `$E1DE` calls), not the full 8×8 attribute cell my first pass
+  used.
+- **Assets** ([assets.md](docs/disasm/assets.md)) — full
+  inventory of every byte in `assets/extracted/`: cassette
+  address, byte layout, consumer, port loader.  Per-level
+  cave colour wired through `level-speed-e57c.bin` (each level
+  now has its own attribute byte — white, green, magenta,
+  yellow, red, blue).
+- **Shift precision modifier (port-only)**
+  ([input.md](docs/disasm/input.md) §"Port-only addition") — hold
+  Shift while pressing Q/A/L for edge-triggered single-step
+  movement.  Vertical = 1 px altitude per edge.  Horizontal = 1
+  px scroll per edge via a post-shift over the whole playfield
+  bitmap so workers + ships + bullets all stay anchored to the
+  cave during sub-pixel scrolling.  The cassette has no
+  equivalent (`$DA23`/`$DA62` are byte-aligned at 8 px/frame).
 
 ```sh
 cd native
 dotnet run --project SubterraCS.Game           # interactive SDL2 mode
 dotnet run --project SubterraCS.Game -- --headless --frames=600   # headless test
 ```
+
+Controls (native port):
+
+- **Q / A** — thrust up / down
+- **L** — scroll horizontally in current facing
+- **Left / Right** — face left / right + scroll
+- **Enter / Space** — fire
+- **Shift** (port-only) — precision modifier: each direction key
+  fires ONE pixel per press-edge instead of accelerating
+- **F11** — toggle fullscreen, **P** — pause, **R** — reset,
+  **Esc** — quit
 
 ## Is a full C# port realistic?
 
