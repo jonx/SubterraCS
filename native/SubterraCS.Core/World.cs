@@ -745,7 +745,14 @@ public sealed class World
             b.X += b.DX;
             b.Length--;
             if (b.Length == 0 || (uint)b.X >= 256) { b.Alive = false; continue; }
-            // Collision against ENEMY SHIPS — player laser kills ships.
+            // Laser vs ENEMY SHIPS — port of $E9F0: in the cassette,
+            // each ship's own blitter checks the screen bytes under it
+            // for the beam pattern $EF before drawing; a match kills
+            // the ship, awards the remaining alt-B counter ($0F = 15
+            // points, $E95A), fires a 50%-random kill jingle ($F958)
+            // and an 8-particle explosion ($EDDB).  We approximate the
+            // pixel test with the beam-byte/ship-byte overlap our
+            // projectile model exposes; score/effects are faithful.
             int beamByte = (b.X >> 3);
             int beamWorldByte = (ScrollOffsetX + beamByte) & 0xFF;
             for (int i = 0; i < EnemyShipTable.Slots.Length; i++)
@@ -757,29 +764,28 @@ public sealed class World
                     ship.Status = 0;     // dead
                     ship.Sub = 0x80;      // 128-frame respawn delay
                     b.Alive = false;
-                    Score += 50;
-                    Sfx.Trigger(SfxKind.Explode);
+                    Score += 15;          // remaining alt-B ($E95A LD B,$0F)
+                    KillBurst(((ship.X - ScrollOffsetX) & 0xFF) * 8, ship.Y);
+                    if (_rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);  // $F958 50% gate
                     break;
                 }
             }
             if (!b.Alive) continue;
 
-            // Player laser vs BOSS — 3 hits to kill (16x8 boss is
-            // roughly 2x the size of a normal ship).
+            // Laser vs BOSS — same $E9F0 mechanism, alt-B = $14: a
+            // SINGLE beam contact kills it (score += 20), it
+            // deactivates ($EC6C randomize + $EE7C=0) and can respawn
+            // later; $EE83 counts spawns and ≥10 drops the
+            // alternate-frame throttle (handled in BossEntity).
             if (Boss.Active
                 && (Boss.X == beamWorldByte || Boss.X + 1 == beamWorldByte)
                 && Math.Abs(Boss.Y - b.Y) < 12)
             {
-                Boss.LifetimeCheck++;     // re-use as hit counter
                 b.Alive = false;
-                Score += 25;
-                Sfx.Trigger(SfxKind.Hit);
-                if (Boss.LifetimeCheck >= 3)
-                {
-                    Boss.Active = false;
-                    Score += 500;
-                    Sfx.Trigger(SfxKind.Explode);
-                }
+                Score += 20;              // remaining alt-B ($EC53 LD B,$14)
+                KillBurst(((Boss.X - ScrollOffsetX) & 0xFF) * 8, Boss.Y);
+                if (_rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);
+                Boss.Kill(_rng);          // deactivate + randomize, respawnable
                 continue;
             }
 
@@ -862,6 +868,17 @@ public sealed class World
         // (PlayerX, PlayerY) we just use those.  Level colour (the
         // original's $E57B) drives the first paint of the alternation.
         Explosion.Trigger(PlayerX, PlayerY, 0x44);
+    }
+
+    /// <summary>Port of <c>$EDDB</c> — the 8-particle burst fired when
+    /// a ship or the boss dies to the laser (see laser.md §$E9F0).
+    /// Reuses the Explosion particle system (the cassette's $EDDB uses
+    /// the same paint/step/paint pattern family at a $EEC2 scratch).</summary>
+    private void KillBurst(int screenX, int screenY)
+    {
+        // Don't clobber the spawn-in animation if one is running.
+        if (Explosion.Spawning) return;
+        Explosion.Trigger(screenX, screenY, Scroll.LevelColour);
     }
 
     private void SpawnExplosionAt(int x, int y)

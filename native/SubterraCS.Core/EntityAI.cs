@@ -67,7 +67,9 @@ public static class EntityAI
     // the $DCF5 XOR pixel-overlap, and are never consumed.
 
     /// <summary>Points awarded for shooting this entity.
-    /// PORT-ONLY: the cassette's laser hits nothing (laser.md).</summary>
+    /// PORT-ONLY: System-A decor draws by overwrite ($F2BC) with no
+    /// $EF beam check, so the cassette's laser can't hurt DECOR —
+    /// ships/boss are different, see laser.md §$E9F0.</summary>
     public static int ShootScore(Kind kind) => kind switch
     {
         Kind.Worker      =>   0,   // do not shoot the workers!

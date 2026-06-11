@@ -162,17 +162,62 @@ beam's own colour (`(IX+$00) AND $47`) into the attribute —
 otherwise the cell keeps its colour.  A colour-clash-avoidance
 trick: the beam only recolours cells it has to itself.
 
-**Consequence — the cassette's laser hits NOTHING.**  There is no
-entity-match logic anywhere in `$DF31`/`$DF7C`/`$DFA1`, and a
-full-binary search finds no `RES 7,(IX+d)` instruction at all —
-nothing ever clears a ship's alive bit at `$E597+2`.  Enemy
-ships are unkillable in the original game; the laser is purely
-visual (it stops at scenery at fire time per `$DEDA`, and gets
-overdrawn by sprites, but damages nothing).
+**`$DF31` itself contains no hit logic — but the laser DOES kill.**
+(An earlier revision of this file concluded "the laser hits
+nothing"; that was wrong — see the correction below.)  The kill
+mechanism is INVERTED from what we searched for: it lives in the
+TARGETS' draw code, not in the beam's.
 
-The C# port's laser-kills-ships (+50 score, respawn delay) and
-laser-vs-boss (3 hits) are **port-only embellishments** — now
-confirmed as such by this trace rather than suspected.
+### `$E9F0` — the kill check inside the ship/boss blitter
+
+`$E9AC` (the ship + boss self-draw) calls `$E9F0` per sprite
+column.  Before drawing, it walks the 8 destination screen bytes:
+
+```
+E9F8  LD B,$08
+E9FA  INC (HL); DEC (HL); JR Z,$EA1D    ; empty byte → skip
+E9FE  LD A,(DE); CP $EF                  ; screen byte == $EF (BEAM)?
+EA01  JR NZ,$EA1D
+EA03  EXX; PUSH BC
+EA05  LD B,$00                           ; ★ alt-B = 0 → mark DEAD
+EA07  PUSH HL; EXX
+EA09  CALL $F958                         ; 50%-random kill jingle ($F96A msg)
+EA0C  POP DE; POP BC
+EA0E  LD C,B; LD B,$00
+EA11  LD HL,($E459); ADD HL,BC
+EA15  LD ($E459),HL                      ; ★ SCORE += remaining alt-B
+EA18  CALL $EDDB                         ; ★ 8-particle death explosion
+```
+
+If any screen byte under the entity equals `$EF` — the beam
+pattern — the entity dies: alt-B (the per-entity life counter the
+caller loaded — `$0F` for ships at `$E95A`, `$14` for the boss at
+`$EC53`) is zeroed, the score gains that remaining counter
+(≈15 for a ship, ≈20 for the boss), a kill jingle plays half the
+time, and `$EDDB` runs an 8-particle explosion at the kill site
+(`$EEC2` scratch, 31 paint/step iterations — same family as the
+player-death `$DBDA`).
+
+The boss's caller then sees alt-B == 0 at `$EC66` and runs the
+`$EC6C` reset: randomize X/Y, deactivate (it can respawn later —
+`$EE83` counts the spawns, and ≥10 disables the alternate-frame
+throttle, making subsequent bosses relentless).
+
+So the design mirrors the player-damage system in `$DCF5`: **the
+bitmap IS the collision system**.  The player checks "did I draw
+onto something?"; the enemies check "is a beam byte where I'm
+about to draw?".  Nothing ever compares coordinates.
+
+### Correction history
+
+The earlier "laser hits nothing" verdict came from (a) finding no
+entity-match logic in `$DF31` — true but irrelevant, and (b) a
+search for `RES 7,(IX+d)` finding nothing — also true but
+irrelevant: ship death is signalled through the EXX-bank B
+register and written back to the slot status by the AI loop, not
+by an indexed RES instruction.  Lesson recorded in RE-LOG §62:
+absence of one specific opcode pattern is not absence of the
+behaviour.
 
 ## Per-frame update — `$DEF0..$DF1B`
 

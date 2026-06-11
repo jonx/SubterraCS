@@ -121,12 +121,31 @@ resists rapid direction changes (so it doesn't jitter when the
 player passes through its column), and tracks Y only when in the
 same column.
 
-## Visual
+## Visual — the boss has NO sprite bank
 
-Drawn via `$E9AC` (the same blit used by ships) — 16×8 area, with
-attribute from the level color.  The sprite data location for the
-boss-specific frames is TBD (different from `$E5DB` which is for
-regular ships).
+Drawn via `$E9AC` (the same blit used by ships) — but the sprite
+SOURCE pointer (alt-DE, loaded at `$EC50`) is `$EE8E`: **the
+boss's own extended-state block**.  The bytes drawn are whatever
+`$EC9A` mirrored there — the current per-cycle speed byte written
+twice (`LD HL,$EE8F; LD (HL),A; INC HL; LD (HL),A`) plus
+neighbouring state.  The boss is a procedural glitch-creature:
+horizontal bands that shift as its speed phase cycles.  No sprite
+bank exists for it — the earlier "TBD sprite location" is
+resolved as "there isn't one".
+
+## Death — the `$EC66` alt-B test (laser kill)
+
+`$EC53` loads alt-B = `$14` (20).  During the two `$E9AC` blit
+calls, `$E9F0` checks each destination byte for the laser pattern
+`$EF`; on a hit it ZEROES alt-B, adds the remaining counter to
+the score (≈20 for the boss), fires the 50%-random kill jingle
+(`$F958`) and the 8-particle explosion (`$EDDB`).  Back in
+`$EC4C`, `$EC66` sees alt-B == 0 and runs `$EC6C`: randomize
+X/Y, deactivate (`$EE7C` = 0).  The boss can then RESPAWN when
+the `$EC10` gates pass again — `$EE83` counts the spawns, and at
+≥10 the alternate-frame throttle is dropped (relentless bosses
+for the rest of the level).  Full trace in
+[laser.md](laser.md) §`$E9F0`.
 
 ## C# port
 

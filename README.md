@@ -156,14 +156,19 @@ A few highlights from the journey:
   the data before. See
   [title-menu.md](docs/disasm/title-menu.md) and
   [RE-LOG §59](docs/RE-LOG.md).
-* **Level 0 is a bug, and the laser is a placebo.** Two
-  discoveries from the same disasm sessions: the level-0 record
-  pointer sits 3 bytes out of alignment (the page after level 5
-  would draw garbage and corrupt RAM — see
-  [entities.md](docs/disasm/entities.md)), and nothing in the
-  binary can ever kill an enemy ship — the player's laser hits
-  nothing in the original game
-  ([laser.md](docs/disasm/laser.md)).
+* **The bitmap IS the collision system.** Nothing in this game
+  ever compares coordinates for damage: the player takes hits
+  when his XOR-draw lands on non-zero pixels (`$DCF5`), and
+  enemy ships/the boss DIE when their own draw finds the laser
+  beam pattern `$EF` under them (`$E9F0` — including a kill
+  jingle and an 8-particle explosion). We got this wrong once
+  ("the laser hits nothing") before finding the check hiding in
+  the *targets'* blitter — the correction story is in
+  [RE-LOG §62](docs/RE-LOG.md) and [laser.md](docs/disasm/laser.md).
+* **Level 0 is a bug.** The level-0 record pointer sits 3 bytes
+  out of alignment — the page after level 5 would draw garbage
+  and corrupt RAM ([entities.md](docs/disasm/entities.md)). The
+  port wraps 5 → 1 instead.
 
 ---
 
@@ -443,10 +448,12 @@ format decoding — are done; see
   finish the feature.
 
 (Closed since this list was last trimmed: level-0 decoded — it's
-a data bug in the original, port wraps 5 → 1; `$DF31` decoded —
-the cassette's laser hits nothing; native title menu honours keys
-1–5; the Editor gained a Map tab that can edit level tiles;
-authentic cassette SFX play in the native port.)
+a data bug in the original, port wraps 5 → 1; the laser-kill
+mechanism found in `$E9F0` — the targets' own draw checks for the
+beam pattern; entities proven stationary via the full `$F1EF`
+trace; native title menu honours keys 1–5; the Editor gained a
+Map tab that can edit level tiles; authentic cassette SFX play in
+the native port.)
 
 ---
 

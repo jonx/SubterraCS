@@ -3330,3 +3330,47 @@ Port corrections (faithfulness fixes, all in one commit):
 entities.md upgraded partial → done with the verdict + the
 flicker quirk; the collision matrix's "(no?)" decor cell is now
 "`$DCF5` XOR overlap only".
+
+## 62. CORRECTION — the laser DOES kill; §58 was wrong
+
+While filling boss.md's gaps I disasm'd `$E9AC`/`$E9F0` (the
+ship + boss blitter) end-to-end and found the kill mechanism §58
+declared nonexistent.  It was hiding in the TARGETS' draw code:
+
+```
+E9F0  (per sprite column, before drawing)
+E9FA  INC (HL); DEC (HL); JR Z,skip     ; empty screen byte
+E9FE  LD A,(DE); CP $EF; JR NZ,skip    ; beam pattern under us?
+EA05  LD B,$00 (EXX bank)               ; zero alt-B = DEAD
+EA09  CALL $F958                        ; 50%-random kill jingle
+EA11  score += remaining alt-B          ; ships ≈15, boss ≈20
+EA18  CALL $EDDB                        ; 8-particle explosion
+```
+
+alt-B is each entity's life counter: `$0F` per ship tick
+(`$E95A`), `$14` for the boss (`$EC53`).  The boss's `$EC66`
+alt-B test → `$EC6C` deactivate-and-randomize is the death path;
+`$EE83` counts spawns and ≥10 drops the alternate-frame throttle.
+Bonus: the boss has NO sprite bank — its alt-DE source is
+`$EE8E`, its own state block, so it renders as procedural bands
+of its current speed byte.
+
+Why §58 got it wrong: (a) `$DF31` genuinely has no hit logic —
+true, irrelevant; (b) "no `RES 7,(IX+d)` exists" — true,
+irrelevant: death is signalled through the EXX-bank B register,
+not an indexed RES.  **Lesson: absence of one opcode pattern is
+not absence of a behaviour.**  The design is symmetric with
+`$DCF5` player damage: the bitmap IS the collision system — the
+player asks "did I draw onto something?", the enemies ask "is a
+beam byte where I'm about to draw?".  Nobody compares
+coordinates, ever.
+
+Corrected: laser.md (full `$E9F0` trace + correction history),
+collision-matrix.md, boss.md (death + no-sprite-bank), README
+highlight.  Port updated to match: ship kill scores 15 and boss
+20 (the remaining-counter values) instead of the invented +50/3-
+hit rule; single laser touch kills the boss which deactivates
+and can respawn (spawn counter → relentless after 10); ship
+kills burst into particles; the kill jingle (captured as
+`shipkill.wav` from the `$F962` entry, skipping the random gate)
+plays half the time.

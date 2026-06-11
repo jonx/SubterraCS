@@ -139,24 +139,21 @@ Per-frame (`$DF31`) checks each beam byte for `(HL) != $EF` —
 if scenery has overdrawn the beam, expire that segment.  See
 [laser.md](laser.md).
 
-### Player-laser-vs-ENEMY-SHIP/BULLET/BOSS — RESOLVED: none exists
+### Player-laser-vs-ENEMY-SHIP/BOSS — RESOLVED: `$E9F0` in the TARGET's draw
 
-`$DF31` is fully decoded (see [laser.md](laser.md)): it is the
-beam erase/redraw bracket around the horizontal-scroll routines
-(its only callers are `$DA25`/`$DA49`/`$DA64`/`$DA88`, with C=0
-before the bitmap shift and C=$EF after), and `$DFA1`/`$DF7C`
-are attribute management (restore level colour / paint beam
-colour into cells the beam has to itself).  No entity-match
-logic exists, and a full-binary opcode search finds no
-`RES 7,(IX+d)` — nothing ever clears a ship's alive bit at
-`$E597+2`.  **The cassette's laser damages nothing; enemy ships
-are unkillable in the original game.**
+(An earlier revision concluded "the laser hits nothing" from the
+`$DF31` trace alone — wrong; corrected.)  The kill logic lives in
+the ships'/boss's own blitter: `$E9AC → $E9F0` checks each screen
+byte under the sprite for the beam pattern `$EF` before drawing.
+On match the entity dies (alt-B life counter zeroed), the score
+gains the remaining counter (≈15 ship / ≈20 boss), a kill jingle
+plays 50% of the time (`$F958`), and an 8-particle explosion runs
+(`$EDDB`).  Same philosophy as `$DCF5` player damage: the bitmap
+IS the collision system.  Full trace in [laser.md](laser.md).
 
-The C# port's laser-vs-ship (+50 score, respawn delay),
-laser-vs-boss (3 hits), and laser-vs-decor-entity (HP/score)
-interactions are deliberate port-only embellishments — kept
-because a laser that hits nothing reads as broken to a modern
-player.
+Laser-vs-DECOR remains port-only (System-A entities draw by
+overwrite via `$F2BC`, which has no `$EF` check — they erase the
+beam instead of dying to it).
 
 ## C# port status
 

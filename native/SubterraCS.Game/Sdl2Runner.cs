@@ -75,7 +75,7 @@ internal static class Sdl2Runner
                             SfxKind.Hit or SfxKind.Damage => "hit",
                             SfxKind.Pickup                => "pickup",
                             SfxKind.LevelUp               => $"fanfare{Math.Clamp(world.Depth, 1, 5)}",
-                            SfxKind.Explode               => "bossalert",
+                            SfxKind.Explode               => "shipkill",
                             _                             => null,
                         };
                         if (wav is not null && SfxBank.TryGet(wav, out var pcm))

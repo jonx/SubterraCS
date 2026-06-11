@@ -347,7 +347,30 @@ public sealed class BossEntity
             Sub = 0;
             return;
         }
+        // $EC32..$EC41: until 10 spawns ($EE83 ≥ $0A) the boss only
+        // ticks every other frame; after that the throttle drops and
+        // it becomes relentless.  $EC45: ~10% chance to double-tick.
+        if (KillCount < 0x0A)
+        {
+            AltGate ^= 1;
+            if (AltGate == 0) return;
+        }
         TickActive(scrollCursor, playerByteX, playerY, rng);
+        if (rng.Next(0, 256) < 0x16) TickActive(scrollCursor, playerByteX, playerY, rng);
+    }
+
+    private byte AltGate;   // $EE82 alternate-frame toggle
+
+    /// <summary>Port of <c>$EC6C</c> — the laser-kill reset reached
+    /// when $E9F0 zeroes the boss's alt-B life counter: randomize
+    /// X/Y, deactivate.  The boss can respawn when the $EC10 gates
+    /// pass again; <see cref="KillCount"/> (incremented at spawn)
+    /// eventually drops the alternate-frame throttle above.</summary>
+    public void Kill(Random rng)
+    {
+        Y = (byte)rng.Next(0, 0x7C);
+        X = (byte)rng.Next(0, 256);
+        Active = false;
     }
 
     /// <summary>Port of <c>$EC4C</c>: boss movement + draw.  The

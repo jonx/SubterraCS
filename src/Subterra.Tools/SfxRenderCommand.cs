@@ -42,6 +42,9 @@ internal static class SfxRenderCommand
         // Follin-queued messages: entry queues via $FA0A, then the
         // $FA32 player tick consumes the $FF51 buffer.
         new("bossalert",  0xF8F9, Queued: true),
+        // Ship/boss laser-kill jingle ($F958 entry has a 50% random
+        // gate at $F95B; enter at $F962 to capture deterministically).
+        new("shipkill",   0xF962, Queued: true),
         new("pickup",     0xF90E, Queued: true),
         new("warning",    0xF93A, Queued: true),
         new("fuellow",    0xF8B4, Queued: true),
