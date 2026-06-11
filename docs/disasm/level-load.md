@@ -36,10 +36,10 @@ F722  32 85 E5    LD ($E585),A           ; speed shift = 1
 
 F725  CD C6 E2    CALL $E2C6             ; load per-level pointers
 F728  CD 47 E3    CALL $E347             ; clear bottom half + paint HUD
-F72B  CD 9B E2    CALL $E29B             ; ???
-F72E  CD 9F F9    CALL $F99F             ; ???
+F72B  CD 9B E2    CALL $E29B             ; clear live entity tables (below)
+F72E  CD 9F F9    CALL $F99F             ; per-level fanfare (sound.md)
 F731  CD 1A DB    CALL $DB1A             ; paint level scenery (see level-paint.md)
-F734  CD 91 F8    CALL $F891             ; ???
+F734  CD 91 F8    CALL $F891             ; blank the player spawn cell (below)
 F737  CD 5D DC    CALL $DC5D             ; player attribute paint
 F73A  C9          RET
 ```
@@ -130,12 +130,16 @@ E2C3  JP $E2FC                                        ; (extends to boss-flag cl
 `$E8A1..` (more state).  Effectively a "fresh start" wipe for
 all moving entities/projectiles when a new level loads.
 
-### `$F891` — clear specific HUD text areas
+### `$F891` — blank the player spawn cell
 
-Called from `$F734`.  Prints a 12-byte stream at `$F89C` that
-amounts to: `PAPER 0; AT 0,15; "  "; AT 1,15; "  "` — blanks
-two pairs of cells in the score/depth area (probably to clear
-stale digits before new ones print).
+Called from `$F734` (and from `$F6CB` right after the `$E135`
+spawn-in).  Prints a 12-byte stream at `$F89C`:
+`PAPER 0; AT 0,15; "  "; AT 1,15; "  "` — blanks the 2×2 char
+block at rows 0–1, cols 15–16.  That is exactly the cell the
+player Stryker occupies at spawn (screen X=120..135, altitude 0),
+so this guarantees the ship XOR-draws onto a clean black
+background — no leftover menu text or scenery to trigger a
+spurious `$DCF5` overlap-collision on frame one.
 
 ### `$F99F` — per-level fanfare
 

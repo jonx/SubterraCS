@@ -47,9 +47,13 @@ public sealed class EnemyShips
 
     /// <summary>Load the 7 ships' (X, Y, status, ?) from the level's
     /// init-data block at <c>$E48D + level*32</c>.  Port of
-    /// <c>$E319</c>'s LDIR — 32 bytes copied = 8 records.  We use 7
-    /// of them (matching the $E597 stride-4 loop count in
-    /// <c>$DD67</c>/<c>$E213</c>); the 8th slot is something else (TBD).</summary>
+    /// <c>$E319</c>'s LDIR — 32 bytes copied = 8 records.  Only 7 are
+    /// ever used: every consumer loop in the cassette ($DD67 walker,
+    /// $E213 mini-map, $E920 AI) iterates 7 slots, and no instruction
+    /// in the binary references the 8th slot's bytes at $E5B3..$E5B6.
+    /// The 8th record (e.g. level 1's `50 58 80 00` — a plausible
+    /// alive ship at X=$50 Y=$58) is dead data: either a cut 8th ship
+    /// or padding so the LDIR length is a round $20.</summary>
     public void LoadFromInit(byte[] initData, int level)
     {
         Reset();

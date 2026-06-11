@@ -208,7 +208,9 @@ RAM footprint after game-init.
 - **Cassette source:** `$E48D..$E54C` (192 bytes = 6 × 32 bytes)
 - **What it is:** per-level enemy-ship init data.  `$E319` LDIRs
   the active level's 32 bytes into `$E597..$E5B6` (the 7-slot
-  ship table, stride 4, plus possible 8th slot of TBD use).
+  ship table, stride 4; the 8th record is dead data — every
+  consumer loop walks 7 slots and nothing in the binary
+  references `$E5B3..$E5B6`).
 - **Format per slot (4 bytes):** `(X, Y, Status, Sub)` —
   matches `EnemyShips.Slots[i]` in the port.
 - **Consumer:** `$F714 CALL $E319` at level-load.

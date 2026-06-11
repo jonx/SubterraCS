@@ -132,8 +132,43 @@ To make the cassette's menu functional in our port, we'd need:
    cosmetic since we don't translate to Spectrum hardware).
 3. After selection, transition to the gameplay state.
 
+## `$FCDB` — the HALL OF FAME screen
+
+Called from the title loop at `$F65A` when NO key on the 1–5 row
+is pressed (idle).  Fully decoded:
+
+```
+FCDB  CALL $E3B2; LD A,$02; CALL $1601    ; channel 2 (screen)
+FCE3  LD DE,$FD9E; LD BC,$004B
+FCE9  CALL $203C                          ; ROM PR-STRING — header text
+FCEC  LD B,$08                            ; 8 score entries
+FCEE  LD HL,$FDF5                         ; scores (8 × 16-bit)
+FCF1  LD DE,$FE0F                         ; names (8 × 8 chars)
+...   per-entry: AT row,col; print name; print score digits
+```
+
+The `$FD9E` header decodes (via Spectrum control codes) to:
+
+```
+S U B T E R R A N E A N
+   S T R Y K E R
+ - HALL  OF  FAME -
+```
+
+Default table — scores at `$FDF5` (LE 16-bit: 2900, 2820, 2422,
+1402, 488, 487, 442, 240) and names at `$FE0F` (8 bytes each):
+
+```
+somebody, Wedge, Biggs, John D., Luke, Porkins, ...
+```
+
+**The default high-score names are Star Wars Red Squadron
+pilots** (Wedge Antilles, Biggs Darklighter, Luke, Porkins) —
+a 1985 easter egg sitting unnoticed in the data all along.
+
 ## Related
 
 - [input.md](input.md) — what `($E461)` points to per scheme
-- `$F973` — probably title-music dispatch (paired with `$F974` game-over tune)
-- `$FCDB` — TBD side effect on `$5B54` system state
+- `$F973` — a plain `RET` (no-op); the actual title-music ticks
+  are `$F64E`/`$F65D CALL $FA32`, gated by `$F637`'s M/N-key
+  check (see [sound.md](sound.md) §Title-music gate)

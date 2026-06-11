@@ -3223,3 +3223,32 @@ cassette" to "confirmed port-only embellishment" in
 collision-matrix.md and laser.md.  Also refreshed the stale
 port-status rows there (ship/bullet scenery probes were done in
 earlier sessions but still marked TODO).
+
+## 59. Three loose ends closed — and a Star Wars easter egg
+
+One disasm pass over the remaining `TBD` markers:
+
+- **The 8th ship-init slot is dead data.**  `$E319` LDIRs $20
+  bytes (8 records) into `$E597`, but every consumer loop —
+  `$DD67` collision walker, `$E213` mini-map, `$E920` AI — walks
+  7 slots, and no instruction in the binary references
+  `$E5B3..$E5B6`.  Level 1's 8th record (`50 58 80 00`, a
+  plausible alive ship at X=$50 Y=$58) is either a cut 8th ship
+  or round-number padding.
+- **`$F891` blanks the player spawn cell.**  Its print stream is
+  `PAPER 0; AT 0,15; "  "; AT 1,15; "  "` — exactly the 2×2 char
+  block the Stryker occupies at spawn (X=120..135, altitude 0).
+  Guarantees the first `$DCF5` XOR-draw lands on clean black, so
+  no spurious overlap-collision on frame one.  (Neat: the spawn
+  safety net and the damage system share the same mechanism.)
+- **`$FCDB` is a HALL OF FAME screen** drawn during the idle
+  title loop: header "S U B T E R R A N E A N / S T R Y K E R /
+  - HALL OF FAME -" at `$FD9E`, 8 scores at `$FDF5` (2900, 2820,
+  2422, 1402, 488, 487, 442, 240) and 8 names at `$FE0F` —
+  **"somebody", "Wedge", "Biggs", "John D.", "Luke", "Porkins"**.
+  The default high-score table is Star Wars Red Squadron, sitting
+  unnoticed in the data for forty years.
+
+Also corrected the `$F973` note in title-menu.md (it's a plain
+`RET`, not a music dispatch) and the `???` annotations in
+level-load.md's `$F6F2` listing.
