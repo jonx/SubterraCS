@@ -207,6 +207,11 @@ video frames, and renders the final screen to `renders/`. Options:
 * `-keys=START[-END]:KEY,...` — schedule key presses by frame number
 * `-stride=N` — also drop a render every N frames into `renders/`
 * `-ram=path/out.bin` — dump the 48 K RAM after the run
+* `-wav=path/out.wav` — render the run's beeper output (port `$FE`
+  bit 4, captured edge-by-edge with CPU-cycle stamps) to a mono
+  16-bit PCM WAV via area sampling — see
+  [disasm/sound.md](disasm/sound.md)
+* `-wav-rate=N` — WAV sample rate in Hz (default 44100)
 
 **Why:** the very first proof that the emulator works correctly. With
 no keys pressed, the snapshot renders identically to the title

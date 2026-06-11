@@ -118,6 +118,14 @@ native/
 │    ├── SpawnSchedule.cs            8 × 4-byte (timer, type, flags)
 │    ├── OriginalLevels.cs           load the six original $E69D schedules
 │    ├── ProceduralGenerator.cs      infinite levels via seeded RNG (depth 6+)
+│    ├── LevelScroll.cs              $DB1A slide-in + $DA23/$DA62 scroll paint
+│    ├── MiniMap.cs                  per-level 16×256 tile buffers + bottom strip
+│    ├── LevelEntities.cs            $F2E8 per-level placement records
+│    ├── EnemyShips.cs               $E920 ship AI + BossEntity ($EC10)
+│    ├── EnemyBullets.cs             $EE9E 6-slot bullet table ($ED01 tick)
+│    ├── WorkerSchedule.cs           $E75D workers + $EFAE pickup zone
+│    ├── Explosion.cs                $DBC8 death + $E135 spawn-in particles
+│    ├── RomFont.cs + ScreenLoader.cs ROM glyphs + .scr blitting
 │    ├── World.cs                    full game state + tick + draw
 │    │                                + GameState machine (Title/Play/Die/Over)
 │    ├── Hud.cs + MiniFont.cs        bottom-strip HUD + hand-built 8×8 font

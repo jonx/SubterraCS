@@ -392,23 +392,29 @@ verification during the port.
 
 ## Roadmap
 
-Known open follow-ups, parked rather than blocking:
+Known open follow-ups, parked rather than blocking.  (Earlier
+roadmap items — beeper audio, native game logic, sprite/level
+format decoding — are done; see
+[docs/disasm/sound.md](docs/disasm/sound.md), the
+[native port section](#the-native-port), and
+[docs/disasm/assets.md](docs/disasm/assets.md).)
 
-* **Sprite composition tables.** The `$B0F4` tile bank is the
-  *vocabulary*; each enemy sprite is composed from a small list of
-  tile indices. `subterra scrwrite-trace` already captures the byte
-  stream — next step is to walk the streams across a frame and
-  match them against the bank to label each game object.
-* **Map / level data viewer.** Once we know the level format, add
-  a "map view" tab to `Subterra.Editor` that lets you scroll a
-  level and edit individual tile cells.
-* **Spectrum beeper audio.** Capture toggles of bit 4 of port
-  `$FE`, convert to PCM samples, and pipe through Avalonia audio so
-  Tim Follin's title tune is preserved.
-* **Native game logic.** Eventually replace the emulator core with
-  a hand-written C# implementation of each game routine, using the
-  extracted asset files. The emulator stays in the repo as a
-  reference and for any routines we don't fully understand yet.
+* **Follin player port.** The native runner plays synthesised SFX;
+  the cassette's actual music only plays through the emulator's
+  beeper capture. A pure C# port of the `$5E88` Follin player
+  consuming `music-5e88.bin` would bring the real tunes to the
+  native port — big job, T-state-sensitive PWM code (see
+  [sound.md §What's NOT done](docs/disasm/sound.md)).
+* **Map / level editor.** The level format is decoded
+  (`level-minimaps.bin` = 16×256 tile indices per level); a "map
+  view" tab in `Subterra.Editor` could scroll a level and edit
+  individual tile cells.
+* **Native title menu.** The native port shows the captured menu
+  screen and waits for FIRE; the cassette's control-scheme
+  selection (keys 1–5 → `$F741` table) isn't reimplemented.
+* **Remaining unknowns.** Level 0's anomalous entity-record set,
+  the 8th ship-init slot at `$E597+28`, and a handful of `TBD`
+  bytes tracked in [docs/MEMORY-MAP.md](docs/MEMORY-MAP.md).
 
 ---
 

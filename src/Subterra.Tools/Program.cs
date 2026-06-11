@@ -85,6 +85,8 @@ internal static class Program
               -keys=START[-END]:KEY,... — press keys on given frames
               -stride=N — drop a render every N frames into renders/
               -ram=path/to/out.bin — dump the 48 K RAM after running
+              -wav=path/to/out.wav — render the beeper audio to WAV
+              -wav-rate=N — WAV sample rate in Hz (default 44100)
 
           emu-peek <48k.rom> <file.z80> <frames> <hexAddr> [hexAddr ...]
             Like run-emu, but prints the byte/word/triple value at

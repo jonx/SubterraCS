@@ -869,6 +869,15 @@ public sealed class World
         HitAccum = 0xFF;
         FuelAccum = 0xFF;
         SetInvincible(100);
+        // Port-only state that must not survive a death: the sub-pixel
+        // scroll offset (dying at SubPixelScroll=5 would otherwise leave
+        // the whole playfield shifted 5 px forever after respawn) and
+        // the latched XOR-overlap flag from the death frame (currently
+        // also masked by the invincibility grace, but reset explicitly
+        // so damage logic never sees a stale pre-death collision).
+        SubPixelScroll = 0;
+        _playerXorOverlap = false;
+        _prevUp = _prevDown = _prevHorizontal = false;
         // Port of cassette's $F6EC CALL $DB1A + $F6EF JP $F6C7 → $E135:
         // every respawn re-runs the scenery slide-in AND the spawn-in
         // dot-converge animation.  Resetting Scroll triggers
@@ -921,6 +930,10 @@ public sealed class World
         ScrollOffsetX = 0;
         SubPixelScroll = 0;
         ScrollProgress = 0;
+        // Same state-boundary hygiene as Respawn: drop any latched
+        // collision flag / edge-detection state from the previous level.
+        _playerXorOverlap = false;
+        _prevUp = _prevDown = _prevHorizontal = false;
         EnemyShots.Reset();
         // Port of $E319's LDIR from $E48D + level*32 → $E597.  Loads
         // the 7 ships' (X, Y, status, sub) into the live table.
@@ -1243,6 +1256,15 @@ public sealed class World
             // entities were drawn byte-aligned, so workers appeared
             // to "move away" from the ship by SubPixelScroll pixels
             // each Shift+L press.
+            //
+            // Note on collision: the player's XOR-overlap probe (in
+            // DrawPlayerXor below) reads the SHIFTED bitmap, so pixel
+            // damage matches what the player visually overlaps — which
+            // is the intended semantics for the precision mode.  The
+            // coord-based death walker still uses world bytes
+            // (ScrollOffsetX + 15) and ignores the sub-pixel part;
+            // at worst that's a ±1 px disagreement, the same slack the
+            // cassette's byte-granular $DD8C window already has.
             ApplyPlayfieldSubPixelShift(fb, SubPixelScroll);
         }
 
