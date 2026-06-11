@@ -255,9 +255,29 @@ public sealed class World
             EnterState(GameState.Title);
     }
 
+    /// <summary>Control scheme picked on the title menu (1..5, 0 =
+    /// FIRE-started).  Cosmetic in the port — host keys map directly
+    /// to GameInput regardless — but recorded so the HUD/debug can
+    /// show it and the menu behaves like the cassette's $F672 poll.</summary>
+    public int SelectedControlScheme { get; private set; }
+
     private void TickTitle(GameInput input)
     {
-        if (input.Fire && StateTicks > 10) StartNewGame();
+        // Port of the cassette's title poll: $F672 reads keys 1..5
+        // ($F7FE row) and starts the game with the matching scheme
+        // from the $F741 table.  FIRE also accepted (port-friendly
+        // default, used by the headless harness).
+        if (StateTicks <= 10) return;
+        if (input.MenuDigit is >= 1 and <= 5)
+        {
+            SelectedControlScheme = input.MenuDigit;
+            StartNewGame();
+        }
+        else if (input.Fire)
+        {
+            SelectedControlScheme = 0;
+            StartNewGame();
+        }
     }
 
     private void TickGameOver(GameInput input)

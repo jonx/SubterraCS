@@ -119,18 +119,19 @@ See [input.md](input.md) for the per-scheme handler details.
 
 ## C# port
 
-Currently `World.TickSplash` advances to title only on FIRE press.
-The `Title` state in our port shows the cassette's title screen
-PNG (extracted as `assets/extracted/title-menu-scr.bin`) and
-waits for FIRE; we don't actually implement scheme selection
-since `Sdl2InputPump` maps host keys directly to `GameInput`.
+`World.TickSplash` advances to title on FIRE.  The `Title` state
+shows the cassette's captured menu screen
+(`assets/extracted/title-menu-scr.bin`) and accepts **keys 1–5**
+(port of the `$F672` poll) or FIRE to start.  The digit pressed
+is recorded in `World.SelectedControlScheme` (1..5; 0 =
+FIRE-started) — cosmetic, since `Sdl2InputPump` maps host keys
+directly to `GameInput` regardless of scheme, but the menu now
+honours the keys it displays.  `GameInput.MenuDigit` carries the
+held digit; the headless harness accepts `"1".."5"` in `--keys=`
+schedules.
 
-To make the cassette's menu functional in our port, we'd need:
-1. Render the menu text using our RomFont + the cassette's
-   print-stream layout.
-2. Poll for keys 1..5 and store which scheme was picked (mostly
-   cosmetic since we don't translate to Spectrum hardware).
-3. After selection, transition to the gameplay state.
+Not ported: the HALL OF FAME idle screen (`$FCDB`, above) and
+live menu-text rendering (we blit the captured screen instead).
 
 ## `$FCDB` — the HALL OF FAME screen
 

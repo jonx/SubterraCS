@@ -60,6 +60,12 @@ public sealed class Sdl2InputPump
                 // instead of accelerating while held.
                 case Sdl2.KeyLShift:
                 case Sdl2.KeyRShift:    _input.Shift = down; break;
+
+                // Title-menu digits 1..5 — the cassette's control-
+                // scheme selection keys (see docs/disasm/title-menu.md).
+                case >= 0x31 and <= 0x35:
+                    _input.MenuDigit = down ? sym - 0x30 : 0;
+                    break;
             }
         }
 

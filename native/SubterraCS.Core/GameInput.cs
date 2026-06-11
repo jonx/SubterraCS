@@ -22,4 +22,12 @@ public sealed class GameInput
     /// keyboard scheme's LEFT key-group; we override that for the
     /// port).</summary>
     public bool Shift;
+
+    /// <summary>Menu digit currently held: 0 = none, 1..5 = the keys
+    /// the cassette's title menu accepts to pick a control scheme
+    /// from the $F741 table and start the game (see
+    /// docs/disasm/title-menu.md).  In the port, scheme choice is
+    /// cosmetic — host keys map directly to this struct — but the
+    /// title screen honours 1..5 as start keys like the original.</summary>
+    public int MenuDigit;
 }
