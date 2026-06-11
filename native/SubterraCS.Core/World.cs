@@ -4,6 +4,7 @@ public enum GameState
 {
     Splash,     // Loading screen (SUBSTRYK.SCR from the cassette)
     Title,      // Title menu — SELECT CONTROL OPTION (1..4)
+    HallOfFame, // Idle-title high-score screen (port of $FCDB)
     Playing,    // The actual game loop
     Dying,      // Brief death animation
     GameOver,   // Game-over screen — press FIRE to retry
@@ -235,6 +236,7 @@ public sealed class World
         {
             case GameState.Splash:     TickSplash(input); return;
             case GameState.Title:      TickTitle(input);  return;
+            case GameState.HallOfFame: TickHallOfFame(input); return;
             case GameState.GameOver:   TickGameOver(input); return;
             case GameState.Dying:      TickDying();        return;
             case GameState.LevelClear: TickLevelClear();   return;
@@ -261,6 +263,14 @@ public sealed class World
     /// show it and the menu behaves like the cassette's $F672 poll.</summary>
     public int SelectedControlScheme { get; private set; }
 
+    /// <summary>Hall of Fame — loaded by Program.cs with a persistence
+    /// path; defaults to the cassette's $FDF5/$FE0F table.</summary>
+    public HallOfFame HallOfFame { get; set; } = HallOfFame.Load("");
+
+    /// <summary>0-based rank the last finished run reached in the
+    /// Hall of Fame, or -1.  Shown on the game-over screen.</summary>
+    public int LastRunRank { get; private set; } = -1;
+
     private void TickTitle(GameInput input)
     {
         // Port of the cassette's title poll: $F672 reads keys 1..5
@@ -277,6 +287,32 @@ public sealed class World
         {
             SelectedControlScheme = 0;
             StartNewGame();
+        }
+        // Idle attract: after ~10 s show the HALL OF FAME, like the
+        // cassette's $FCDB idle-title screen.
+        else if (StateTicks > 500)
+        {
+            EnterState(GameState.HallOfFame);
+        }
+    }
+
+    private void TickHallOfFame(GameInput input)
+    {
+        if (StateTicks <= 10) return;
+        if (input.MenuDigit is >= 1 and <= 5)
+        {
+            SelectedControlScheme = input.MenuDigit;
+            StartNewGame();
+        }
+        else if (input.Fire)
+        {
+            SelectedControlScheme = 0;
+            StartNewGame();
+        }
+        // Cycle back to the menu after ~12 s (attract loop).
+        else if (StateTicks > 600)
+        {
+            EnterState(GameState.Title);
         }
     }
 
@@ -295,6 +331,10 @@ public sealed class World
         Explosion.Reset();
         if (Lives <= 0)
         {
+            // Submit the run to the HALL OF FAME (port-only
+            // persistence on top of the cassette's $FCDB table —
+            // the original had no writable storage).
+            LastRunRank = HallOfFame.Submit("PLAYER", Score);
             EnterState(GameState.GameOver);
             Sfx.Trigger(SfxKind.GameOver);
         }
@@ -922,6 +962,7 @@ public sealed class World
         Lives = 5;
         Score = 0;
         Rescued = 0;
+        LastRunRank = -1;
         // The original's $E587 starts at 0 but $F6F2 INC's it before
         // entering the first playable level — so the first level the
         // player sees uses index 1's records (10 entities, the clean
@@ -1148,6 +1189,7 @@ public sealed class World
         {
             case GameState.Splash:     DrawSplash(fb);  break;
             case GameState.Title:      DrawTitle(fb);   break;
+            case GameState.HallOfFame: DrawHallOfFame(fb); break;
             case GameState.GameOver:   DrawGameOver(fb); break;
             case GameState.LevelClear: DrawLevelClear(fb); break;
             default:                   DrawPlaying(fb); break;
@@ -1413,9 +1455,35 @@ public sealed class World
         MiniFont.DrawCentered(fb, 64, "GAME OVER", 0x42);
         MiniFont.DrawCentered(fb, 80, $"LEVEL {Depth}  SCORE {Score:D5}", 0x46);
         MiniFont.DrawCentered(fb, 88, $"RESCUED {Rescued:D2}", 0x44);
+        if (LastRunRank >= 0)
+        {
+            MiniFont.DrawCentered(fb, 104, $"HALL OF FAME RANK {LastRunRank + 1}", 0x45);
+        }
         if ((StateTicks & 16) < 8)
         {
             MiniFont.DrawCentered(fb, 128, "PRESS FIRE TO RETRY", 0x47);
+        }
+    }
+
+    /// <summary>Port of the cassette's idle-title HALL OF FAME screen
+    /// (`$FCDB` — see docs/disasm/title-menu.md), drawn with our
+    /// MiniFont instead of the ROM print stream.  Letter-spaced
+    /// header like the original's "S U B T E R R A N E A N".</summary>
+    private void DrawHallOfFame(Framebuffer fb)
+    {
+        MiniFont.DrawCentered(fb, 16, "S U B T E R R A N E A N", 0x47);
+        MiniFont.DrawCentered(fb, 26, "S T R Y K E R", 0x47);
+        MiniFont.DrawCentered(fb, 44, "- HALL  OF  FAME -", 0x46);
+        for (int i = 0; i < HallOfFame.Table.Count; i++)
+        {
+            var e = HallOfFame.Table[i];
+            // Alternate the entry colour like the cassette's menu rows.
+            byte attr = (i & 1) == 0 ? (byte)0x45 : (byte)0x44;
+            MiniFont.DrawCentered(fb, 64 + i * 10, $"{e.Name,-8} {e.Score,5}", attr);
+        }
+        if ((StateTicks & 16) < 8)
+        {
+            MiniFont.DrawCentered(fb, 156, "PRESS FIRE OR 1-5 TO PLAY", 0x47);
         }
     }
 }

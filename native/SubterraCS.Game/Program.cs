@@ -51,6 +51,8 @@ internal static class Program
             WorkerScheduleData = assets.WorkerScheduleData,
             FuelStationData = assets.FuelStationData,
             LevelColourData = assets.LevelColourData,
+            HallOfFame = HallOfFame.Load(
+                Path.Combine(RenderTarget.FindRepoRoot(AppContext.BaseDirectory), "hiscores.cfg")),
         };
 
         // Pass music data + captured cassette SFX through to the runner.

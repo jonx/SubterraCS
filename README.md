@@ -150,8 +150,10 @@ A few highlights from the journey:
 * **A forty-year-old Star Wars easter egg.** The idle title screen
   draws a HALL OF FAME (`$FCDB`) whose default high-score names at
   `$FE0F` are *Red Squadron pilots*: "somebody", **Wedge**,
-  **Biggs**, "John D.", **Luke**, **Porkins**. As far as we can
-  tell, nobody had spotted it in the data before. See
+  **Biggs**, "John D.", **Luke**, **Porkins** — plus "Timothy"
+  and "Gof", almost certainly Tim Follin and Peter Gough signing
+  their work. As far as we can tell, nobody had spotted it in
+  the data before. See
   [title-menu.md](docs/disasm/title-menu.md) and
   [RE-LOG §59](docs/RE-LOG.md).
 * **Level 0 is a bug, and the laser is a placebo.** Two
@@ -434,10 +436,11 @@ format decoding — are done; see
   queued sound messages stay silent in the `sfx-render` harness
   (they queue without entering the player); their exact in-game
   trigger context is still TBD.
-* **Hall of Fame.** The cassette's idle-title high-score screen
-  (`$FCDB`, with its Star Wars default names — see
-  [title-menu.md](docs/disasm/title-menu.md)) isn't reimplemented
-  in the native port, and neither is score persistence.
+* **Hall of Fame name entry.** The native port now shows the
+  `$FCDB` idle-title HALL OF FAME (Star Wars defaults included)
+  and persists scores to `hiscores.cfg` — but inserted entries
+  are named "PLAYER"; an on-screen name-entry keyboard would
+  finish the feature.
 
 (Closed since this list was last trimmed: level-0 decoded — it's
 a data bug in the original, port wraps 5 → 1; `$DF31` decoded —

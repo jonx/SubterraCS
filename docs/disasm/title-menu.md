@@ -130,8 +130,18 @@ honours the keys it displays.  `GameInput.MenuDigit` carries the
 held digit; the headless harness accepts `"1".."5"` in `--keys=`
 schedules.
 
-Not ported: the HALL OF FAME idle screen (`$FCDB`, above) and
-live menu-text rendering (we blit the captured screen instead).
+The HALL OF FAME idle screen is ported: after ~10 s idle on the
+title the native port shows `World.DrawHallOfFame` (MiniFont
+rendition of the `$FCDB` layout, seeded with the cassette's
+default table including the Star Wars names), cycling back to the
+menu after ~12 s like an attract loop.  Port-only addition on
+top: a finished run's score is inserted into the table and
+persisted to `hiscores.cfg` at the repo root (the cassette had no
+writable storage), and the game-over screen shows the rank
+achieved.
+
+Not ported: live menu-text rendering (we blit the captured
+screen instead).
 
 ## `$FCDB` — the HALL OF FAME screen
 
@@ -160,12 +170,15 @@ Default table — scores at `$FDF5` (LE 16-bit: 2900, 2820, 2422,
 1402, 488, 487, 442, 240) and names at `$FE0F` (8 bytes each):
 
 ```
-somebody, Wedge, Biggs, John D., Luke, Porkins, ...
+somebody, Wedge, Biggs, John D., Luke, Porkins, Timothy, Gof
 ```
 
 **The default high-score names are Star Wars Red Squadron
 pilots** (Wedge Antilles, Biggs Darklighter, Luke, Porkins) —
 a 1985 easter egg sitting unnoticed in the data all along.
+The last two, "Timothy" and "Gof", are almost certainly the
+developers signing their work: Tim Follin (music) and Peter
+Gough (code).
 
 ## Related
 

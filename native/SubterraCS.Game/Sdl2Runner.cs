@@ -93,7 +93,7 @@ internal static class Sdl2Runner
                     // player only ticks in the title loop ($F64E/$F65D);
                     // the in-game MusicPlayer below is a port-only
                     // embellishment (see sound.md).
-                    if (world.State is GameState.Title or GameState.Splash)
+                    if (world.State is GameState.Title or GameState.Splash or GameState.HallOfFame)
                     {
                         if (!synth.PcmActive && SfxBank.TryGet("titletune", out var tune))
                             synth.PlayPcm(tune);
@@ -102,7 +102,7 @@ internal static class Sdl2Runner
                     {
                         synth.StopPcm();   // leaving title mid-tune
                     }
-                    _titleTuneWasPlaying = world.State is GameState.Title or GameState.Splash;
+                    _titleTuneWasPlaying = world.State is GameState.Title or GameState.Splash or GameState.HallOfFame;
 
                     // Background music ticks slower than SFX, only when
                     // no SFX is currently sounding (let SFX preempt).

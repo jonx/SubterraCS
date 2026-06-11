@@ -3245,9 +3245,10 @@ One disasm pass over the remaining `TBD` markers:
   title loop: header "S U B T E R R A N E A N / S T R Y K E R /
   - HALL OF FAME -" at `$FD9E`, 8 scores at `$FDF5` (2900, 2820,
   2422, 1402, 488, 487, 442, 240) and 8 names at `$FE0F` —
-  **"somebody", "Wedge", "Biggs", "John D.", "Luke", "Porkins"**.
-  The default high-score table is Star Wars Red Squadron, sitting
-  unnoticed in the data for forty years.
+  **"somebody", "Wedge", "Biggs", "John D.", "Luke", "Porkins",
+  "Timothy", "Gof"**.  The default high-score table is Star Wars
+  Red Squadron — plus Tim Follin and Peter Gough signing their
+  work — sitting unnoticed in the data for forty years.
 
 Also corrected the `$F973` note in title-menu.md (it's a plain
 `RET`, not a music dispatch) and the `???` annotations in
