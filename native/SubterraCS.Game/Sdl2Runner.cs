@@ -18,6 +18,8 @@ internal static class Sdl2Runner
     /// When an effect exists here it plays instead of the synth tone.</summary>
     public static SfxWavBank SfxBank { get; set; } = new();
 
+    private static bool _titleTuneWasPlaying;
+
     public static int Run(World world)
     {
         const int FrameMs = 20; // 50 Hz
@@ -84,6 +86,24 @@ internal static class Sdl2Runner
                         var (hz, frames, slide) = SfxQueue.Voice(s);
                         if (hz > 0) synth.Tone(hz, frames, slide);
                     }
+                    // Title music: the AUTHENTIC cassette tune (captured
+                    // via run-emu -wav-from while holding M past the
+                    // $F637 gate), looped while the title is showing.
+                    // The cassette has NO in-game music — the Follin
+                    // player only ticks in the title loop ($F64E/$F65D);
+                    // the in-game MusicPlayer below is a port-only
+                    // embellishment (see sound.md).
+                    if (world.State is GameState.Title or GameState.Splash)
+                    {
+                        if (!synth.PcmActive && SfxBank.TryGet("titletune", out var tune))
+                            synth.PlayPcm(tune);
+                    }
+                    else if (_titleTuneWasPlaying && world.State == GameState.Playing)
+                    {
+                        synth.StopPcm();   // leaving title mid-tune
+                    }
+                    _titleTuneWasPlaying = world.State is GameState.Title or GameState.Splash;
+
                     // Background music ticks slower than SFX, only when
                     // no SFX is currently sounding (let SFX preempt).
                     if (world.State == GameState.Playing)

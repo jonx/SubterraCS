@@ -70,6 +70,13 @@ public sealed class BeeperSynth
     /// <summary>True while a captured PCM effect is sounding.</summary>
     public bool PcmActive { get { lock (_lock) return _pcm is not null; } }
 
+    /// <summary>Cut whatever captured PCM is playing (used when the
+    /// game leaves the title screen mid-tune).</summary>
+    public void StopPcm()
+    {
+        lock (_lock) { _pcm = null; _pcmPos = 0; }
+    }
+
     /// <summary>
     /// Pull <paramref name="output"/>.Length samples (signed 16-bit
     /// mono, native endian) at <paramref name="sampleRate"/> Hz.  Called

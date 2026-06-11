@@ -29,6 +29,7 @@ internal static class RunEmuCommand
         string? ramOut = null;
         string? wavOut = null;
         int wavSampleRate = 44100;
+        int wavFromFrame = 0;
         for (int i = 3; i < args.Length; i++)
         {
             if (args[i].StartsWith("-stride=", StringComparison.Ordinal))
@@ -47,6 +48,10 @@ internal static class RunEmuCommand
             {
                 wavSampleRate = int.Parse(args[i].Substring("-wav-rate=".Length), CultureInfo.InvariantCulture);
             }
+            else if (args[i].StartsWith("-wav-from=", StringComparison.Ordinal))
+            {
+                wavFromFrame = int.Parse(args[i].Substring("-wav-from=".Length), CultureInfo.InvariantCulture);
+            }
         }
 
         var rom = File.ReadAllBytes(romPath);
@@ -61,8 +66,10 @@ internal static class RunEmuCommand
         // One timestamp shared by the whole run, so the sequence sorts together.
         var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
 
+        long wavFromCycle = 0;
         for (int f = 0; f < frames; f++)
         {
+            if (f == wavFromFrame) wavFromCycle = sys.Cpu.Cycles;
             ApplyKeysForFrame(sys, keys, f);
             sys.RunFrame();
 
@@ -94,7 +101,7 @@ internal static class RunEmuCommand
             // $FE; we captured every edge with its CPU cycle stamp, so
             // a square-wave resampler reproduces the actual sound the
             // user would hear from the Spectrum's speaker.
-            var pcm = sys.Beeper.RenderPcm(0, sys.Cpu.Cycles, wavSampleRate);
+            var pcm = sys.Beeper.RenderPcm(wavFromCycle, sys.Cpu.Cycles, wavSampleRate);
             WavWriter.WriteMono16(wavOut, pcm, wavSampleRate);
             Console.WriteLine($"Beeper WAV: {wavOut} ({sys.Beeper.EdgeCount} edges, {pcm.Length} samples @ {wavSampleRate} Hz, {(double)pcm.Length / wavSampleRate:F2}s)");
         }

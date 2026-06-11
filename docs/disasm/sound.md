@@ -170,13 +170,17 @@ the native audio device rate, so playback is 1:1):
   (`$F8A8`'s CCF/SBC gate depends on the incoming carry).
 - The Follin messages LOOP forever by design (same player loops
   the title tune); captures are clamped to one ~4 s pass.
+- The quiet-window must count from the EFFECT start (not boot
+  leftovers), or queue-only entries get cut after one `$FA32`
+  tick.
 - Captured: hit ($DDC4 click), barfill ($E419), spawnin ($E135),
   bossalert ($F8F9), pickup ($F90E), fuellow ($F8B4), shieldlow
   ($F8D8), fanfare1..5 ($F99F per level).  NOT captured:
-  `warning` ($F93A) and `gameover` ($F974) stay silent in the
-  harness — they queue without entering the player; their exact
-  in-game trigger context is TBD.  (The game-over tune is heard
-  fine through the full EMU runtime.)
+  `warning` ($F93A) and `gameover` ($F974) stay silent even with
+  the corrected quiet window — they queue without ever entering
+  the player in this harness; whatever in-game state arms the
+  player for them is TBD.  (The game-over tune is heard fine
+  through the full EMU runtime.)
 - Correction while testing: `$DC43` ("descending whine" in
   death.md) contains NO `OUT` at all — it is the screen-dim SRL
   loop only.  The death sequence's audio is just the `$DDC4`

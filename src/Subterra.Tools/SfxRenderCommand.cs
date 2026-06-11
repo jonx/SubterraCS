@@ -114,7 +114,11 @@ internal static class SfxRenderCommand
                 // until the loop cap: Follin messages repeat forever
                 // (the same player loops the title tune), so ~4 s
                 // captures at least one full pass of every message.
-                long lastEdgeCycle = LastEdgeCycle(sys);
+                // Count the quiet window from the EFFECT start, not
+                // from boot leftovers — otherwise entries that queue
+                // without sounding immediately (e.g. $F974) get cut
+                // off after a single $FA32 tick.
+                long lastEdgeCycle = Math.Max(LastEdgeCycle(sys), startCycle);
                 while (sys.Cpu.Cycles - startCycle < MaxQueuedCycles)
                 {
                     CallRoutine(sys, 0xFA32);
