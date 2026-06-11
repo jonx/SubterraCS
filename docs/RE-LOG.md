@@ -3195,3 +3195,31 @@ corruption; cycling back to the real pages is what the original
 designers evidently intended.
 
 Full trace in [entities.md §Level 0](disasm/entities.md).
+
+## 58. $DF31 decoded — the laser hits NOTHING in the original
+
+The collision matrix's last TBD ("laser-vs-ship/boss entity-match
+logic isn't fully decoded") is resolved, with a surprise.
+
+`$DF31`'s only four callers are the horizontal-scroll routines,
+bracketing the bitmap shift: `$DA25 LD C,$00 / $DA49 LD C,$EF`
+(scroll left) and `$DA64 / $DA88` (scroll right).  The routine is
+the beam ERASE pass (C=0: clear `$EF` beam bytes, `$DFA1` restores
+the cell attribute to level colour) and REDRAW pass (C=$EF:
+rewrite beam bytes into still-empty screen bytes, `$DF7C` paints
+the beam's own colour only into char cells whose scanlines 0 and
+7 are empty — colour-clash avoidance).  No entity logic anywhere.
+
+Corroborating search: the binary contains no `RES 7,(IX+d)`
+instruction at all — nothing ever clears a ship's alive bit at
+`$E597+2`.  Conclusion: **enemy ships are unkillable in the
+original game and the laser damages nothing.**  It self-limits at
+scenery when fired (`$DEDA`) and gets visually overdrawn, but has
+no gameplay effect.
+
+The port's laser-vs-ship / laser-vs-boss / laser-vs-decor
+interactions stay — now relabelled from "may not match the
+cassette" to "confirmed port-only embellishment" in
+collision-matrix.md and laser.md.  Also refreshed the stale
+port-status rows there (ship/bullet scenery probes were done in
+earlier sessions but still marked TODO).

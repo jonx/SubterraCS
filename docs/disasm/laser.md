@@ -129,21 +129,50 @@ DEEB  SUB B              ; minus remaining loop count
 DEEC  LD (IX+$01),A     ; store ACTUAL painted bytes (≤ 15)
 ```
 
-**2. Per-frame scenery interaction** — `$DF31` walks all 4 bullet
-slots and for each active beam, walks each byte of the beam.  At
-each byte it tests `(HL) == $EF` (still the beam pattern, no
-collision) vs other patterns (scenery has overdrawn the beam).
-The exact logic at `$DF67..$DF6D` calls either `$DFA1` (restore
-the attribute) or `$DF7C` (a chained set of checks that probes
-upper screen bands at `$4000`/`$4800` — likely the entity-hit
-chain that triggers `$DBC8` death indirectly when the beam
-overlaps a hazard).
+**2. `$DF31` — beam erase/redraw bracket around horizontal
+scroll (FULLY DECODED — it is NOT collision logic).**
 
-So the original's laser DOES collide during travel — but the
-collision is "did scenery/entity overdraw the beam pixel" not
-"are coordinates close".  The beam is implemented as a literal
-streak in the bitmap, and any byte that's no longer `$EF` is
-treated as "something hit this".
+Callers (the only four in the binary):
+
+```
+DA25  LD C,$00; CALL $DF31    ; scroll-left, BEFORE the LDIR shift
+DA49  LD C,$EF; CALL $DF31    ; scroll-left, AFTER the shift
+DA64  LD C,$00; CALL $DF31    ; scroll-right, BEFORE the LDDR shift
+DA88  LD C,$EF; CALL $DF31    ; scroll-right, AFTER the shift
+```
+
+The routine walks all 4 beam slots at `$E46B` (stride 4); for
+each alive beam (bit 7 of +0), it walks the `(IX+$01)` painted
+bytes from address `(IX+$02/$03)`, direction ±1 from bit 5:
+
+- **C = $00 (erase pass, pre-scroll):** at each byte, if
+  `(HL) == $EF` (still beam), write C=0 (erase) and call `$DFA1`
+  → restore the cell's attribute to the level colour `($E57B)`.
+  Beam bytes already overdrawn by something are left alone.
+- **C = $EF (redraw pass, post-scroll):** at each byte, test
+  `INC (HL); DEC (HL)` — if the screen byte is non-zero
+  (scenery scrolled into the beam's path), skip; else write
+  `$EF` (redraw beam) and call `$DF7C`.
+
+`$DF7C` is attribute management, not a hit chain: it probes
+scanline 0 (`H ← $40` or `$48` keeping band bit 3) and scanline 7
+(`H += 7`) of the char cell containing the beam byte; only if
+BOTH are zero (nothing else lives in that cell) does it write the
+beam's own colour (`(IX+$00) AND $47`) into the attribute —
+otherwise the cell keeps its colour.  A colour-clash-avoidance
+trick: the beam only recolours cells it has to itself.
+
+**Consequence — the cassette's laser hits NOTHING.**  There is no
+entity-match logic anywhere in `$DF31`/`$DF7C`/`$DFA1`, and a
+full-binary search finds no `RES 7,(IX+d)` instruction at all —
+nothing ever clears a ship's alive bit at `$E597+2`.  Enemy
+ships are unkillable in the original game; the laser is purely
+visual (it stops at scenery at fire time per `$DEDA`, and gets
+overdrawn by sprites, but damages nothing).
+
+The C# port's laser-kills-ships (+50 score, respawn delay) and
+laser-vs-boss (3 hits) are **port-only embellishments** — now
+confirmed as such by this trace rather than suspected.
 
 ## Per-frame update — `$DEF0..$DF1B`
 

@@ -139,18 +139,24 @@ Per-frame (`$DF31`) checks each beam byte for `(HL) != $EF` —
 if scenery has overdrawn the beam, expire that segment.  See
 [laser.md](laser.md).
 
-### Player-laser-vs-ENEMY-SHIP/BULLET/BOSS — TBD in original
+### Player-laser-vs-ENEMY-SHIP/BULLET/BOSS — RESOLVED: none exists
 
-The cassette's per-frame `$DF31` walker tests each beam byte
-against `$EF` and against entity addresses, calling chained
-helpers at `$DFA1`/`$DF7C` for hits.  The exact entity-match
-logic isn't fully decoded.
+`$DF31` is fully decoded (see [laser.md](laser.md)): it is the
+beam erase/redraw bracket around the horizontal-scroll routines
+(its only callers are `$DA25`/`$DA49`/`$DA64`/`$DA88`, with C=0
+before the bitmap shift and C=$EF after), and `$DFA1`/`$DF7C`
+are attribute management (restore level colour / paint beam
+colour into cells the beam has to itself).  No entity-match
+logic exists, and a full-binary opcode search finds no
+`RES 7,(IX+d)` — nothing ever clears a ship's alive bit at
+`$E597+2`.  **The cassette's laser damages nothing; enemy ships
+are unkillable in the original game.**
 
-The C# port handles laser-vs-ship hits directly in
-`World.TickPlaying`'s bullet loop (matching beam world-byte to
-ship X), and laser-vs-decor-entity through the AABB collision.
-This may not match the cassette exactly, but covers the visible
-behaviour.
+The C# port's laser-vs-ship (+50 score, respawn delay),
+laser-vs-boss (3 hits), and laser-vs-decor-entity (HP/score)
+interactions are deliberate port-only embellishments — kept
+because a laser that hits nothing reads as broken to a modern
+player.
 
 ## C# port status
 
@@ -160,11 +166,11 @@ behaviour.
 | `$EDC0`  bullet-vs-player | `EnemyBullets.Tick` returns hits | done |
 | `$EFAE`/`$EFE0` worker pickup | `WorkerSchedule.Tick` rescue logic | done |
 | `$DFAF`/`$EB62` player-vs-wall | inline `TickPlaying` tile probe | done |
-| `$EB5B` ship-vs-scenery reverse | (partial — TickAi doesn't probe yet) | TODO |
-| `$EB62` bullet-vs-scenery expire | (not yet) — bullets pass through | TODO |
+| `$EB5B` ship-vs-scenery reverse | `EnemyShips.TickAi` X+Y tile probes | done |
+| `$EB62` bullet-vs-scenery expire | `EnemyBullets.Tick` levelTiles probe | done |
 | `$DEDA` laser self-limit | (skipped — we use entity AABB) | partial |
-| Boss-vs-player | TBD | TODO |
-| Player-laser-vs-ship | `TickPlaying` bullet loop | done |
+| Boss-vs-player | `World.TickPlaying` deathHits path (boss feeds coord walker) | done |
+| Player-laser-vs-ship | `TickPlaying` bullet loop | port-only (cassette has none) |
 
 ## Damage cost summary
 
@@ -174,6 +180,6 @@ behaviour.
 | Bullet hits player | Same `$DD4A` chain |
 | Boss touches player | Same `$DD4A` chain (same routine $EDC0) |
 | Player wall hit | Immediate `JP $DBC8` (death, no shield) |
-| Laser hits ship | Port-only: +50 score, ship dies with 128-frame respawn |
+| Laser hits ship | Port-only: +50 score, ship dies with 128-frame respawn (cassette laser hits NOTHING — see above) |
 | Laser hits worker | Workers bullet-proof in cassette ($EFE0 only fires on PICKUP, not hit) |
 | Laser hits decor entity | Port-only: entity HP--, score per type |
