@@ -152,6 +152,42 @@ title fires the cassette's music gate at the same time as
 toggling our own audio output.  Hold M during title to hear the
 intro music; tap M during gameplay if you just want to mute.
 
+### Per-effect capture — `subterra sfx-render` + the native SfxWavBank
+
+[`SfxRenderCommand`](../../src/Subterra.Tools/SfxRenderCommand.cs)
+runs each cassette sound routine in ISOLATION inside the emulator
+and captures the beeper to
+`assets/extracted/sfx/<name>.wav` (mono 16-bit PCM @ 22 050 Hz =
+the native audio device rate, so playback is 1:1):
+
+- Harness: fresh 600-frame boot per effect (the Follin player's
+  saved-register block `$FA2A..$FA30` is left mid-flight when a
+  looping tune is hard-capped — reuse makes later entries resume
+  into garbage), then push a sentinel return address, point PC at
+  the routine, single-step to the sentinel.  Queued entries are
+  then driven by repeated `$FA32` ticks.  `($FF54)` is reset to
+  `$FF51` ("no message pending") and F is zeroed before each call
+  (`$F8A8`'s CCF/SBC gate depends on the incoming carry).
+- The Follin messages LOOP forever by design (same player loops
+  the title tune); captures are clamped to one ~4 s pass.
+- Captured: hit ($DDC4 click), barfill ($E419), spawnin ($E135),
+  bossalert ($F8F9), pickup ($F90E), fuellow ($F8B4), shieldlow
+  ($F8D8), fanfare1..5 ($F99F per level).  NOT captured:
+  `warning` ($F93A) and `gameover` ($F974) stay silent in the
+  harness — they queue without entering the player; their exact
+  in-game trigger context is TBD.  (The game-over tune is heard
+  fine through the full EMU runtime.)
+- Correction while testing: `$DC43` ("descending whine" in
+  death.md) contains NO `OUT` at all — it is the screen-dim SRL
+  loop only.  The death sequence's audio is just the `$DDC4`
+  click per damage frame.
+
+Native playback: `SfxWavBank` (Core) loads the WAVs;
+`BeeperSynth.PlayPcm` plays them with priority over the synth
+tone; `Sdl2Runner` maps `SfxKind` → wav name (Hit/Damage → hit,
+Pickup → pickup, LevelUp → fanfare{depth}, Explode → bossalert)
+with synth fallback when a file is missing.
+
 ### What's NOT done
 
 - **The Follin player itself is NOT separately ported.**  The

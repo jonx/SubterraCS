@@ -46,7 +46,7 @@ is why the bar doesn't visibly tick down on every contact.
 ```
 DBC8  CD DA DB    CALL $DBDA             ; one particle pass
 DBCB  CD DA DB    CALL $DBDA             ; another
-DBCE  CD 43 DC    CALL $DC43             ; descending whine sound
+DBCE  CD 43 DC    CALL $DC43             ; screen dim (no sound — see below)
 DBD1  CD DA DB    CALL $DBDA             ; another
 DBD4  CD DA DB    CALL $DBDA             ; final
 DBD7  C3 A8 D8    JP $D8A8               ; restore stack + lives test
@@ -121,7 +121,14 @@ the bitmap is untouched.  This is a smart trick: zero bitmap damage to
 clean up, just attribute flashes that revert when the next normal
 attribute paint happens.
 
-## `$DC43` — descending whine
+## `$DC43` — screen dim (NOT a sound — corrected)
+
+Originally annotated "descending whine", but the routine contains
+no `OUT` instruction at all — verified while building the
+`sfx-render` harness (it produced zero beeper edges).  It is
+purely the visual fade: 8 passes of `SRL` over every bitmap byte.
+The death sequence's only audio is the `$DDC4` click fired per
+damage frame.
 
 ```
 DC43  0E 08       LD C,$08

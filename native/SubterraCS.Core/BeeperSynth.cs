@@ -49,6 +49,27 @@ public sealed class BeeperSynth
     public void Tone(double hz, int frames, double slide = 0.0)
         => PlayNote(hz, frames / 50.0, slide);
 
+    // Authentic-PCM playback: when a captured cassette WAV (see
+    // SfxWavBank) is queued it takes priority over the synth tone.
+    // The samples are recorded at the audio device rate, so Render
+    // copies them 1:1.
+    private short[]? _pcm;
+    private int _pcmPos;
+
+    /// <summary>Play a captured cassette effect.  Pre-empts whatever
+    /// the synth was doing; the synth resumes after the PCM ends.</summary>
+    public void PlayPcm(short[] samples)
+    {
+        lock (_lock)
+        {
+            _pcm = samples;
+            _pcmPos = 0;
+        }
+    }
+
+    /// <summary>True while a captured PCM effect is sounding.</summary>
+    public bool PcmActive { get { lock (_lock) return _pcm is not null; } }
+
     /// <summary>
     /// Pull <paramref name="output"/>.Length samples (signed 16-bit
     /// mono, native endian) at <paramref name="sampleRate"/> Hz.  Called
@@ -59,6 +80,21 @@ public sealed class BeeperSynth
         double freq, slide, len, age, duty, vol;
         lock (_lock)
         {
+            // Captured-PCM path first: copy samples 1:1 (recorded at
+            // the device rate), zero-fill the tail, drop the buffer
+            // when exhausted so the synth resumes next callback.
+            if (_pcm is { } pcm)
+            {
+                int n = Math.Min(output.Length, pcm.Length - _pcmPos);
+                // Captured samples sit at ±5000; ×4 at the default
+                // volume (0.25) keeps them level with the synth's amp.
+                double gain = _volume * 4.0;
+                for (int i = 0; i < n; i++) output[i] = (short)(pcm[_pcmPos + i] * gain);
+                for (int i = n; i < output.Length; i++) output[i] = 0;
+                _pcmPos += n;
+                if (_pcmPos >= pcm.Length) { _pcm = null; _pcmPos = 0; }
+                return;
+            }
             freq = _frequency;
             slide = _slide;
             len = _lengthSeconds;

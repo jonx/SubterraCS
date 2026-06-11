@@ -34,6 +34,7 @@ extracted by separate one-shot commands listed below.
 | [rom-font.bin](#rom-fontbin)                       | ROM `$3D00`     |  768 | `RomFont`                       | Spectrum ROM 8×8 character set `$20..$7F` |
 | [splash-scr.bin](#splash-scrbin)                   | screen capture  | 6912 | `World.SplashScr`               | Loading-screen `.scr` dump (6144 bitmap + 768 attr) |
 | [title-menu-scr.bin](#title-menu-scrbin)           | screen capture  | 6912 | `World.TitleMenuScr`            | "SELECT CONTROL OPTION" menu `.scr` dump |
+| sfx/*.wav (11 files)                               | beeper capture  | ~1.5 MB | `SfxWavBank` → `BeeperSynth.PlayPcm` | Authentic cassette SFX rendered by `subterra sfx-render` (original Z80 routines run in the emulator, beeper captured) — see [sound.md](sound.md) |
 
 Total: 17 files, ~55 KB on disk.  Roughly 60% of the cassette's
 RAM footprint after game-init.

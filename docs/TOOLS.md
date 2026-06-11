@@ -369,6 +369,25 @@ dotnet run --project src/Subterra.Tools -- \
     -keys=5-10:SPACE,40-50:1,200-300:A
 ```
 
+### `sfx-render <48k.rom> <snapshot.z80> [-rate=22050]`
+
+**What:** renders every known cassette sound routine to
+`assets/extracted/sfx/<name>.wav` by running the ORIGINAL Z80 code
+in isolation inside the emulator (sentinel-return harness; queued
+Follin messages driven by repeated `$FA32` ticks) and capturing
+the beeper through the same pipeline as `run-emu -wav`.
+
+**Why:** gives the native port authentic cassette sound effects
+without porting the Follin player — the `SfxWavBank` loads these
+WAVs and `BeeperSynth.PlayPcm` plays them in place of the
+synthesised tones.  See [disasm/sound.md](disasm/sound.md) for
+the harness details and the effect inventory.
+
+```sh
+dotnet run --project src/Subterra.Tools -- \
+    sfx-render original/rom/48k.rom original/dumps/SUBSTRYK.Z80
+```
+
 ---
 
 ## The GUI apps

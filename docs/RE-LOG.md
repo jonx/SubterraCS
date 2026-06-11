@@ -3252,3 +3252,41 @@ One disasm pass over the remaining `TBD` markers:
 Also corrected the `$F973` note in title-menu.md (it's a plain
 `RET`, not a music dispatch) and the `???` annotations in
 level-load.md's `$F6F2` listing.
+
+## 60. Authentic cassette SFX in the native port — `sfx-render`
+
+The native runner played synthesised approximations; now it plays
+the REAL sounds.  New `subterra sfx-render` tool runs each
+cassette sound routine in isolation inside the emulator and
+captures the beeper to `assets/extracted/sfx/<name>.wav`
+(22 050 Hz = the native audio device rate, 1:1 playback).
+
+Harness lessons (all documented in sound.md):
+
+- Sentinel-return calls + repeated `$FA32` ticks for the queued
+  Follin messages.
+- The messages LOOP forever by design (same player loops the
+  title tune) — captures clamp to one ~4 s pass.
+- `($FF54)` must be reset to `$FF51` and F zeroed before each
+  entry (`$F8A8`'s CCF/SBC pending-gate depends on incoming
+  carry).
+- A FRESH 600-frame boot per effect is required: hard-capping a
+  looping tune leaves the player's saved-register block
+  (`$FA2A..$FA30`) mid-flight and later entries resume into
+  garbage.
+- Bonus correction: `$DC43` ("descending whine" in death.md) has
+  NO `OUT` at all — it's the screen-dim SRL loop only.  The
+  death sequence's audio is just the `$DDC4` click per damage
+  frame.  death.md fixed.
+
+Captured 11 effects: hit, barfill, spawnin, bossalert, pickup,
+fuellow, shieldlow, fanfare1..5.  `warning` ($F93A) and
+`gameover` ($F974) stay silent in the harness (queue without
+entering the player; trigger context TBD — the game-over tune is
+audible through the full EMU runtime).
+
+Native side: `SfxWavBank` (Core) parses the WAVs;
+`BeeperSynth.PlayPcm` plays captured PCM with priority over the
+synth; `Sdl2Runner` maps SfxKind → wav (Hit/Damage → hit, Pickup
+→ pickup, LevelUp → fanfare{depth}, Explode → bossalert), synth
+fallback when a file is missing — the bank is optional.

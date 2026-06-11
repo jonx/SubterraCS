@@ -53,8 +53,9 @@ internal static class Program
             LevelColourData = assets.LevelColourData,
         };
 
-        // Pass music data through to whichever runner uses it.
+        // Pass music data + captured cassette SFX through to the runner.
         Sdl2Runner.MusicData = assets.MusicData;
+        Sdl2Runner.SfxBank = assets.SfxBank;
 
         if (headless)
         {

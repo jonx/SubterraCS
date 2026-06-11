@@ -14,6 +14,10 @@ internal static class Sdl2Runner
 {
     public static byte[] MusicData { get; set; } = Array.Empty<byte>();
 
+    /// <summary>Captured cassette SFX (optional) — see SfxWavBank.
+    /// When an effect exists here it plays instead of the synth tone.</summary>
+    public static SfxWavBank SfxBank { get; set; } = new();
+
     public static int Run(World world)
     {
         const int FrameMs = 20; // 50 Hz
@@ -57,11 +61,26 @@ internal static class Sdl2Runner
             {
                 world.Tick(input);
 
-                // Forward game-event SFX into the synth — short discrete tones.
+                // Forward game-event SFX — authentic captured cassette
+                // WAVs when available (see SfxWavBank), synth fallback
+                // otherwise.
                 if (synth != null)
                 {
                     while (world.Sfx.TryDequeue(out var s))
                     {
+                        string? wav = s switch
+                        {
+                            SfxKind.Hit or SfxKind.Damage => "hit",
+                            SfxKind.Pickup                => "pickup",
+                            SfxKind.LevelUp               => $"fanfare{Math.Clamp(world.Depth, 1, 5)}",
+                            SfxKind.Explode               => "bossalert",
+                            _                             => null,
+                        };
+                        if (wav is not null && SfxBank.TryGet(wav, out var pcm))
+                        {
+                            synth.PlayPcm(pcm);
+                            continue;
+                        }
                         var (hz, frames, slide) = SfxQueue.Voice(s);
                         if (hz > 0) synth.Tone(hz, frames, slide);
                     }

@@ -85,7 +85,16 @@ public sealed class Assets
         // are $07 $04 $03 $06 $02 $01 (white, green, magenta, yellow,
         // red, blue).
         LevelColourData = File.ReadAllBytes(Path.Combine(assetsDir, "level-speed-e57c.bin"));
+
+        // Authentic cassette sound effects, rendered to WAV by
+        // `subterra sfx-render` (original Z80 routines run in the
+        // emulator, beeper captured).  Optional — missing directory
+        // means the synth fallback plays instead.
+        SfxBank = SfxWavBank.Load(Path.Combine(assetsDir, "sfx"));
     }
+
+    /// <summary>Captured cassette SFX (optional).  See SfxWavBank.</summary>
+    public SfxWavBank SfxBank { get; private set; } = new();
 
     /// <summary>Per-level worker schedule raw bytes (6 × 32 = 192).</summary>
     public byte[] WorkerScheduleData { get; private set; } = Array.Empty<byte>();
