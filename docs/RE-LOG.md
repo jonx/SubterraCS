@@ -3159,3 +3159,39 @@ The native runner's `SfxQueue` keeps its synthesised effects
 (fire / hit / damage / pickup / explode).
 
 Diff vs emu at f100 still 0%.
+
+## 57. Level 0 decoded — it's a data bug in the original game
+
+The last "anomalous record set" mystery, resolved by dumping the
+`$F594` pointer table and walking the arithmetic:
+
+- `$F594` = `$F2E8, $F2EB, $F33B, $F383, $F3EB, $F47B` for L0..L5.
+- Levels 1..5 pack contiguously: each pointer = previous + count×8
+  exactly (L1 `$F2EB`+80=`$F33B`, … L5 `$F47B`+200=`$F543`).
+- Level 0's pointer is **3 bytes before level 1's** — its six
+  8-byte records are level 1's bytes read out of phase.  Decoded:
+  type `$02 y=$33 top=$1102(ROM)`, type `$C0 top=$300A(ROM)
+  bot=$0001`, type `$20`, …  Type `$C0` indexes the `$F5A0` table
+  at `$F8A0` = code bytes as sprite metadata.  Drawing these blits
+  garbage AND writes into stray RAM (`$A0xx`).
+- Matching evidence: `$E56D[0]` = `$B0F4`, the tile bank itself —
+  level 0's "scenery" is the tile bank rendered as a map.
+- Level 0 is unreachable in normal play (`$F6F2` increments the
+  level counter before the first playable page); only the 5→0
+  wrap at `$F6F7` exposes it.  Level 5 has 25 entities — the
+  hardest page; this path was almost certainly never play-tested.
+
+Also verified empirically that `level-minimaps.bin` was extracted
+following the `$E56D` pointers (slice 0 = `$B0F4`, slices 1..5 =
+`$60F4`..`$A0F4` — confirmed byte-for-byte against a post-game RAM
+image), so the port's `PerLevelBuffers[level]` direct indexing was
+already correct; assets.md's "stride $1000 from $60F4" description
+was wrong and is fixed.
+
+**Port decision:** `NextLevel` wraps 5 → 1 instead of 5 → 0 — a
+deliberate, documented deviation.  Reproducing the cassette's
+level 0 faithfully would mean drawing garbage and emulating RAM
+corruption; cycling back to the real pages is what the original
+designers evidently intended.
+
+Full trace in [entities.md §Level 0](disasm/entities.md).

@@ -292,9 +292,19 @@ public sealed class World
         }
     }
 
-    /// <summary>Compute the next level index — port of $F6F2's
-    /// INC + CP $06 + XOR A pattern, which wraps level 5 back to 0.</summary>
-    private static int NextLevel(int current) => (current + 1) > 5 ? 0 : current + 1;
+    /// <summary>Compute the next level index.  The cassette's $F6F2
+    /// (INC + CP $06 + XOR A) wraps level 5 back to 0 — but level 0's
+    /// data is a BUG in the original: its record pointer ($F594[0] =
+    /// $F2E8) sits 3 bytes before level 1's records ($F2EB), so its six
+    /// 8-byte records are level 1's bytes read out of alignment (types
+    /// $C0/$20/garbage, TopAddrs in ROM at $1102 or stray RAM at $A001
+    /// — the cassette would draw garbage AND corrupt memory), and its
+    /// $E56D scenery pointer targets $B0F4, the tile bank itself.
+    /// Level 0 is unreachable in normal play ($F6F2 increments before
+    /// the first playable level); only the 5→0 wrap exposes it.  The
+    /// port deliberately deviates: wrap 5 → 1 so post-level-5 play
+    /// cycles the real pages.  See docs/disasm/entities.md §Level 0.</summary>
+    private static int NextLevel(int current) => (current + 1) > 5 ? 1 : current + 1;
 
     // ─── Playing-state tick ─────────────────────────────────────────
 
@@ -895,8 +905,9 @@ public sealed class World
         // The original's $E587 starts at 0 but $F6F2 INC's it before
         // entering the first playable level — so the first level the
         // player sees uses index 1's records (10 entities, the clean
-        // 8-byte stride at $F2EB).  Level 0 is the anomalous short
-        // record set we haven't fully decoded.
+        // 8-byte stride at $F2EB).  Level 0's data is a misaligned-
+        // pointer bug in the original and is never played; see
+        // NextLevel + docs/disasm/entities.md §Level 0.
         LoadLevel(1);
     }
 
@@ -958,9 +969,10 @@ public sealed class World
     /// supplies (type, y, frame, top-screen-addr) which we decode
     /// back to (type, x, y) for the C# entity instance.
     ///
-    /// Note: the original's "level 0" record list is anomalous
-    /// (overlaps with level 1's start), so we use the records as
-    /// stored but expect level 1+ to be the cleanly-decoded path.
+    /// Note: the original's "level 0" record list is a misaligned-
+    /// pointer bug (level 1's bytes read 3 bytes out of phase —
+    /// see docs/disasm/entities.md §Level 0); NextLevel never routes
+    /// here with level == 0, so only levels 1..5 are ever placed.
     /// </summary>
     private void PlaceWorkersForLevel(int level)
     {

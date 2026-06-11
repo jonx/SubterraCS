@@ -44,9 +44,36 @@ entities for levels 0..5.
 **Per-level entity-list pointers at `$F594`** (12 bytes, 6 × 2):
 `$F2E8, $F2EB, $F33B, $F383, $F3EB, $F47B`.
 
-**Level 0 anomaly**: `$F2E8 → $F2EB` is only 3 bytes apart, so
-level 0 either shares records with level 1 or uses a different
-format.  Levels 1..5 are uniform 8-byte records.
+**Level 0 anomaly — RESOLVED: it's a data bug in the original.**
+`$F594[0] = $F2E8` sits only 3 bytes before level 1's records at
+`$F2EB`, while levels 1..5 pack contiguously and consistently
+(each pointer = previous pointer + previous count × 8, verified:
+L1 `$F2EB`+10×8=`$F33B`=L2, … L5 `$F47B`+25×8=`$F543`).  So level
+0's six "records" are level 1's bytes read 3 bytes out of
+alignment:
+
+```
+rec0: type=$02 y=$33 frame=3  top=$1102 (ROM!)   bot=$A001 flags=$48
+rec1: type=$C0 y=$48 frame=13 top=$300A (ROM!)   bot=$0001 flags=$40
+rec2: type=$20 ...                       (garbage continues)
+```
+
+Type `$C0` indexes the `$F5A0` table at `$F5A0 + $C0*4 = $F8A0` —
+random code bytes as (sprite-ptr, frames, attr).  Drawing these
+records would blit garbage AND write into stray RAM (`$A0xx`).
+The matching `$E56D` scenery pointer for level 0 is `$B0F4` — the
+master tile bank itself, not a 4 KB index buffer, so the level-0
+"cave" is the tile bank rendered as a map.
+
+Level 0 is unreachable in normal play: `$F6F2` increments the
+level counter before the first playable page, so play starts at
+level 1.  Only the wrap at `$F6F7` (`CP $06 → XOR A`) after
+clearing level 5 exposes it — almost certainly untested by the
+original developers (level 5, with 25 entities, is the hardest
+page; few play-testers ever finished it).
+
+**Port decision:** `World.NextLevel` wraps 5 → 1 instead of 5 → 0,
+deliberately deviating from the cassette to skip the corrupt page.
 
 ## `$F1D8` — entity walker
 

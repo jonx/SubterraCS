@@ -153,7 +153,8 @@ RAM footprint after game-init.
   tile-index buffer.  Bytes decode to:
   ```
   L0  $B0F4  ← actually points at the master TILE BANK (not a
-              4 KB index buffer); level 0 is the anomalous one
+              4 KB index buffer) — part of the original's level-0
+              data bug; see [entities.md §Level 0](entities.md)
   L1  $60F4
   L2  $70F4
   L3  $80F4
@@ -258,9 +259,15 @@ RAM footprint after game-init.
 
 ## level-minimaps.bin
 
-- **Cassette source:** `$60F4 + level * $1000` (6 × 4096 bytes
-  = 24576 total).  Originally split across multiple RAM banks
-  the game maps in/out; we concatenate them in extraction order.
+- **Cassette source:** the six addresses in the `$E56D` pointer
+  table, in level order (6 × 4096 bytes = 24576 total).  Verified
+  byte-for-byte against a post-game RAM image: slice 0 = `$B0F4`
+  (level 0's bogus pointer — the tile bank itself, see
+  [entities.md §Level 0](entities.md)), slices 1..5 = `$60F4`,
+  `$70F4`, `$80F4`, `$90F4`, `$A0F4` (real levels 1..5).  So
+  `PerLevelBuffers[level]` indexes directly by cassette level
+  number; slice 0 is garbage by inheritance from the original's
+  level-0 data bug and is never selected (the port wraps 5 → 1).
 - **What it is:** per-level packed tile-index buffer.  Each
   byte is an index into the master tile bank at `$B0F4`.
   Layout: 16 rows × 256 cols (the WORLD is 256 bytes wide, even
