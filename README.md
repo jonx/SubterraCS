@@ -399,22 +399,27 @@ format decoding — are done; see
 [native port section](#the-native-port), and
 [docs/disasm/assets.md](docs/disasm/assets.md).)
 
-* **Follin player port.** The native runner plays synthesised SFX;
-  the cassette's actual music only plays through the emulator's
-  beeper capture. A pure C# port of the `$5E88` Follin player
-  consuming `music-5e88.bin` would bring the real tunes to the
-  native port — big job, T-state-sensitive PWM code (see
-  [sound.md §What's NOT done](docs/disasm/sound.md)).
-* **Map / level editor.** The level format is decoded
-  (`level-minimaps.bin` = 16×256 tile indices per level); a "map
-  view" tab in `Subterra.Editor` could scroll a level and edit
-  individual tile cells.
-* **Native title menu.** The native port shows the captured menu
-  screen and waits for FIRE; the cassette's control-scheme
-  selection (keys 1–5 → `$F741` table) isn't reimplemented.
-* **Remaining unknowns.** Level 0's anomalous entity-record set,
-  the 8th ship-init slot at `$E597+28`, and a handful of `TBD`
-  bytes tracked in [docs/MEMORY-MAP.md](docs/MEMORY-MAP.md).
+* **Follin player port.** The native runner now plays the REAL
+  cassette SFX (captured to WAV by `subterra sfx-render` — see
+  [sound.md](docs/disasm/sound.md)), but continuous in-game music
+  still comes from the simple `MusicPlayer` synth. A pure C# port
+  of the `$5E88` Follin player consuming `music-5e88.bin` would
+  bring the looping tunes natively — big job, T-state-sensitive
+  PWM code.
+* **`warning`/`gameover` SFX context.** Two of the cassette's
+  queued sound messages stay silent in the `sfx-render` harness
+  (they queue without entering the player); their exact in-game
+  trigger context is still TBD.
+* **Hall of Fame.** The cassette's idle-title high-score screen
+  (`$FCDB`, with its Star Wars default names — see
+  [title-menu.md](docs/disasm/title-menu.md)) isn't reimplemented
+  in the native port, and neither is score persistence.
+
+(Closed since this list was last trimmed: level-0 decoded — it's
+a data bug in the original, port wraps 5 → 1; `$DF31` decoded —
+the cassette's laser hits nothing; native title menu honours keys
+1–5; the Editor gained a Map tab that can edit level tiles;
+authentic cassette SFX play in the native port.)
 
 ---
 

@@ -69,6 +69,16 @@ public partial class MainWindow : Window
         ColumnsBox.ValueChanged += (_, __) => RefreshSheet();
         SheetImage.PointerMoved += OnSheetPointerMoved;
 
+        // Map tab — level-map viewer/editor over the decoded
+        // level-minimaps.bin (16 rows × 256 cols of tile indices per
+        // level) rendered through the tiles-b0f4.bin bank.
+        LoadMapAssets();
+        MapLevelBox.ValueChanged += (_, __) => RefreshMap();
+        MapApplyButton.Click += (_, __) => ApplyMapCell();
+        MapSaveButton.Click += (_, __) => SaveMap();
+        MapImage.PointerPressed += OnMapPointerPressed;
+        RefreshMap();
+
         RefreshSheet();
     }
 
@@ -190,6 +200,128 @@ public partial class MainWindow : Window
             sb.Append('\n');
         }
         HoverBytes.Text = sb.ToString();
+    }
+
+    // ─── Map tab — level-map viewer/editor ─────────────────────────
+    //
+    // Renders a level's 16×256 tile-index buffer (level-minimaps.bin,
+    // see docs/disasm/assets.md) through the master tile bank
+    // (tiles-b0f4.bin) at 2048×128 px, ×2 scaled.  Click selects a
+    // cell; "Apply to cell" writes the chosen tile index into the
+    // in-memory buffer; "Save map" writes the whole file back.
+    private const int MapRows = 16, MapCols = 256, MapBufSize = MapRows * MapCols;
+    private const int MapScale = 2;
+    private byte[] _mapBuffers = Array.Empty<byte>();   // all 6 × 4096
+    private byte[] _mapTiles = Array.Empty<byte>();     // tile bank
+    private string _mapPath = "";
+    private WriteableBitmap? _mapBitmap;
+    private int _mapSelRow = -1, _mapSelCol = -1;
+
+    private void LoadMapAssets()
+    {
+        try
+        {
+            _mapPath = Path.Combine(_repoRoot, "assets", "extracted", "level-minimaps.bin");
+            var tilesPath = Path.Combine(_repoRoot, "assets", "extracted", "tiles-b0f4.bin");
+            if (File.Exists(_mapPath)) _mapBuffers = File.ReadAllBytes(_mapPath);
+            if (File.Exists(tilesPath)) _mapTiles = File.ReadAllBytes(tilesPath);
+        }
+        catch (Exception ex)
+        {
+            StatusBar.Text = $"Map assets unavailable: {ex.Message}";
+        }
+    }
+
+    private int MapLevel => (int)(MapLevelBox.Value ?? 1);
+
+    private void RefreshMap()
+    {
+        if (_mapBuffers.Length < (MapLevel + 1) * MapBufSize || _mapTiles.Length == 0)
+        {
+            MapCellInfo.Text = "level-minimaps.bin / tiles-b0f4.bin missing — run extract-all";
+            return;
+        }
+        int baseOff = MapLevel * MapBufSize;
+        int w = MapCols * 8, h = MapRows * 8;
+        var rgba = new byte[w * h * 4];
+        for (int row = 0; row < MapRows; row++)
+        {
+            for (int col = 0; col < MapCols; col++)
+            {
+                byte tile = _mapBuffers[baseOff + row * MapCols + col];
+                bool selected = row == _mapSelRow && col == _mapSelCol;
+                for (int sl = 0; sl < 8; sl++)
+                {
+                    byte bits = tile != 0 && tile * 8 + sl < _mapTiles.Length
+                        ? _mapTiles[tile * 8 + sl] : (byte)0;
+                    int y = row * 8 + sl;
+                    for (int px = 0; px < 8; px++)
+                    {
+                        int x = col * 8 + px;
+                        int o = (y * w + x) * 4;
+                        bool ink = (bits & (0x80 >> px)) != 0;
+                        // Selected cell tinted red; ink white-ish, paper dark.
+                        (byte r, byte g, byte b) = ink
+                            ? (selected ? ((byte)0xFF, (byte)0x60, (byte)0x60) : ((byte)0xE0, (byte)0xE0, (byte)0xFF))
+                            : (selected ? ((byte)0x50, (byte)0x10, (byte)0x10) : ((byte)0x10, (byte)0x10, (byte)0x20));
+                        rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 0xFF;
+                    }
+                }
+            }
+        }
+
+        _mapBitmap = new WriteableBitmap(
+            new Avalonia.PixelSize(w, h),
+            new Avalonia.Vector(96, 96),
+            PixelFormat.Rgba8888,
+            AlphaFormat.Opaque);
+        using (var fb = _mapBitmap.Lock())
+        {
+            unsafe
+            {
+                fixed (byte* src = rgba)
+                {
+                    byte* dst = (byte*)fb.Address;
+                    int rowBytes = w * 4;
+                    for (int y = 0; y < h; y++)
+                        Buffer.MemoryCopy(src + y * rowBytes, dst + y * fb.RowBytes, fb.RowBytes, rowBytes);
+                }
+            }
+        }
+        MapImage.Width = w * MapScale;
+        MapImage.Height = h * MapScale;
+        MapImage.Source = _mapBitmap;
+    }
+
+    private void OnMapPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_mapBuffers.Length == 0) return;
+        var p = e.GetPosition(MapImage);
+        int col = (int)(p.X / (8 * MapScale));
+        int row = (int)(p.Y / (8 * MapScale));
+        if (col < 0 || col >= MapCols || row < 0 || row >= MapRows) return;
+        _mapSelRow = row; _mapSelCol = col;
+        byte tile = _mapBuffers[MapLevel * MapBufSize + row * MapCols + col];
+        MapTileBox.Value = tile;
+        MapCellInfo.Text = $"L{MapLevel} row {row} col {col}   tile ${tile:X2} ({tile})";
+        RefreshMap();
+    }
+
+    private void ApplyMapCell()
+    {
+        if (_mapSelRow < 0 || _mapBuffers.Length == 0) return;
+        byte tile = (byte)(MapTileBox.Value ?? 0);
+        _mapBuffers[MapLevel * MapBufSize + _mapSelRow * MapCols + _mapSelCol] = tile;
+        MapCellInfo.Text = $"L{MapLevel} row {_mapSelRow} col {_mapSelCol}   tile ${tile:X2} ({tile})   (unsaved)";
+        RefreshMap();
+    }
+
+    private void SaveMap()
+    {
+        if (_mapBuffers.Length == 0 || _mapPath.Length == 0) return;
+        File.WriteAllBytes(_mapPath, _mapBuffers);
+        StatusBar.Text = $"Saved {_mapPath}";
+        MapCellInfo.Text = MapCellInfo.Text.Replace("   (unsaved)", "");
     }
 
     private void SaveSheet()

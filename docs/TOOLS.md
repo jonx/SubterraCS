@@ -443,6 +443,24 @@ hunt for patterns. Hovering a candidate sprite reveals its raw bytes
 so you can copy them into a `find-bytes` query and look for
 references.
 
+The **Map tab** is a level-map viewer/editor over the decoded
+per-level tile-index buffers (`assets/extracted/level-minimaps.bin`,
+16 rows × 256 cols per level — see
+[disasm/assets.md](disasm/assets.md)), rendered through the master
+tile bank:
+
+* **Level selector** (1–5; level 0 is the original's data bug and
+  is not offered).
+* **Scrollable 2048×128 map** at 2× zoom — the full 256-byte-wide
+  world for the chosen level.
+* **Click a cell** to select it (tinted red) and load its tile
+  index into the "Tile #" box.
+* **Apply to cell** writes the chosen index into the in-memory
+  buffer and re-renders; **Save map** writes
+  `level-minimaps.bin` back to disk — the native port picks the
+  edit up on next launch (the same buffers drive both the visible
+  scenery and the collision probes).
+
 **Save PNG** drops a clean contact sheet (white-on-black, with a
 grid) into `renders/`, just like the CLI tools.
 
