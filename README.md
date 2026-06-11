@@ -147,6 +147,21 @@ A few highlights from the journey:
   enemy briefly shares its 8×8 colour. Both are intrinsic
   Spectrum-hardware behaviour, faithfully reproduced. See
   [RE-LOG §12](docs/RE-LOG.md).
+* **A forty-year-old Star Wars easter egg.** The idle title screen
+  draws a HALL OF FAME (`$FCDB`) whose default high-score names at
+  `$FE0F` are *Red Squadron pilots*: "somebody", **Wedge**,
+  **Biggs**, "John D.", **Luke**, **Porkins**. As far as we can
+  tell, nobody had spotted it in the data before. See
+  [title-menu.md](docs/disasm/title-menu.md) and
+  [RE-LOG §59](docs/RE-LOG.md).
+* **Level 0 is a bug, and the laser is a placebo.** Two
+  discoveries from the same disasm sessions: the level-0 record
+  pointer sits 3 bytes out of alignment (the page after level 5
+  would draw garbage and corrupt RAM — see
+  [entities.md](docs/disasm/entities.md)), and nothing in the
+  binary can ever kill an enemy ship — the player's laser hits
+  nothing in the original game
+  ([laser.md](docs/disasm/laser.md)).
 
 ---
 

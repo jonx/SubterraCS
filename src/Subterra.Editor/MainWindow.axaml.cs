@@ -74,6 +74,7 @@ public partial class MainWindow : Window
         // level) rendered through the tiles-b0f4.bin bank.
         LoadMapAssets();
         MapLevelBox.ValueChanged += (_, __) => RefreshMap();
+        MapZoomBox.ValueChanged += (_, __) => RefreshMap();
         MapApplyButton.Click += (_, __) => ApplyMapCell();
         MapSaveButton.Click += (_, __) => SaveMap();
         MapImage.PointerPressed += OnMapPointerPressed;
@@ -210,7 +211,7 @@ public partial class MainWindow : Window
     // cell; "Apply to cell" writes the chosen tile index into the
     // in-memory buffer; "Save map" writes the whole file back.
     private const int MapRows = 16, MapCols = 256, MapBufSize = MapRows * MapCols;
-    private const int MapScale = 2;
+    private int MapScale => (int)(MapZoomBox.Value ?? 2);
     private byte[] _mapBuffers = Array.Empty<byte>();   // all 6 × 4096
     private byte[] _mapTiles = Array.Empty<byte>();     // tile bank
     private string _mapPath = "";
@@ -260,9 +261,9 @@ public partial class MainWindow : Window
                         int x = col * 8 + px;
                         int o = (y * w + x) * 4;
                         bool ink = (bits & (0x80 >> px)) != 0;
-                        // Selected cell tinted red; ink white-ish, paper dark.
+                        // Selected cell tinted red; ink pure white, paper dark.
                         (byte r, byte g, byte b) = ink
-                            ? (selected ? ((byte)0xFF, (byte)0x60, (byte)0x60) : ((byte)0xE0, (byte)0xE0, (byte)0xFF))
+                            ? (selected ? ((byte)0xFF, (byte)0x60, (byte)0x60) : ((byte)0xFF, (byte)0xFF, (byte)0xFF))
                             : (selected ? ((byte)0x50, (byte)0x10, (byte)0x10) : ((byte)0x10, (byte)0x10, (byte)0x20));
                         rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 0xFF;
                     }

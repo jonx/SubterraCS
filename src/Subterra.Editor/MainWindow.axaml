@@ -68,15 +68,17 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Background="#252525" Padding="8">
                         <StackPanel Orientation="Horizontal" Spacing="12">
-                            <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="Level (1-5):"/>
-                            <NumericUpDown x:Name="MapLevelBox" Width="90" Minimum="1" Maximum="5" Value="1"/>
+                            <TextBlock VerticalAlignment="Center" Foreground="#FFFFFF" Text="Level (1-5):"/>
+                            <NumericUpDown x:Name="MapLevelBox" Width="90" Minimum="1" Maximum="5" Value="1" Foreground="#FFFFFF"/>
                             <Separator Margin="6,0"/>
-                            <TextBlock VerticalAlignment="Center" Foreground="#C8C8C8" Text="Tile #:"/>
-                            <NumericUpDown x:Name="MapTileBox" Width="100" Minimum="0" Maximum="255" Value="0"/>
-                            <Button x:Name="MapApplyButton" Content="Apply to cell" Padding="12,4"/>
-                            <Button x:Name="MapSaveButton" Content="Save map" Padding="12,4"/>
+                            <TextBlock VerticalAlignment="Center" Foreground="#FFFFFF" Text="Tile #:"/>
+                            <NumericUpDown x:Name="MapTileBox" Width="100" Minimum="0" Maximum="255" Value="0" Foreground="#FFFFFF"/>
+                            <Button x:Name="MapApplyButton" Content="Apply to cell" Padding="12,4" Foreground="#FFFFFF"/>
+                            <Button x:Name="MapSaveButton" Content="Save map" Padding="12,4" Foreground="#FFFFFF"/>
+                            <TextBlock VerticalAlignment="Center" Foreground="#FFFFFF" Text="Zoom:"/>
+                            <NumericUpDown x:Name="MapZoomBox" Width="90" Minimum="1" Maximum="8" Value="2" Foreground="#FFFFFF"/>
                             <TextBlock x:Name="MapCellInfo" VerticalAlignment="Center"
-                                       FontFamily="Menlo,Consolas,monospace" Foreground="#80B0FF"
+                                       FontFamily="Menlo,Consolas,monospace" Foreground="#FFFFFF"
                                        Text="click a cell to select"/>
                         </StackPanel>
                     </Border>
