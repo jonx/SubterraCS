@@ -59,38 +59,15 @@ public static class EntityAI
         _  => Kind.Generic,
     };
 
-    /// <summary>How the entity damages or rewards the player on contact.</summary>
-    public readonly record struct CollisionRule(
-        int ShieldDelta,   // negative = damage; positive = pickup heal
-        int FuelDelta,
-        int ScoreOnContact,
-        int RescuedDelta,
-        bool ConsumedOnContact);
+    // NOTE: an earlier port had a per-kind CollisionRule table here
+    // (touch-damage, pickups, ConsumedOnContact).  Removed: the full
+    // $F1EF disasm + $DD4D walker analysis (docs/disasm/entities.md,
+    // damages.md) show the cassette has NO coord-based entity-vs-
+    // player interaction — decor entities hurt the player solely via
+    // the $DCF5 XOR pixel-overlap, and are never consumed.
 
-    public static CollisionRule Collision(Kind kind) => kind switch
-    {
-        Kind.Worker      => new CollisionRule(+5,   0,   50, +1, true),  // pick up
-        Kind.Sparks      => new CollisionRule( 0,   0,    0,  0, true),
-        Kind.Vine        => new CollisionRule( 0,   0,    0,  0, false), // pass-through
-        Kind.Pipe        => new CollisionRule(-2,   0,    0,  0, false), // grazes
-        Kind.Bubble      => new CollisionRule( 0,  +2,    0,  0, true),  // small fuel boost
-        Kind.Explosion   => new CollisionRule(-3,   0,    0,  0, false),
-        Kind.Lava        => new CollisionRule(-8,  -5,    0,  0, true),
-        Kind.FlameDrip   => new CollisionRule(-6,   0,    0,  0, true),
-        Kind.Stalactite  => new CollisionRule(-10,  0,    0,  0, true),
-        Kind.FallingRock => new CollisionRule(-8,   0,    0,  0, true),
-        Kind.Drone       => new CollisionRule(-12,  0,    0,  0, true),
-        Kind.MineCart    => new CollisionRule(-15, -5,    0,  0, false),
-        Kind.Wagon       => new CollisionRule(-15, -5,    0,  0, false),
-        Kind.Creature    => new CollisionRule(-12,  0,    0,  0, true),
-        Kind.ForceField  => new CollisionRule(-4,   0,    0,  0, false),
-        Kind.Bowtie      => new CollisionRule(-6,   0,    0,  0, true),
-        Kind.Robot       => new CollisionRule(-10,  0,    0,  0, true),
-        Kind.ElectricArc => new CollisionRule(-15,  0,    0,  0, false),  // stays, drains shield
-        _                => new CollisionRule(-5,   0,    0,  0, true),
-    };
-
-    /// <summary>Points awarded for shooting this entity.</summary>
+    /// <summary>Points awarded for shooting this entity.
+    /// PORT-ONLY: the cassette's laser hits nothing (laser.md).</summary>
     public static int ShootScore(Kind kind) => kind switch
     {
         Kind.Worker      =>   0,   // do not shoot the workers!
@@ -231,72 +208,33 @@ public static class EntityAI
     }
 
     /// <summary>
-    /// Advance an entity one frame.  Returns false when the entity
-    /// should be removed (off-screen or natural lifetime exhausted).
+    /// Advance an entity one frame — faithful port of the full
+    /// <c>$F1EF</c> processor (see docs/disasm/entities.md).  Verdict
+    /// from the end-to-end disasm: the cassette NEVER moves System-A
+    /// entities.  The frame byte at record +2 is the only field ever
+    /// written back ($F209..$F210, advanced on time-slice 0 of the
+    /// 4-frame $F593 cycle = every 4th frame, with
+    /// frame = (frame+1) AND (maxFrames-1)); every "falling rock" or
+    /// "flying drone" is a 16-frame animation playing inside a fixed
+    /// 16×16 box.  Entities never expire and are never consumed — the
+    /// records live for the whole level.
     ///
-    /// In the original game most entities placed by the per-level
-    /// list at $F2E8 are STATIONARY — they sit at their placed (x, y)
-    /// and only the player navigates around them (by altitude change
-    /// and horizontal scroll).  A few types do move (Drones, Falling
-    /// Rocks, MineCarts, Wagons).  Sparks/Explosion are short-lived
-    /// effects.
+    /// (An earlier port moved Drones/Rocks/Carts and expired
+    /// Sparks/Explosions — all invented; removed once $F1EF was
+    /// decoded end-to-end.  The per-kind movement in
+    /// <see cref="InitSpawn"/> remains only as flavour for the
+    /// port-only procedural levels at depth 6+, where there is no
+    /// cassette ground truth.)
     /// </summary>
-    public static bool Tick(
-        EntityInstance e, Kind kind, int playerX, int playerY,
-        Random rng)
+    public static void Tick(EntityInstance e)
     {
         e.AgeFrames++;
-        switch (kind)
-        {
-            // ─── Moving hazards (the few that actually patrol) ───────
-            case Kind.FallingRock:
-                e.Y += e.DY;
-                break;
-
-            case Kind.Drone:
-            case Kind.Robot:
-                e.X += e.DX;
-                break;
-
-            case Kind.MineCart:
-            case Kind.Wagon:
-                e.X += e.DX;
-                break;
-
-            // ─── Short-lived effects ────────────────────────────────
-            case Kind.Sparks:
-                if (e.AgeFrames > 24) return false;
-                break;
-
-            case Kind.Explosion:
-                if (e.AgeFrames > 18) return false;
-                break;
-
-            // ─── Everything else is stationary ──────────────────────
-            // Workers, Lava, Stalactite, FlameDrip, Vine, Creature,
-            // Bubble, ForceField, Pipe, Bowtie, Generic — they all sit
-            // at their placed (x, y) position.  Per the user's
-            // feedback "they should stay at a specific spot."
-            default:
-                break;
-        }
-
-        // Animate the frame counter (sprite cycle) even for stationary
-        // entities — many have multi-frame idle animations.
+        // $F593 slice 0 advances the frame: once per 4 ticks.
         e.FrameTick++;
         if (e.FrameTick >= 4)
         {
             e.FrameTick = 0;
             if (e.MaxFrames > 0) e.Frame = (e.Frame + 1) % e.MaxFrames;
         }
-
-        // Off-screen culling — only for the moving kinds; static
-        // entities can be off-screen during scroll and still exist.
-        if (kind is Kind.Drone or Kind.Robot or Kind.MineCart or Kind.Wagon
-                  or Kind.FallingRock)
-        {
-            if (e.Y < -32 || e.Y > 200 || e.X < -64 || e.X > 320) return false;
-        }
-        return true;
     }
 }

@@ -640,67 +640,22 @@ public sealed class World
             }
         }
 
-        // Update every live entity.  Off-window (invisible) entities
-        // still tick (for AI / lifetimes) but skip the collision check
-        // since their X is parked off-screen.
+        // Advance every live entity's ANIMATION.  Full $F1EF disasm
+        // (docs/disasm/entities.md): the cassette never moves System-A
+        // entities — the frame byte (+2) is the only field ever
+        // written back; all apparent motion is the 16-frame animation
+        // inside a fixed 16×16 box.  Likewise there is NO coord-based
+        // entity-vs-player damage in the original ($DD4D walks only
+        // ships/bullets/boss): decor entities hurt the player solely
+        // through the $DCF5 XOR pixel-overlap, which our
+        // _playerXorOverlap path already implements.  An earlier port
+        // had invented AABB touch-damage with per-type pickup rules
+        // and ConsumedOnContact — removed for faithfulness; entities
+        // are eternal like the cassette's records.
         foreach (var e in Entities)
         {
             if (!e.Alive) continue;
-            var kind = EntityAI.For(e.TypeId);
-            if (!EntityAI.Tick(e, kind, PlayerX, PlayerY, _rng))
-            {
-                e.Alive = false;
-                continue;
-            }
-            if (!e.Visible) continue;
-            // Electric arc deactivates once all workers rescued
-            // (matches the door-unlock chain in $F252).
-            if (e.TypeId == 0x12 && Workers.RemainingThisLevel == 0) continue;
-            // Port of $DD8C collision test: entity X within ±1 byte
-            // (8 px) AND |entity.Y - player.Y| < 8 px.  Both sprites
-            // are 16×16; e.X/e.Y is the entity sprite's TOP-LEFT;
-            // PlayerX is the ship's CENTER, PlayerY is its top-left.
-            // Compare centers: entityCx = e.X + 8, playerCx = PlayerX.
-            int entCx = e.X + 8;
-            int entCy = e.Y + 8;
-            int plyCy = PlayerY + 8;
-            if (!Invincible
-                && Math.Abs(entCx - PlayerX) < 12
-                && Math.Abs(entCy - plyCy) < 8)
-            {
-                var rule = EntityAI.Collision(kind);
-                // Port of $DDC4: damage hits drain the HitAccum by $40;
-                // only on underflow does the visible Shield decrement.
-                // The cassette's $DDC4 has NO invincibility — every
-                // frame of overlap fires the chain, so 4 consecutive
-                // frames drop shield by 1 (at 60fps that's ~15
-                // shield/sec, ~6s death from full shield while stuck).
-                // We honour Invincible only as a respawn/level-load
-                // grace period (set by Respawn/LoadLevel), never as a
-                // per-damage-hit cooldown.
-                if (rule.ShieldDelta < 0)
-                {
-                    HitAccum -= 0x40;
-                    if (HitAccum < 0)
-                    {
-                        HitAccum &= 0xFF;
-                        Shield = Math.Max(0, Shield - 1);
-                    }
-                    Sfx.Trigger(SfxKind.Damage);
-                }
-                else
-                {
-                    // Pickups still grant whole-bar units.
-                    Shield = Math.Clamp(Shield + rule.ShieldDelta, 0, BarMax);
-                    if (rule.ShieldDelta > 0 || rule.RescuedDelta > 0)
-                        Sfx.Trigger(SfxKind.Pickup);
-                }
-                Fuel = Math.Clamp(Fuel + rule.FuelDelta, 0, BarMax);
-                Score += rule.ScoreOnContact;
-                Rescued += rule.RescuedDelta;
-                if (rule.ConsumedOnContact) e.Alive = false;
-                if (Shield <= 0 || Fuel <= 0) { TriggerDeath(); return; }
-            }
+            EntityAI.Tick(e);
         }
 
         // Per-frame entity supercaller — port of $E8FD.

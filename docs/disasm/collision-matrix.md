@@ -8,7 +8,7 @@ files where each routine is fully traced.
 
 | Subject \\ Object | Player | Enemy ship | Enemy bullet | Boss | Worker | Decor | Scenery (cave) |
 | ----------------- | ------ | ---------- | ------------ | ---- | ------ | ----- | -------------- |
-| **Player ship**   | —      | `$EB7A`    | `$EDC0`      | `$EDC0`† | `$EFAE` pickup | (no?) | `$DFAF` `$EB62` |
+| **Player ship**   | —      | `$EB7A`    | `$EDC0`      | `$EDC0`† | `$EFAE` pickup | `$DCF5` XOR overlap only | `$DFAF` `$EB62` |
 | **Player laser**  | —      | (PORT only)| —            | (PORT only) | bullet-proof | (PORT only) | `$DEDA` self-limit |
 | **Enemy ship**    | `$EB7A`| —          | —            | —    | —      | —     | `$EB5B` `$EB62` reverse |
 | **Enemy bullet**  | `$EDC0`| —          | —            | —    | —      | —     | `$EB62` expire |

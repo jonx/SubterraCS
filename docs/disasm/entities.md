@@ -1,8 +1,49 @@
 # Entities — `$F1A5` / `$F1EF` / `$F1BC` / `$F2BC`
 
-Partial.  Documents what we've decoded so far.  The per-type AI
-subroutines (each entity kind's individual movement code) are
-NOT yet decoded.
+**Done.**  `$F1EF` is decoded end-to-end, and the headline verdict
+overturns an old assumption:
+
+## VERDICT — System-A entities NEVER move
+
+There are no per-type AI subroutines.  `$F1EF` is the WHOLE
+per-entity processor, and the only record field it ever writes
+back is the frame byte at +2 (`$F209..$F210`, advanced on
+time-slice 0 of the `$F593` 4-frame cycle, masked with
+`(maxFrames−1)`).  Confirmed binary-wide:
+
+- every `LD (IX+$01),A` site in the ROM belongs to OTHER
+  subsystems (beam slots `$E46B`, particles `$E881`, ships,
+  bullets, boss) — nothing writes a System-A record's world-X
+  or its screen addresses;
+- `($F1B9)` (the active record-list pointer) has exactly ONE
+  loader: the dispatcher at `$F1B2`.
+
+So every "falling rock", "flying drone" or "rolling cart" is a
+16-frame ANIMATION playing inside a fixed 16×16 box; the records
+are eternal (never expired, never consumed).  The port's earlier
+per-kind movement, lifetimes, and AABB touch-damage rules were
+inventions and have been removed (`EntityAI.Tick` is now
+animate-only; decor damage flows solely through the `$DCF5` XOR
+pixel-overlap — see [damages.md](damages.md)).
+
+## `$F239` — score-parity flicker for types ≥ `$13`
+
+A previously unnoticed branch inside `$F1EF`:
+
+```
+F239  LD A,(IX+$00); CP $13; JP C,$F24F   ; types < $13: skip
+F241  PUSH HL; PUSH DE
+F243  LD HL,$E459; BIT 0,(HL)             ; bit 0 of SCORE low byte
+F248  POP DE; POP HL
+F24A  JR NZ,$F24F                          ; set → draw normally
+F24C  LD HL,$4800                          ; clear → sprite ptr = SCREEN MEMORY
+```
+
+For type ids ≥ `$13` (19..22), when bit 0 of the score's low
+byte is CLEAR the sprite-data pointer is replaced with `$4800` —
+the middle of the screen bitmap — so the entity draws whatever
+pixels happen to be there: a cheap pseudo-random shimmer.  A
+"twinkle" effect keyed to score parity, free of any extra state.
 
 ## `$F1A5` — entity dispatcher entry
 

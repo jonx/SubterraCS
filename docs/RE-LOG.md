@@ -3291,3 +3291,42 @@ Native side: `SfxWavBank` (Core) parses the WAVs;
 synth; `Sdl2Runner` maps SfxKind → wav (Hit/Damage → hit, Pickup
 → pickup, LevelUp → fanfare{depth}, Explode → bossalert), synth
 fallback when a file is missing — the bank is optional.
+
+## 61. $F1EF end-to-end — System-A entities NEVER move
+
+The biggest remaining fidelity gap ("per-type entity AI not yet
+decoded") is closed, and the answer is that there is nothing to
+decode: **there are no per-type AI subroutines.**  `$F1EF` is the
+whole per-entity processor — frame advance (slice 0 of the
+`$F593` cycle, `frame = (frame+1) AND (max−1)`), the ≥-`$13`
+score-parity flicker branch, the `$07`-attribute electric-arc
+sprite switch, the visibility gate, and four `$F2BC` quadrant
+blits.  The frame byte is the ONLY record field ever written.
+
+Binary-wide corroboration: every `LD (IX+$01),A` site belongs to
+other subsystems (beams/particles/ships/bullets/boss), and
+`($F1B9)` has exactly one loader (the dispatcher).  All apparent
+entity motion is 16-frame animation inside a fixed 16×16 box;
+records are eternal.
+
+New decoded quirk while reading the elided `$F239..$F24C` region:
+types ≥ `$13` swap their sprite pointer to `$4800` — screen
+memory! — whenever bit 0 of the score's low byte is clear.  A
+zero-state "twinkle" that samples whatever pixels the playfield
+happens to contain.
+
+Port corrections (faithfulness fixes, all in one commit):
+- `EntityAI.Tick` is now animate-only — no movement, no
+  lifetimes, no off-screen culling; entities are eternal.
+- The invented AABB touch-damage block in `TickPlaying` (per-kind
+  `CollisionRule` with pickups and `ConsumedOnContact`) is
+  REMOVED.  Decor damage flows solely through the `$DCF5` XOR
+  pixel-overlap, exactly as damages.md documents the cassette
+  doing.  The `CollisionRule` table itself is deleted.
+- `ShootScore`/`IsBulletProof` stay, relabelled PORT-ONLY (they
+  back the laser embellishment; the cassette's laser hits
+  nothing per §58).
+
+entities.md upgraded partial → done with the verdict + the
+flicker quirk; the collision matrix's "(no?)" decor cell is now
+"`$DCF5` XOR overlap only".

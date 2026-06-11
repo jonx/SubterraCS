@@ -22,7 +22,7 @@ routine's *code*.
 | [level-load.md](level-load.md) | The level-load chain from `$F6F2` through the nine helpers it calls (`$E319`, `$E2C6`, `$E2E5`, `$E347`, `$F1BC`) | partial |
 | [level-paint.md](level-paint.md) | `$DB1A` outer paint loop + `$DB7A` scroll-up + `$DAF2` tile blit + `$E104` mini-map walker | **done** |
 | [hud.md](hud.md) | `$E046` per-frame HUD updater + `$E0BE` bar driver + `$E0F1` cell paint + `$E785` print-stream table | **done** |
-| [entities.md](entities.md) | `$F1A5` dispatcher + `$F1EF` per-entity draw + `$F2BC` 16×16 blit + `$F1BC` per-level loader | partial |
+| [entities.md](entities.md) | `$F1A5` dispatcher + `$F1EF` per-entity processor (VERDICT: entities never move) + `$F2BC` 16×16 blit + `$F1BC` per-level loader + level-0 bug | **done** |
 | [death.md](death.md) | `$DDC4` hit sound + shield-- + `$DBC8` death animation + `$DBDA` 8-particle paint + `$DC43` screen-dim + `$D8A8` lives check | **done** |
 | [spawn-in.md](spawn-in.md) | `$E135` dots-converge animation + `$F6C7..$F6EF` outer respawn loop + `$E841` seed table + `$E861` death seeds side-by-side | **done** |
 | [scroll-horizontal.md](scroll-horizontal.md) | `$D9C8` L-key handler + `$DA23` scroll-left + `$DA62` scroll-right + `$DAA9` fresh-column paint | **done** |
