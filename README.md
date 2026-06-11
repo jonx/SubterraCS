@@ -378,10 +378,19 @@ Controls (native port):
 - **L** — scroll horizontally in current facing
 - **Left / Right** — face left / right + scroll
 - **Enter / Space** — fire
+- **1–5** on the title screen — pick a control option and start
+  (like the original menu)
 - **Shift** (port-only) — precision modifier: each direction key
   fires ONE pixel per press-edge instead of accelerating
 - **F11** — toggle fullscreen, **P** — pause, **R** — reset,
   **Esc** — quit
+
+All movement/fire keys are **remappable**: the first interactive
+run writes a commented `keymap.cfg` template at the repo root —
+edit it and restart.  One action per line
+(`fire = enter, space`); actions left out keep their defaults;
+system keys (Esc/P/R/F11/digits) stay fixed so a broken config
+can't lock you out.
 
 ## Is a full C# port realistic?
 

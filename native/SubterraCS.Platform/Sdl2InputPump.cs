@@ -17,9 +17,18 @@ public readonly record struct PumpResult(
 public sealed class Sdl2InputPump
 {
     private readonly GameInput _input;
+    private readonly KeyMap _keyMap;
     public bool QuitRequested { get; private set; }
 
-    public Sdl2InputPump(GameInput input) => _input = input;
+    public Sdl2InputPump(GameInput input, KeyMap? keyMap = null)
+    {
+        _input = input;
+        // keymap.cfg lives at the repo root (next to assets/) so it's
+        // easy to find and survives rebuilds; created with a commented
+        // default template on first run.
+        _keyMap = keyMap ?? KeyMap.LoadOrCreate(
+            Path.Combine(RenderTarget.FindRepoRoot(AppContext.BaseDirectory), "keymap.cfg"));
+    }
 
     public PumpResult Poll()
     {
@@ -33,6 +42,9 @@ public sealed class Sdl2InputPump
             bool down = evt.Type == Sdl2.EventKeyDown;
             bool first = down && evt.Key.Repeat == 0;
             int sym = evt.Key.Keysym.Sym;
+
+            // Fixed system keys — not remappable so a broken keymap.cfg
+            // can't lock the user out.
             switch (sym)
             {
                 case Sdl2.KeyEscape:    if (down) quit = true; break;
@@ -40,32 +52,29 @@ public sealed class Sdl2InputPump
                 case Sdl2.KeyR:         if (first) reset = true; break;
                 case Sdl2.KeyF11:       if (first) fullscreen = true; break;
 
-                // Movement — same as the Avalonia game: Q/A for up/down,
-                // L for horizontal, Enter/Space for fire.
-                case 0x71:              _input.Up = down; break;        // q
-                case 0x61:              _input.Down = down; break;       // a
-                case 0x6C:              _input.Horizontal = down; break; // l (scroll in current facing)
-                case Sdl2.KeyReturn:    _input.Fire = down; break;
-                case Sdl2.KeySpace:     _input.Fire = down; break;
-
-                // Cursor-key alternate mapping for the same actions, for
-                // anyone who prefers arrows.
-                case Sdl2.KeyUp:        _input.Up = down; break;
-                case Sdl2.KeyDown:      _input.Down = down; break;
-                case Sdl2.KeyLeft:      _input.Left = down; _input.Horizontal = down; break;
-                case Sdl2.KeyRight:     _input.Right = down; _input.Horizontal = down; break;
-
-                // Port-only precision modifier — hold Shift to make
-                // each direction key fire ONE step per press-edge
-                // instead of accelerating while held.
-                case Sdl2.KeyLShift:
-                case Sdl2.KeyRShift:    _input.Shift = down; break;
-
                 // Title-menu digits 1..5 — the cassette's control-
                 // scheme selection keys (see docs/disasm/title-menu.md).
                 case >= 0x31 and <= 0x35:
                     _input.MenuDigit = down ? sym - 0x30 : 0;
                     break;
+            }
+
+            // Game actions via the user-editable keymap (keymap.cfg —
+            // see KeyMap.cs).  Defaults match the original layout:
+            // Q/A up/down, L horizontal, arrows, Enter/Space fire,
+            // Shift = port-only precision modifier.
+            foreach (var action in _keyMap.ActionsFor(sym))
+            {
+                switch (action)
+                {
+                    case KeyMap.GameAction.Up:         _input.Up = down; break;
+                    case KeyMap.GameAction.Down:       _input.Down = down; break;
+                    case KeyMap.GameAction.Horizontal: _input.Horizontal = down; break;
+                    case KeyMap.GameAction.Left:       _input.Left = down; _input.Horizontal = down; break;
+                    case KeyMap.GameAction.Right:      _input.Right = down; _input.Horizontal = down; break;
+                    case KeyMap.GameAction.Fire:       _input.Fire = down; break;
+                    case KeyMap.GameAction.Shift:      _input.Shift = down; break;
+                }
             }
         }
 

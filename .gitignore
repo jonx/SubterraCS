@@ -20,3 +20,4 @@ __pycache__/
 
 # Large memory dumps regenerated from snapshots
 *.bin.tmp
+keymap.cfg
