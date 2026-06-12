@@ -1,10 +1,28 @@
-# Sound/music — `$FA0A` print-stream + `$5E88` Follin player
+# Sound/music — `$FA32` Follin player + the VESTIGIAL message system
 
-The cassette uses a Tim Follin beeper player at `$5E88..~$6FFF`,
-called via a "print-stream"-style interface at `$FA0A`.  Short
-SFX (boss alert, fuel pickup, warning) are encoded as compact
-byte sequences that `$FA0A` reverse-copies into a `$FF51` working
-buffer for the player to consume.
+**Headline (full `$FA32` disasm, RE-LOG §63):** the cassette's
+only music is the title tune.  `$5E88` is pure DATA — a stream of
+16-bit word pairs (duration, pitch) terminated by a first-byte
+`$FF` — and `$FA32` is the player: a synchronous, DI'd loop that
+plays the whole stream, exiting on the terminator or on ANY
+keypress (`$FA96 IN A,($FE)` across all rows).  That keypress
+exit is why title music only sounds while M or N is held: the
+`$F637` gate decides whether to CALL the player, and touching any
+key makes it return so the menu stays responsive.
+
+The "message" SFX family (`$F8B4` fuel-low, `$F8D8` shield-low,
+`$F8F9` boss alert, `$F90E` fuel pickup, `$F93A`, `$F974`
+game-over, `$F99F` per-level fanfares) queues bytes into the
+`$FF51` buffer via `$FA0A` — **but nothing in the binary ever
+plays that buffer.**  `$FA32` RESETS the pointer (`$FA36 LD
+($FF54),HL`) and reads only the `$5E88` stream; an exhaustive
+search finds no other reader of `($FF54)` except the `$F8A8`
+pending-check, and no alternate player entry (`$FA3D`/`$FA36`/
+`$FA47` have zero callers).  `$F93A` has no callers at all.  The
+whole message system is vestigial — development leftovers.  In
+the real game: no boss-alert jingle, no pickup chime, no
+fanfares, no game-over tune, no kill jingle.  In-game audio is
+exclusively the direct OUT routines.
 
 ## `$FA0A` — message dispatch
 
@@ -24,50 +42,75 @@ FA29  RET
 
 Called with `HL = message data` and `B = message length`.
 
-## `$FA32` — Follin player tick
+## `$FA32` — the Follin player, FULLY DECODED
 
 ```
-FA32  LD IX,$5E88           ; IX = music data base
-FA36  LD HL,$FF51           ; HL = working buffer
-...
-FA47  LD DE,$00FF
-FA4A  LD A,$00; OUT ($FE),A ; speaker low
-FA4E  LD B,D; DJNZ $FA4F    ; delay loop
-FA51  LD A,$10; OUT ($FE),A ; speaker high
-FA55  LD B,E; DJNZ $FA56    ; delay loop
-FA58..  consume next byte from IX; loop
+FA32  LD IX,$5E88            ; IX = tune data stream
+FA36  LD HL,$FF51
+FA39  LD ($FF54),HL          ; ★ RESET message ptr (= discard any queued msg)
+FA3C  DI
+; per note:
+FA3D  L,H = (IX+0),(IX+1)    ; HL = note DURATION (16-bit countdown)
+FA43  IX += 2
+FA47  LD DE,$00FF            ; D = low-phase width, E = high-phase width
+; per pulse cycle:
+FA4A  OUT 0; wait D           ; speaker low for D DJNZ counts
+FA51  OUT $10; wait E         ; speaker high for E counts
+FA58  BC = (IX+0),(IX+1)      ; PITCH word — busy-wait countdown
+FA5E  DEC BC until 0
+FA63  DEC HL; JR Z,$FA96     ; duration exhausted → next note
+FA68  INC E; DEC D            ; ★ THE FOLLIN SLIDE: duty shifts 1 count
+FA6A  JR NZ,$FA4A             ;   per cycle; at D=0 the mirrored half
+FA6C..FA94                    ;   ($FA6E..) slides back the other way
+; note end:
+FA96  IN A,($FE) all rows
+FA9A  AND $1F; JR NZ,$FAA9   ; ★ ANY key pressed → EXIT player
+FA9E  IX += 2                 ; skip the pitch word
+FAA2  LD A,(IX+0); CP $FF    ; first byte $FF = tune terminator
+FAA7  JR NZ,$FA3D             ; else next (duration, pitch) pair
+FAA9  EI; LD IX,$0000; RET
 ```
 
-A standard XOR-FE square-wave generator with timing controlled
-by bytes consumed from `$5E88+`.  The 6 KB region at `$5E88..$6FFF`
-is the music/SFX data for the whole game.
+**Data format of `$5E88`:** a flat stream of 16-bit little-endian
+word PAIRS — `(duration, pitch)` — terminated by a pair whose
+first byte is `$FF`.  Pitch = the busy-wait count between speaker
+toggles (bigger = lower note); duration = how many pulse cycles
+the note lasts.  The famous Follin timbre is the `INC E / DEC D`
+at `$FA68`: the square wave's duty cycle slides continuously
+across each note while the total period stays put — phasing on a
+1-bit speaker.
 
-## Short SFX entries
+The player is SYNCHRONOUS (DI'd) and runs until the terminator
+or any keypress.  No interrupts, no per-frame ticking, no
+second voice, no message consumption.
 
-Three known callers of `$FA0A` with hard-coded message tables:
+## The message system is VESTIGIAL
 
-| Routine | Caller | Length | Data ptr | Purpose |
-| ------- | ------ | ------ | -------- | ------- |
-| `$F8F9` | `$EC10` boss spawn | 11 bytes | `$F904` | Boss alert |
-| `$F90E` | `$DFAF` fuel pickup | 9 bytes  | `$F919` | Fuel-pickup chime |
-| `$F93A` | `$E920` (path `$E97A`) | 13 bytes | `$F945` | Density warning? |
-| `$F8B4` | `$D879` fuel-low | 19 bytes | `$F8C5` | Fuel-low alert |
-| `$F8D8` | `$D88A` shield-low | 16 bytes | `$F8E9` | Shield-low alert |
+`$FA0A` reverse-copies `B` bytes from `HL` into `$FF51` downward
+and stores the end pointer at `($FF54)`; `$F9F9` saves
+HL/DE/BC/AF to `$FA2A..$FA30` and `$FA19` restores them.  The
+entries:
 
-Each calls `CALL $F9F9` (probably "stop current SFX") before
-loading `HL = data ptr; B = length; JP $FA0A`.
+| Routine | Caller | Bytes | Data | Intended purpose (never heard) |
+| ------- | ------ | ----- | ---- | ------------------------------ |
+| `$F8F9` | `$EC26` boss spawn | 11 | `$F904` | boss alert |
+| `$F90E` | `$DFE8` fuel-station refill | 9 | `$F919` | pickup chime |
+| `$F93A` | — NO CALLERS — | 13 | `$F945` | (dead code) |
+| `$F8B4` | (none found) | 19 | `$F8C5` | fuel-low alert |
+| `$F8D8` | (none found) | 16 | `$F8E9` | shield-low alert |
+| `$F958/$F962` | `$EA09` laser kill | 9 | `$F96A` | kill jingle |
+| `$F974` | `$D8B5` game-over | 32 | `$F97F` | game-over tune |
+| `$F99F` | `$F72E` level load | 11 | `$F9B8`[level−1] | per-level fanfare |
 
-## Message data bytes (verified)
-
-```
-$F8F9 → $F904: 77 3A 37 33 03 18 2D 33 0D 03 CD
-$F90E → $F919: 67 13 28 31 1F 2D 0C 2C 03
-$F93A → $F945: 17 17 3E 03 14 2D 13 07 0B 37 03 21 13
-```
-
-These are NOT ASCII text — they're Follin SFX opcodes (each pair
-likely encodes (pitch, duration)).  Decoding into actual audible
-sounds requires a Follin-player port, not yet ported.
+But `($FF54)` has exactly ONE reader in the whole binary — the
+`$F8A8` pending-check — and `$FA32` clobbers the pointer on
+entry.  No alternate player entry point has any caller.  **The
+queued messages are never played.**  Either the player lost its
+message mode late in development, or the dispatch was never
+finished.  The message bytes presumably use the same
+(duration, pitch) word-pair format; pointing a future
+re-implementation at them would let us hear the eight sounds the
+game never played — an archaeology project, not a porting need.
 
 ## C# port status
 
@@ -143,14 +186,16 @@ SFX live.  Status bar shows `audio=ON` or `audio=OFF` and
 
 Cassette code at `$F637..$F63D` reads port `$7FFE`, masks bits 2
 and 3 (M and N keys on row 7), and `RET Z` if neither is pressed.
-The title-music ticks at `$F64E` / `$F65D` (and `$F641 CALL $F973`
-which is actually a `RET` no-op) live AFTER that gate, so the
-cassette's title music ONLY plays while M or N is held.  The
+The player calls at `$F64E` / `$F65D` (and `$F641 CALL $F973`
+which is actually a `RET` no-op) live AFTER that gate.  And the
+player itself ($FA32, above) EXITS on any keypress — so the
+complete behaviour is: press M/N to start the tune, and it plays
+until you touch any key (including releasing into another press).
+The synchronous DI'd player would otherwise freeze the menu; the
+keypress poll at `$FA96` is what keeps the title responsive.  The
 Avalonia emulator's **M key** doubles as both the audio toggle
-AND a forwarded Spectrum M keypress — pressing M while at the
-title fires the cassette's music gate at the same time as
-toggling our own audio output.  Hold M during title to hear the
-intro music; tap M during gameplay if you just want to mute.
+AND a forwarded Spectrum M keypress — hold M at the title to hear
+the intro music; tap M during gameplay to mute.
 
 ### Per-effect capture — `subterra sfx-render` + the native SfxWavBank
 
@@ -160,82 +205,36 @@ and captures the beeper to
 `assets/extracted/sfx/<name>.wav` (mono 16-bit PCM @ 22 050 Hz =
 the native audio device rate, so playback is 1:1):
 
-- Harness: fresh 600-frame boot per effect (the Follin player's
-  saved-register block `$FA2A..$FA30` is left mid-flight when a
-  looping tune is hard-capped — reuse makes later entries resume
-  into garbage), then push a sentinel return address, point PC at
-  the routine, single-step to the sentinel.  Queued entries are
-  then driven by repeated `$FA32` ticks.  `($FF54)` is reset to
-  `$FF51` ("no message pending") and F is zeroed before each call
-  (`$F8A8`'s CCF/SBC gate depends on the incoming carry).
-- The Follin messages LOOP forever by design (same player loops
-  the title tune); captures are clamped to one ~4 s pass.
-- The quiet-window must count from the EFFECT start (not boot
-  leftovers), or queue-only entries get cut after one `$FA32`
-  tick.
-- Captured: hit ($DDC4 click), barfill ($E419), spawnin ($E135),
-  bossalert ($F8F9), pickup ($F90E), fuellow ($F8B4), shieldlow
-  ($F8D8), fanfare1..5 ($F99F per level).  NOT captured:
-  `warning` ($F93A) and `gameover` ($F974) stay silent even with
-  the corrected quiet window — they queue without ever entering
-  the player in this harness; whatever in-game state arms the
-  player for them is TBD.  (The game-over tune is heard fine
-  through the full EMU runtime.)
-- Correction while testing: `$DC43` ("descending whine" in
-  death.md) contains NO `OUT` at all — it is the screen-dim SRL
-  loop only.  The death sequence's audio is just the `$DDC4`
-  click per damage frame.
+- Harness: fresh 600-frame boot per effect, then a sentinel-return
+  call single-stepped to completion.
+- Real captures: **hit** ($DDC4 click), **barfill** ($E419),
+  **spawnin** ($E135) — the direct OUT routines — plus
+  **titletune** (12 s of `$FA32` playing `$5E88`, captured by
+  `run-emu -wav-from` with M held).
+- **History/correction:** an earlier version of the tool also
+  "captured" the `$F8xx` queued entries by driving `$FA32` after
+  each — those WAVs were all the TITLE TUNE at different sample
+  phases (verified by phase-insensitive zero-crossing comparison)
+  because `$FA32` ignores the message buffer entirely.  All ten
+  bogus files were purged; the Effects table now carries the
+  explanation.  Also corrected on the way: `$DC43` ("descending
+  whine" in death.md) contains NO `OUT` — it's the silent
+  screen-dim loop.
 
 Native playback: `SfxWavBank` (Core) loads the WAVs;
 `BeeperSynth.PlayPcm` plays them with priority over the synth
-tone; `Sdl2Runner` maps `SfxKind` → wav name (Hit/Damage → hit,
-Pickup → pickup, LevelUp → fanfare{depth}, Explode → bossalert)
-with synth fallback when a file is missing.
+tone; `Sdl2Runner` maps Hit/Damage → `hit.wav`; every other
+SfxKind uses the PORT-ONLY synth tones (the cassette plays
+nothing for those events — see the vestigial-message verdict
+above).
 
-### What's NOT done
+### Follin player port — decision
 
-- **The Follin player itself is NOT separately ported.**  The
-  cassette's `$5E88..` code is what synthesises the music; we
-  just relay its bit-4 toggles.  A pure C# port of the player
-  (so the native runner could play the same music without the
-  Z80 emulator) would consume the `music-5e88.bin` tune stream
-  and produce the same edge sequence directly — that's a
-  separate, much bigger task and probably not worth doing.
-- **The native runner's `SfxQueue`** still uses its own
-  synthesised effects (fire / hit / damage / pickup / explode).
-  Bringing the cassette's SFX bytes through the same beeper
-  recorder path would require either embedding the Z80 emu in
-  the native port OR re-implementing the Follin player.  Out of
-  scope here.
-
-## Longer tunes — `$F974` / `$F99F`
-
-Two longer entries that dispatch `$F97F`-style 32-byte messages
-plus per-level lookups:
-
-- **`$F974`** — game-over tune.  Called ONLY from `$D8B5` (= the
-  lives-reached-zero path inside `$D8A8`):
-  ```
-  F974  CALL $F9F9
-  F977  LD HL,$F97F; LD B,$20    ; 32-byte message at $F97F
-  F97C  JP $FA0A
-  ```
-  Hard-coded fanfare.
-
-- **`$F99F`** — per-level fanfare.  Called from `$F72E` (= inside
-  the level-load chain `$F6F2`):
-  ```
-  F99F  CALL $F9F9
-  F9A2  LD DE,($E587)            ; level (low byte)
-  F9A6  DEC E; LD D,$00; SLA E    ; (level - 1) * 2 = word index
-  F9AB  LD HL,$F9B8; ADD HL,DE
-  F9AF  LD E,(HL); INC HL; LD D,(HL); EX DE,HL  ; HL = $F9B8[level - 1]
-  F9B3  LD B,$0B                  ; 11 bytes
-  F9B5  JP $FA0A
-  ```
-  Table at `$F9B8` of 6 pointers to 11-byte per-level fanfares.
-
-## Related
-
-- `$F9F9` — probably the "stop current SFX" / state-reset routine
-  called before each `$FA0A` dispatch.
+With `$FA32` fully decoded, a C# port is now TRACTABLE (the
+player is ~120 bytes; `music-5e88.bin` is a flat
+(duration, pitch) word stream; the PWM slide is two INC/DECs).
+But it would only reproduce the one tune the game has — which
+`titletune.wav` already delivers byte-faithfully through the
+capture pipeline.  Decision: not ported; the format documentation
+above is sufficient for anyone who wants to hear the eight
+never-played message sounds someday.

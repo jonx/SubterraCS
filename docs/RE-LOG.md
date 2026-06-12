@@ -3374,3 +3374,50 @@ and can respawn (spawn counter → relentless after 10); ship
 kills burst into particles; the kill jingle (captured as
 `shipkill.wav` from the `$F962` entry, skipping the random gate)
 plays half the time.
+
+## 63. $FA32 fully decoded — the message SFX system is VESTIGIAL
+
+The "warning/gameover trigger context TBD" thread is closed by
+disassembling `$FA32` end-to-end, and the answer invalidates a
+chunk of §60's captures:
+
+- `$FA32` is the WHOLE player, not a tick: a synchronous DI'd
+  loop that plays the `$5E88` data stream — flat 16-bit
+  little-endian (duration, pitch) word pairs, `$FF`-terminated —
+  until the terminator or ANY KEYPRESS (`$FA96 IN A,($FE)`).
+  The Follin PWM timbre is two instructions: `INC E / DEC D` per
+  pulse cycle slides the duty while the period stays put.
+- `$FA32` RESETS `($FF54)` on entry and never reads the `$FF51`
+  message buffer.  `($FF54)` has exactly one reader in the
+  binary (`$F8A8` pending-check); no alternate player entry has
+  any caller; `$F93A` has NO callers at all and `$F8B4`/`$F8D8`
+  callers don't exist either.  **Nothing ever plays the queued
+  messages.**  Boss alert, pickup chime, fuel/shield-low,
+  fanfares, game-over tune, kill jingle: all vestigial.  The
+  cassette's real audio = the title tune + the direct OUT
+  routines (hit click, bar-fill, spawn-in beeps, fire zap).
+- Consequence for §60: the ten "queued" WAV captures were the
+  TITLE TUNE at different sample phases (`$FA32` played `$5E88`
+  regardless of what the harness queued).  Verified by
+  phase-insensitive zero-crossing comparison — identical
+  signatures across bossalert/pickup/fanfare1.  All ten purged;
+  `sfx-render` now renders only the three real direct effects.
+- The earlier "harness can't reproduce the player-arming state"
+  hypothesis was wrong in an instructive way: there IS no arming
+  state.  The captures that "worked" were never the effects at
+  all.
+- Also explains the M/N title-music behaviour completely: the
+  `$F637` gate starts the player, the `$FA96` any-key poll exits
+  it — that's how a synchronous DI'd player coexists with a
+  responsive menu.
+
+Follin player port decision: now TRACTABLE (~120 bytes, trivial
+data format) but pointless — the game has exactly one tune and
+`titletune.wav` already reproduces it byte-faithfully.  Format
+documented in sound.md for anyone who wants to hear the eight
+never-played message sounds someday (archaeology, not porting).
+
+Port cleanup: Sdl2Runner maps only Hit/Damage → `hit.wav`;
+every other SfxKind is explicitly PORT-ONLY synth flavour
+(the cassette is silent for those events).  The laser-kill
+"50% jingle" comment now reads "cassette kill is silent".

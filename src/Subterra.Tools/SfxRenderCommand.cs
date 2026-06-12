@@ -31,30 +31,21 @@ internal static class SfxRenderCommand
 
     private sealed record Effect(string Name, ushort Entry, bool Queued, byte? Level = null);
 
+    // Only the DIRECT OUT-loop routines are real, playable effects.
+    // The $F8xx "message" family ($F8B4/$F8D8/$F8F9/$F90E/$F93A/
+    // $F974/$F99F) queues bytes into $FF51 via $FA0A — but the full
+    // $FA32 disasm (sound.md) shows NOTHING ever plays that buffer:
+    // $FA32 resets the pointer and plays only the $5E88 title stream.
+    // The message system is vestigial.  An earlier version of this
+    // tool "captured" those entries and got title-tune fragments —
+    // verified identical by phase-insensitive comparison and purged.
+    // ($DC43 "death whine" similarly turned out to be the silent
+    // screen-dim loop.)
     private static readonly Effect[] Effects =
     {
-        // Direct OUT-loop routines (sound plays inside the call).
-        // ($DC43 "death whine" turned out to have NO sound — it's the
-        // screen-dim SRL loop only; see sound.md.)
         new("hit",        0xDDC4, Queued: false),
         new("barfill",    0xE419, Queued: false),
         new("spawnin",    0xE135, Queued: false),
-        // Follin-queued messages: entry queues via $FA0A, then the
-        // $FA32 player tick consumes the $FF51 buffer.
-        new("bossalert",  0xF8F9, Queued: true),
-        // Ship/boss laser-kill jingle ($F958 entry has a 50% random
-        // gate at $F95B; enter at $F962 to capture deterministically).
-        new("shipkill",   0xF962, Queued: true),
-        new("pickup",     0xF90E, Queued: true),
-        new("warning",    0xF93A, Queued: true),
-        new("fuellow",    0xF8B4, Queued: true),
-        new("shieldlow",  0xF8D8, Queued: true),
-        new("gameover",   0xF974, Queued: true),
-        new("fanfare1",   0xF99F, Queued: true, Level: 1),
-        new("fanfare2",   0xF99F, Queued: true, Level: 2),
-        new("fanfare3",   0xF99F, Queued: true, Level: 3),
-        new("fanfare4",   0xF99F, Queued: true, Level: 4),
-        new("fanfare5",   0xF99F, Queued: true, Level: 5),
     };
 
     public static int Run(string[] args)

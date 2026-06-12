@@ -63,9 +63,13 @@ internal static class Sdl2Runner
             {
                 world.Tick(input);
 
-                // Forward game-event SFX — authentic captured cassette
-                // WAVs when available (see SfxWavBank), synth fallback
-                // otherwise.
+                // Forward game-event SFX.  Authentic captured WAVs
+                // exist only for the cassette's REAL effects (the
+                // direct OUT routines: hit click, bar-fill, spawn-in).
+                // The $F8xx "message" SFX family turned out to be
+                // vestigial — queued but never played by the original
+                // (see sound.md §The message system is vestigial) —
+                // so everything else uses the PORT-ONLY synth tones.
                 if (synth != null)
                 {
                     while (world.Sfx.TryDequeue(out var s))
@@ -73,9 +77,6 @@ internal static class Sdl2Runner
                         string? wav = s switch
                         {
                             SfxKind.Hit or SfxKind.Damage => "hit",
-                            SfxKind.Pickup                => "pickup",
-                            SfxKind.LevelUp               => $"fanfare{Math.Clamp(world.Depth, 1, 5)}",
-                            SfxKind.Explode               => "shipkill",
                             _                             => null,
                         };
                         if (wav is not null && SfxBank.TryGet(wav, out var pcm))

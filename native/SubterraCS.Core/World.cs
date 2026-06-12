@@ -749,10 +749,12 @@ public sealed class World
             // each ship's own blitter checks the screen bytes under it
             // for the beam pattern $EF before drawing; a match kills
             // the ship, awards the remaining alt-B counter ($0F = 15
-            // points, $E95A), fires a 50%-random kill jingle ($F958)
-            // and an 8-particle explosion ($EDDB).  We approximate the
-            // pixel test with the beam-byte/ship-byte overlap our
-            // projectile model exposes; score/effects are faithful.
+            // points, $E95A) and runs an 8-particle explosion ($EDDB).
+            // ($F958 also queues a "kill jingle" message — but the
+            // message system is vestigial, nothing ever plays it; see
+            // sound.md.  Our Explode tone below is port-only flavour.)
+            // We approximate the pixel test with the beam-byte/ship-
+            // byte overlap our projectile model exposes.
             int beamByte = (b.X >> 3);
             int beamWorldByte = (ScrollOffsetX + beamByte) & 0xFF;
             for (int i = 0; i < EnemyShipTable.Slots.Length; i++)
@@ -766,7 +768,7 @@ public sealed class World
                     b.Alive = false;
                     Score += 15;          // remaining alt-B ($E95A LD B,$0F)
                     KillBurst(((ship.X - ScrollOffsetX) & 0xFF) * 8, ship.Y);
-                    if (_rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);  // $F958 50% gate
+                    if (_rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);  // port-only (cassette kill is silent)
                     break;
                 }
             }
