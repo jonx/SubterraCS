@@ -23,6 +23,6 @@ __pycache__/
 keymap.cfg
 hiscores.cfg
 
-# Raw framebuffer dumps next to render PNGs — diff-tool scratch,
-# regenerable, ~190 KB each.  (Older ones remain tracked in history.)
-renders/*.rgba
+# All render output — scratch images/WAVs regenerable from the emulator.
+# Curated docs assets live in docs/images/ instead.
+renders/

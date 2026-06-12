@@ -19,7 +19,7 @@ follow every line of code from "load a snapshot" to "render the
 game".
 
 <p align="center">
-  <img src="renders/scr-substryk_20260527-224113.png" alt="Loading screen — submarine, explosion, INSIGHT logo, SUBTERRANEAN STRYKER title" width="384"/>
+  <img src="docs/images/scr-substryk_20260527-224113.png" alt="Loading screen — submarine, explosion, INSIGHT logo, SUBTERRANEAN STRYKER title" width="384"/>
 </p>
 
 ---
@@ -33,9 +33,9 @@ ULA), inside an Avalonia 12 window. The original 1985 binary boots,
 runs, and accepts input on macOS, Linux, and Windows.
 
 <p align="center">
-  <img src="renders/emu-substryk-f00030_20260527-225654.png" alt="Game's own title screen, BY MIKE FOLLIN, control select menu" width="256"/>
-  <img src="renders/emu-substryk-seq-f00280_20260527-225827.png" alt="Gameplay — surface scene with tree, terrain, HUD reading DEPTH 1 SCORE 000000 SHIELD FUEL RESCUED 00" width="256"/>
-  <img src="renders/emu-substryk-seq-f00400_20260527-225827.png" alt="Gameplay — enemies appearing in the sky over the same scene" width="256"/>
+  <img src="docs/images/emu-substryk-f00030_20260527-225654.png" alt="Game's own title screen, BY MIKE FOLLIN, control select menu" width="256"/>
+  <img src="docs/images/emu-substryk-seq-f00280_20260527-225827.png" alt="Gameplay — surface scene with tree, terrain, HUD reading DEPTH 1 SCORE 000000 SHIELD FUEL RESCUED 00" width="256"/>
+  <img src="docs/images/emu-substryk-seq-f00400_20260527-225827.png" alt="Gameplay — enemies appearing in the sky over the same scene" width="256"/>
 </p>
 
 ```sh
@@ -71,9 +71,9 @@ and instruction-level execution tracing. The full reference lives in
 ### Three asset banks already extracted
 
 <p align="center">
-  <img src="renders/player-frame-right_20260528-005418.png" alt="Player Stryker, right-facing direction frame, pink sprite" width="180"/>
+  <img src="docs/images/player-frame-right_20260528-005418.png" alt="Player Stryker, right-facing direction frame, pink sprite" width="180"/>
   &nbsp;&nbsp;
-  <img src="renders/player-frame-left_20260528-005418.png" alt="Player Stryker, left-facing direction frame, mirror image" width="180"/>
+  <img src="docs/images/player-frame-left_20260528-005418.png" alt="Player Stryker, left-facing direction frame, mirror image" width="180"/>
   <br/>
   <em>The <strong>player Stryker</strong> — two 16-byte directional
   frames (right and left), 16 × 8 pixels each, sourced from
@@ -85,7 +85,7 @@ and instruction-level execution tracing. The full reference lives in
 </p>
 
 <p align="center">
-  <img src="renders/entity-type00_20260528-003543.png" alt="16 animation frames of pickaxe / shovel heads being swung mid-air with dirt particles flying around, bright magenta" width="500"/><br/>
+  <img src="docs/images/entity-type00_20260528-003543.png" alt="16 animation frames of pickaxe / shovel heads being swung mid-air with dirt particles flying around, bright magenta" width="500"/><br/>
   <em>Entity type 0 at <code>$B8F4</code> — turns out this is the
   <strong>workers' digging-tool animation</strong> (pickaxe / shovel
   heads swung in 16 frames, with dirt particles), <em>not</em> the
@@ -99,12 +99,12 @@ and instruction-level execution tracing. The full reference lives in
 ### Two more asset banks already extracted
 
 <p align="center">
-  <img src="renders/scan-%24E62B-8x8_20260528-001405.png" alt="21 UDG cave-terrain tiles at address E62B" width="416"/><br/>
+  <img src="docs/images/scan-%24E62B-8x8_20260528-001405.png" alt="21 UDG cave-terrain tiles at address E62B" width="416"/><br/>
   <em>The 21 cave-terrain UDGs at <code>$E62B</code> (8 × 8 each).</em>
 </p>
 
 <p align="center">
-  <img src="renders/scan-%24B0F4-8x8_20260527-234538.png" alt="Master sprite tile bank at B0F4 — ~390 tiles, including cave walls, trees, buildings, humanoid figures (RESCUED people), projectiles, and HUD letters F U E L plus digits" width="580"/><br/>
+  <img src="docs/images/scan-%24B0F4-8x8_20260527-234538.png" alt="Master sprite tile bank at B0F4 — ~390 tiles, including cave walls, trees, buildings, humanoid figures (RESCUED people), projectiles, and HUD letters F U E L plus digits" width="580"/><br/>
   <em>The master 8 × 8 sprite tile bank at <code>$B0F4</code>
   (≈ 390 tiles, decoded with <code>subterra sprite-scan</code>).
   Cave walls, trees, buildings, the "RESCUED" people figures,
@@ -121,7 +121,7 @@ Avalonia GUI that auto-loads either the bundled snapshot or a
 post-game RAM dump and lets you scroll through memory at any cell
 size. Preset buttons jump to the tile bank, UDGs, music data, etc.
 Hovering a cell shows its address and raw bytes; "Save PNG" writes a
-clean contact sheet into `renders/`.
+clean contact sheet into `renders/` (gitignored scratch).
 
 ---
 
@@ -194,11 +194,11 @@ docs/
   RE-LOG.md      the running notebook (read top-to-bottom)
   MEMORY-MAP.md  every named address, organised by RAM region
   TOOLS.md       every tool with what / why / how-to
+  images/        20 curated renders from the RE process
 assets/extracted/
   tiles-b0f4.bin first standalone asset file (3 KB tile bank)
-renders/         timestamped PNG history of every render the
-                 project has ever produced — kept forever as a
-                 visual changelog
+renders/         timestamped render output — gitignored (regenerable
+                 scratch; curated examples live in docs/images/)
 ```
 
 ---
@@ -299,10 +299,10 @@ dd if=build/post-game.bin of=assets/extracted/tiles-b0f4.bin \
    bs=1 skip=$((0xB0F4 - 0x4000)) count=3072
 ```
 
-### `renders/*.png` — visual changelog
+### `renders/*.png` — render output (gitignored)
 
 Every PNG rendered by *any* tool in the project goes here, with a
-timestamp suffix so the directory acts as a history. Examples:
+timestamp suffix. Examples:
 
 * `subterra render-scr file.scr` → `renders/scr-<name>_<ts>.png`
 * `subterra render-snapshot file.z80` → `renders/snapshot-<name>_<ts>.png`
@@ -311,9 +311,10 @@ timestamp suffix so the directory acts as a history. Examples:
 * `subterra sprite-scan ...` → `renders/scan-$<addr>-<WxH>_<ts>.png`
 * The Editor's **Save PNG** button → `renders/sprites-$<addr>-...`
 
-These *are* committed — they're the project's visual changelog,
-intentionally kept so a reader can scroll back and see how the
-understanding of an asset evolved.
+The whole `renders/` directory is gitignored — it's regenerable
+scratch. Twenty curated renders that document the RE process
+(sprite scans, emu vs native comparison, diff-vs-emu progression,
+entity type sheet) live in [`docs/images/`](docs/images/) instead.
 
 ### `bin/` and `obj/` — .NET build output
 
@@ -338,7 +339,7 @@ level-load through death has been disasm'd, documented in
 0% diff-vs-emu at f100 and f300 (title + early frames).
 
 <p align="center">
-  <img src="renders/comparison-emu-vs-native_20260529-023449.png" alt="Side-by-side comparison: cassette emulator (left) and native C# port (right), both showing the same cave silhouette with tree, hill profile, HUD bars, and mini-map" width="640"/><br/>
+  <img src="docs/images/comparison-emu-vs-native_20260529-023449.png" alt="Side-by-side comparison: cassette emulator (left) and native C# port (right), both showing the same cave silhouette with tree, hill profile, HUD bars, and mini-map" width="640"/><br/>
   <em>EMU (left) vs native C# port (right) at the same level-1
   gameplay state.  Same cave silhouette, tree, hill profile, and
   HUD bars — produced by completely independent code paths: a
