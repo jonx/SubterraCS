@@ -22,3 +22,7 @@ __pycache__/
 *.bin.tmp
 keymap.cfg
 hiscores.cfg
+
+# Raw framebuffer dumps next to render PNGs — diff-tool scratch,
+# regenerable, ~190 KB each.  (Older ones remain tracked in history.)
+renders/*.rgba
