@@ -134,11 +134,12 @@ The HALL OF FAME idle screen is ported: after ~10 s idle on the
 title the native port shows `World.DrawHallOfFame` (MiniFont
 rendition of the `$FCDB` layout, seeded with the cassette's
 default table including the Star Wars names), cycling back to the
-menu after ~12 s like an attract loop.  Port-only addition on
-top: a finished run's score is inserted into the table and
-persisted to `hiscores.cfg` at the repo root (the cassette had no
-writable storage), and the game-over screen shows the rank
-achieved.
+menu after ~12 s like an attract loop.  Port-only additions on
+top: when a finished run places, a NAME-ENTRY screen appears
+(Up/Down cycle the letter, Left/Right move the cursor, Fire
+confirms — A–Z, 0–9, space), the entry is inserted and persisted
+to `hiscores.cfg` at the repo root (the cassette had no writable
+storage), and the game-over screen shows the rank achieved.
 
 Not ported: live menu-text rendering (we blit the captured
 screen instead).

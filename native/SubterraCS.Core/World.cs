@@ -5,6 +5,7 @@ public enum GameState
     Splash,     // Loading screen (SUBSTRYK.SCR from the cassette)
     Title,      // Title menu — SELECT CONTROL OPTION (1..4)
     HallOfFame, // Idle-title high-score screen (port of $FCDB)
+    NameEntry,  // Port-only: type a name for a Hall of Fame insert
     Playing,    // The actual game loop
     Dying,      // Brief death animation
     GameOver,   // Game-over screen — press FIRE to retry
@@ -237,6 +238,7 @@ public sealed class World
             case GameState.Splash:     TickSplash(input); return;
             case GameState.Title:      TickTitle(input);  return;
             case GameState.HallOfFame: TickHallOfFame(input); return;
+            case GameState.NameEntry:  TickNameEntry(input); return;
             case GameState.GameOver:   TickGameOver(input); return;
             case GameState.Dying:      TickDying();        return;
             case GameState.LevelClear: TickLevelClear();   return;
@@ -296,6 +298,62 @@ public sealed class World
         }
     }
 
+    // ─── Name entry (port-only — see HallOfFame.cs) ─────────────────
+    private char[] _nameChars = "PLAYER  ".ToCharArray();
+    private int _nameCursor;
+    private bool _nePrevUp, _nePrevDown, _nePrevLeft, _nePrevRight, _nePrevFire;
+    private const string NameAlphabet = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    /// <summary>On-screen name entry for a Hall of Fame insert:
+    /// Up/Down cycle the letter under the cursor, Left/Right move the
+    /// cursor, Fire confirms.  All edge-triggered.</summary>
+    private void TickNameEntry(GameInput input)
+    {
+        bool up    = input.Up    && !_nePrevUp;
+        bool down  = input.Down  && !_nePrevDown;
+        bool left  = input.Left  && !_nePrevLeft;
+        bool right = input.Right && !_nePrevRight;
+        bool fire  = input.Fire  && !_nePrevFire;
+        _nePrevUp = input.Up; _nePrevDown = input.Down;
+        _nePrevLeft = input.Left; _nePrevRight = input.Right;
+        _nePrevFire = input.Fire;
+
+        if (up || down)
+        {
+            int idx = NameAlphabet.IndexOf(_nameChars[_nameCursor]);
+            if (idx < 0) idx = 0;
+            idx = (idx + (up ? 1 : NameAlphabet.Length - 1)) % NameAlphabet.Length;
+            _nameChars[_nameCursor] = NameAlphabet[idx];
+        }
+        else if (left && _nameCursor > 0) _nameCursor--;
+        else if (right && _nameCursor < _nameChars.Length - 1) _nameCursor++;
+        else if (fire && StateTicks > 10)
+        {
+            string name = new string(_nameChars).TrimEnd();
+            if (name.Length == 0) name = "PLAYER";
+            LastRunRank = HallOfFame.Submit(name, Score);
+            EnterState(GameState.GameOver);
+        }
+    }
+
+    private void DrawNameEntry(Framebuffer fb)
+    {
+        MiniFont.DrawCentered(fb, 32, "NEW HIGH SCORE", 0x46);
+        MiniFont.DrawCentered(fb, 48, $"SCORE {Score:D5}", 0x47);
+        MiniFont.DrawCentered(fb, 72, "ENTER YOUR NAME", 0x45);
+        // The 8 name cells, centered; cursor cell highlighted.
+        int x0 = (Framebuffer.Width - _nameChars.Length * 8) / 2;
+        for (int i = 0; i < _nameChars.Length; i++)
+        {
+            byte attr = i == _nameCursor
+                ? (byte)((StateTicks & 16) < 8 ? 0x68 : 0x47)   // blink: bright paper
+                : (byte)0x47;
+            MiniFont.Draw(fb, x0 + i * 8, 96, _nameChars[i].ToString(), attr);
+        }
+        MiniFont.DrawCentered(fb, 128, "Q/A LETTER  L/R MOVE", 0x44);
+        MiniFont.DrawCentered(fb, 140, "FIRE TO CONFIRM", 0x44);
+    }
+
     private void TickHallOfFame(GameInput input)
     {
         if (StateTicks <= 10) return;
@@ -331,11 +389,21 @@ public sealed class World
         Explosion.Reset();
         if (Lives <= 0)
         {
-            // Submit the run to the HALL OF FAME (port-only
-            // persistence on top of the cassette's $FCDB table —
-            // the original had no writable storage).
-            LastRunRank = HallOfFame.Submit("PLAYER", Score);
-            EnterState(GameState.GameOver);
+            // Hall of Fame (port-only persistence on top of the
+            // cassette's $FCDB table — the original had no writable
+            // storage).  If the run places, ask for a name first;
+            // otherwise straight to the game-over screen.
+            if (HallOfFame.WouldPlace(Score) >= 0)
+            {
+                _nameChars = "PLAYER  ".ToCharArray();
+                _nameCursor = 0;
+                EnterState(GameState.NameEntry);
+            }
+            else
+            {
+                LastRunRank = -1;
+                EnterState(GameState.GameOver);
+            }
             Sfx.Trigger(SfxKind.GameOver);
         }
         else
@@ -1164,6 +1232,7 @@ public sealed class World
             case GameState.Splash:     DrawSplash(fb);  break;
             case GameState.Title:      DrawTitle(fb);   break;
             case GameState.HallOfFame: DrawHallOfFame(fb); break;
+            case GameState.NameEntry:  DrawNameEntry(fb); break;
             case GameState.GameOver:   DrawGameOver(fb); break;
             case GameState.LevelClear: DrawLevelClear(fb); break;
             default:                   DrawPlaying(fb); break;

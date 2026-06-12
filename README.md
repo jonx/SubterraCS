@@ -430,30 +430,28 @@ format decoding — are done; see
 [native port section](#the-native-port), and
 [docs/disasm/assets.md](docs/disasm/assets.md).)
 
-* **Follin player port.** The native runner now plays the REAL
-  cassette SFX (captured to WAV by `subterra sfx-render` — see
-  [sound.md](docs/disasm/sound.md)), but continuous in-game music
-  still comes from the simple `MusicPlayer` synth. A pure C# port
-  of the `$5E88` Follin player consuming `music-5e88.bin` would
-  bring the looping tunes natively — big job, T-state-sensitive
-  PWM code.
-* **`warning`/`gameover` SFX context.** Two of the cassette's
-  queued sound messages stay silent in the `sfx-render` harness
-  (they queue without entering the player); their exact in-game
-  trigger context is still TBD.
-* **Hall of Fame name entry.** The native port now shows the
-  `$FCDB` idle-title HALL OF FAME (Star Wars defaults included)
-  and persists scores to `hiscores.cfg` — but inserted entries
-  are named "PLAYER"; an on-screen name-entry keyboard would
-  finish the feature.
+* **The eight never-played sounds.** The cassette's `$F8xx`
+  message SFX (boss alert, pickup chime, fanfares, game-over
+  tune, kill jingle…) turned out to be **vestigial** — queued but
+  never played by any code path ([sound.md](docs/disasm/sound.md),
+  [RE-LOG §63](docs/RE-LOG.md)). The `$FA32` player and the
+  `$5E88` data format are now fully decoded, so a small
+  interpreter could finally make those 1985 sounds audible —
+  pure archaeology, zero gameplay impact.
+* **Gamepad support** in the native port (the SDL2 wrapper is
+  keyboard-only today).
+* **Release packaging** — `dotnet publish` profiles so people can
+  play without the .NET SDK.
 
 (Closed since this list was last trimmed: level-0 decoded — it's
 a data bug in the original, port wraps 5 → 1; the laser-kill
-mechanism found in `$E9F0` — the targets' own draw checks for the
-beam pattern; entities proven stationary via the full `$F1EF`
-trace; native title menu honours keys 1–5; the Editor gained a
-Map tab that can edit level tiles; authentic cassette SFX play in
-the native port.)
+mechanism found in `$E9F0`; entities proven stationary via the
+full `$F1EF` trace; `$FA32` fully decoded — the game has exactly
+ONE piece of music and the message-SFX system is vestigial, so
+the "Follin player port" and "warning/gameover context" items
+dissolved; native title menu honours keys 1–5; Hall of Fame with
+on-screen name entry + persistence; the boss's procedural
+state-byte sprite; Map tab editor; authentic cassette SFX WAVs.)
 
 ---
 

@@ -407,11 +407,17 @@ public sealed class BossEntity
         }
     }
 
-    /// <summary>Port of <c>$EC4C</c>'s draw section: blit the alien-ship
-    /// sprite (same as regular ships per <c>$E5DB</c>, since the
-    /// boss tick's <c>$E9AC</c> call inherits DE from the surrounding
-    /// $E920 chain).  Twice as wide as a regular ship — 16×8 instead
-    /// of 8×8 — since $EC60 calls $E9AC TWICE (left + right cells).
+    /// <summary>Port of <c>$EC4C</c>'s draw section.  The boss has NO
+    /// sprite bank: its alt-DE sprite-source (loaded at <c>$EC50</c>)
+    /// is <c>$EE8E</c> — its own extended-state block.  The 16 bytes
+    /// the two <c>$E9AC</c> calls consume are the state mirror that
+    /// <c>$EC9A</c> keeps writing the current per-cycle speed byte
+    /// into (<c>$EE8F</c>/<c>$EE90</c>) plus neighbouring state — so
+    /// on screen the boss is a 16×8 procedural glitch-creature of
+    /// horizontal bands that shift as its speed phase cycles (see
+    /// boss.md §Visual).  We reproduce that: the sprite bytes are a
+    /// mirror of OUR boss state, with [1] and [2] = the current
+    /// speed-phase byte exactly like $EC9A's double write.
     /// Bright RED attribute so it stands out as the boss.</summary>
     public void Draw(Framebuffer fb, int scrollCursor, byte[] shipSpriteBanks, int cycle)
     {
@@ -421,9 +427,21 @@ public sealed class BossEntity
         int sx = offset * 8;
         int sy = Y;
         if ((uint)sx >= Framebuffer.Width || (uint)sy >= Framebuffer.Height) return;
-        int spriteBase = cycle * 8;
-        if (spriteBase + 8 > shipSpriteBanks.Length) return;
-        // Two 8x8 cells side-by-side (=16x8 boss).
+
+        // The state-mirror "sprite" — port of the $EE8E..$EE9D bytes.
+        // $EC9A writes the speed byte twice ([1], [2]); the rest are
+        // the boss's own live state values, just like the cassette's
+        // mirror block.  The speed byte cycles with AltFrame so the
+        // bands visibly shift, which is the boss's signature look.
+        byte speed = (byte)(0x11 << (AltFrame & 0x03) | (AltFrame & 0x0F));
+        Span<byte> state = stackalloc byte[16]
+        {
+            X, speed, speed, Status,
+            Sub, (byte)(AltFrame * 21), Y, KillCount,
+            speed, X, (byte)(Y ^ X), speed,
+            Status, (byte)(AltFrame * 13), speed, Sub,
+        };
+
         for (int cell = 0; cell < 2; cell++)
         {
             int cellX = sx + cell * 8;
@@ -432,7 +450,7 @@ public sealed class BossEntity
             {
                 int yy = sy + row;
                 if ((uint)yy >= Framebuffer.Height) break;
-                fb.Bitmap[Framebuffer.BitmapAddress(cellX, yy)] ^= shipSpriteBanks[spriteBase + row];
+                fb.Bitmap[Framebuffer.BitmapAddress(cellX, yy)] ^= state[cell * 8 + row];
             }
             fb.Attributes[Framebuffer.AttributeAddress(cellX, sy)] = 0x42;  // bright red = boss
         }

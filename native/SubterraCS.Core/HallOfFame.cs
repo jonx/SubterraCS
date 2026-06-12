@@ -60,6 +60,17 @@ public sealed class HallOfFame
         return hof;
     }
 
+    /// <summary>Would <paramref name="score"/> enter the table?
+    /// Returns the 0-based rank it would take, or -1.  No insert,
+    /// no persistence — used to decide whether to ask for a name.</summary>
+    public int WouldPlace(int score)
+    {
+        if (score <= 0) return -1;
+        int rank = _table.FindIndex(e => score > e.Score);
+        if (rank >= 0) return rank;
+        return _table.Count < Entries ? _table.Count : -1;
+    }
+
     /// <summary>Submit a finished game's score.  Returns the 0-based
     /// rank if it entered the table, or -1.  Persists on insert.</summary>
     public int Submit(string name, int score)
