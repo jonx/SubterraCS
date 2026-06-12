@@ -1,8 +1,11 @@
 # Player ship — physics, sprite stage, draw
 
-The player's Stryker.  Fixed-X, vertical altitude controlled by
-UP/DOWN keys, L key scrolls the level horizontally.  Drawn as a
-16×16 XOR sprite with per-altitude-sub-position sprite banks.
+The player's Stryker.  Screen X is hard-fixed at columns 15/16
+(x = 120, verified — see `$E8A1` below and
+[scroll-horizontal.md](scroll-horizontal.md)); vertical altitude is
+pixel-precise via UP/DOWN keys; the L key scrolls the level
+horizontally in 8 px byte-columns.  Drawn as a 16×8 XOR sprite
+shifted to its sub-cell Y inside a 16×16 staging window.
 
 ## Address inventory
 
@@ -14,6 +17,7 @@ UP/DOWN keys, L key scrolls the level horizontally.  Drawn as a
 | `$E587` | Current level (0..5) |
 | `$E588` | Lives counter (game-over when DEC reaches 0) |
 | `$E63B..$E66B` | Player sprite source — right-facing first, then left |
+| `$E8A1..$E8A8` | Static HOME quadrant addresses (`$400F $4010 $402F $4030`) — copied to `$E8C9` and `$E8F1` by level init `$E2FC`; fixes ship X at columns 15/16 |
 | `$E8A9..$E8C8` | Staged sprite work area (filled by `$E3F4`) |
 | `$E8C9..$E8D0` | 4 quadrant screen addresses for the player draw |
 | `$E8D1..$E8F0` | Previous-frame "undo" buffer |
@@ -38,13 +42,27 @@ E418  RET
 Stages the correct-facing 16-byte sprite into `$E8A9` for `$DCF5`
 to consume.  Called once per frame from `$DCAC`.
 
-## `$DCAC` — per-frame sprite-context maintenance
+## `$DCAC` — vertical sub-cell positioning (sprite-data shifter)
 
 Called from main loop at `$D804`.  Calls `$E3F4` to stage the
-sprite, then shifts the per-sub-altitude address table at
-`$E8B0..$E8C8` (7 banks × 4 quadrant addresses each) by one
-sub-pixel when `altitude & 7 != 0`.  Details in
-[ship-ai.md](ship-ai.md) under "$DCAC" (will move here later).
+16×8 sprite at the TOP of the 32-byte work area, then — when
+`altitude & 7 != 0` — shifts the staged sprite BYTES down one
+scanline per loop pass, `altitude & 7` times.  (An earlier
+revision of this doc mislabelled this as an "address bank
+shifter"; the shifted region `$E8A9..$E8C8` is the sprite data
+itself, not addresses.)
+
+Per pass: all four 8-byte quadrant buffers shift down one byte;
+the byte falling off the bottom of the top-left quadrant wraps
+into the top of the bottom-left quadrant (`$E8B0 → $E8B9`), the
+top-right's into the bottom-right's (`$E8B8 → $E8C1`), and the
+freshly-exposed first scanlines are zeroed.  The quadrant SCREEN
+addresses at `$E8C9` stay char-aligned (recomputed by `$DDEB` =
+`row base + $10`); the sub-cell offset lives entirely in the
+data.  **This is how the cassette achieves 1-pixel vertical
+movement on a char-aligned draw** — there is no horizontal
+counterpart (see
+[scroll-horizontal.md](scroll-horizontal.md)).
 
 ## `$DCF5` — XOR player draw
 

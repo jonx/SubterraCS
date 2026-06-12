@@ -42,12 +42,13 @@ runs, and accepts input on macOS, Linux, and Windows.
 dotnet run --project src/Subterra.Game
 ```
 
-* **Q / A** — thrust up / thrust down (it's a space ship — free
-  flight in all four directions)
-* **L** — move horizontally
-* **Enter** — fire
-* **1 / 2 / 3 / 4** on the title screen pick a control method
-  (KEYBOARD / Interface 2 / Kempston / Cursor)
+* **Press 2 on the title screen**, then play with **arrow keys**
+  (move) and **Space** (fire) — layout-independent, works on AZERTY
+* Option 1 instead gives the classic keyboard scheme: **Q/A** rows
+  thrust up/down, **L** moves horizontally, **Enter** fires
+* **1–5** on the title screen pick a control method (KEYBOARD /
+  key row 6-0 / Kempston / Interface 2 / Sinclair — see
+  [docs/disasm/input.md](docs/disasm/input.md))
 * **Esc** quits
 
 ### A complete reverse-engineering toolkit

@@ -160,14 +160,7 @@ internal static class ScreenWriteTraceCommand
                 end = start;
             }
             if (frame < start || frame > end) continue;
-            SpectrumKey? k = bits[1].ToUpperInvariant() switch
-            {
-                "SPACE" => SpectrumKey.Space, "ENTER" => SpectrumKey.Enter,
-                "1" => SpectrumKey.D1, "2" => SpectrumKey.D2, "3" => SpectrumKey.D3, "4" => SpectrumKey.D4, "5" => SpectrumKey.D5,
-                "Q" => SpectrumKey.Q, "A" => SpectrumKey.A, "L" => SpectrumKey.L,
-                _ => null,
-            };
-            if (k is { } key) sys.PressKey(key);
+            if (SpectrumKey.FromName(bits[1]) is { } key) sys.PressKey(key);
         }
     }
 }

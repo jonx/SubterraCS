@@ -80,6 +80,39 @@ window is 32 cols at any time.  So a level is effectively 256
 tile-columns wide (8 screens) and can be traversed by repeated
 L-press scrolling.
 
+## Can the cassette move horizontally at pixel precision?  NO — verified
+
+Question raised while reviewing the port's Shift precision modifier
+("the original looked like it could position precisely — maybe a mix
+of ship movement and level movement?").  Checked three ways:
+
+1. **No pixel-scroll routine exists.**  A bitmap scroll finer than
+   one byte would need `RL (HL)` / `RR (HL)` rotate loops.
+   `find-bytes` for `CB 16` and `CB 1E` over the whole 48 K program:
+   **zero hits**.  The only horizontal scrolls are the byte-granular
+   `LDIR`/`LDDR` routines `$DA23`/`$DA62`, each with exactly one
+   caller (`$D9CB` dispatch, verified by `find-bytes` on the jump
+   targets).
+
+2. **The ship's screen X is hard-fixed.**  The player draw reads the
+   4-quadrant screen addresses at `$E8C9`; the only writers are:
+   * `$E2FC` (level init) — copies the static 8-byte home table at
+     `$E8A1` = `$400F $4010 $402F $4030` → columns 15/16, x=120..135;
+   * `$DDEB` (per-char-row recompute) — `row base + $10` with the
+     `$0010` as an immediate (`LD BC,$0010` at `$DDFF`); `find-bytes`
+     shows no self-modifying writes to `$DE00`.
+
+3. **The "precision mix" is real but VERTICAL.**  The ship moves
+   1 px/frame vertically (`$D95D` altitude + the `$DCAC` staged-
+   sprite shifter, see [player.md](player.md)), and the *level*
+   scrolls a page when altitude crosses `$75`.  Horizontally the
+   roles never mix: the ship never moves, the level steps 8 px.
+
+So the cassette's horizontal quantum is **8 px** (one byte-column
+per frame while the scroll key is held); the port's Shift 1-px
+sub-byte scroll remains a port-only extension with no cassette
+counterpart (see [input.md](input.md) "Port-only addition").
+
 ## Port notes
 
 In `LevelScroll.PaintLevelAtOffset(tileBank, levelBuffer, offsetX)`

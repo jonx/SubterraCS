@@ -3463,3 +3463,58 @@ correction story), the boss's no-artwork procedural sprite, the
 stationary-entities verdict, the score-parity twinkle, the
 any-key music exit, the two-instruction Follin timbre, and the
 8th ship that's been waiting to spawn since 1985.
+
+## 65. "Could the original move pixel-precise horizontally?" — NO (and two doc bugs found on the way)
+
+The user reviewed the port's Shift 1-px precision modifier after
+watching original gameplay: "it looks like they already had the
+possibility to move very precisely — maybe a mix of the ship moving
+and the level moving?"  Worth re-verifying from the source rather
+than trusting the existing notes (good thing, too — see below).
+
+**Verdict: the cassette's horizontal quantum is 8 px.**  Three
+independent checks, written up in
+[disasm/scroll-horizontal.md](disasm/scroll-horizontal.md):
+
+1. `find-bytes` for `CB 16` / `CB 1E` (`RL (HL)` / `RR (HL)`) over
+   the whole program: zero hits — no sub-byte bitmap scroll exists.
+2. The ship's screen X is pinned by the static home table `$E8A1`
+   (= `$400F $4010 $402F $4030`, columns 15/16) and the `$DDEB`
+   recompute (`row base + LD BC,$0010`, immediate not self-modified;
+   only writers of `$E8C9` are `$E2FC` and `$DDEB`).
+3. The "mix of ship + level movement" intuition is right but it's
+   the VERTICAL axis: re-decoding `$DCAC` showed it shifts the
+   staged sprite BYTES down `altitude & 7` scanlines inside the
+   32-byte window — 1-px vertical positioning on a char-aligned
+   draw.  ship-ai.md had mislabelled this as an "address bank
+   shifter".  Vertically the ship pixel-moves and the level
+   page-scrolls at `$75`; horizontally the ship never moves and the
+   level byte-scrolls.  The port's Shift modifier stays port-only.
+
+**Doc bug 1 — `$D8F4` keyboard scheme reads `$BFFE`, not `$EFFE`.**
+input.md claimed fire = key 0 and horizontal = key 9; the actual
+read is `LD A,$BF; IN A,($FE)` = the ENTER/L/K/J/H half-row, so
+fire = ENTER and horizontal = L (matching what the game actually
+feels like to play).
+
+**Doc bug 2 — the `$F741` scheme table is indexed in REVERSE.**
+The selector starts `B=5` and scans key bits 1→5, so menu key 1 =
+`$D8F4` keyboard and key 2 = `$F0F9` — which is NOT a Protek-style
+cursor handler at all: the `RRA` chain decodes 6=left, 7=right,
+8=down, 9=up, 0=fire (Sinclair port-1 arrangement).  Both verified
+by emu-peek (`key 1 → $E461=$D8F4`, `key 2 → $E461=$F0F9`; holding
+key 8 in scheme 2 sets `$E45F=$08` and dives `$E584` 0→$51).
+
+**Tooling fix that unblocked the verification:** emu-peek and the
+trace commands had a crippled `-keys=` parser (only 1-5, Q, A, P,
+O, M, SPACE, ENTER, CAPS — unknown names silently ignored), so the
+first "hold key 8" tests were pressing nothing.  All four commands
+now share the complete `SpectrumKey.FromName` parser; run-emu
+already had a full one.
+
+**Port consequences (`src/Subterra.Game` Avalonia emulator):** the
+$E461 pre-select poke from earlier today was useless — the title
+loop re-defaults the scheme every pass (`$F660`) — so it's removed;
+host arrows/Space now map to the option-2 key set (6/7/8/9/0) and
+the hint says "press 2 on title".  Arrows + Space are
+position-independent, which is the actual fix for AZERTY layouts.

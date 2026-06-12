@@ -61,6 +61,24 @@ public readonly record struct SpectrumKey(int Row, int Bit)
     public static readonly SpectrumKey M = new(7, 2);
     public static readonly SpectrumKey N = new(7, 3);
     public static readonly SpectrumKey B = new(7, 4);
+
+    /// <summary>Parse a key-schedule name as used by the tools'
+    /// <c>-keys=</c> schedules: a single letter/digit or "SPACE",
+    /// "ENTER", "CAPS", "SYMBOL".  Returns null for unknown names so
+    /// callers can choose to ignore or report.</summary>
+    public static SpectrumKey? FromName(string name) => name.ToUpperInvariant() switch
+    {
+        "CAPS" => CapsShift, "Z" => Z, "X" => X, "C" => C, "V" => V,
+        "A" => A, "S" => S, "D" => D, "F" => F, "G" => G,
+        "Q" => Q, "W" => W, "E" => E, "R" => R, "T" => T,
+        "1" => D1, "2" => D2, "3" => D3, "4" => D4, "5" => D5,
+        "0" => D0, "9" => D9, "8" => D8, "7" => D7, "6" => D6,
+        "P" => P, "O" => O, "I" => I, "U" => U, "Y" => Y,
+        "ENTER" or "ENT" => Enter, "L" => L, "K" => K, "J" => J, "H" => H,
+        "SPACE" or "SPC" => Space, "SYMBOL" or "SS" => SymbolShift,
+        "M" => M, "N" => N, "B" => B,
+        _ => null,
+    };
 }
 
 public static class Spectrum48KeyExtensions

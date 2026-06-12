@@ -413,8 +413,11 @@ decoded to RGBA via `SpectrumScreen.DecodeRgba`, copied into a
 Keyboard input goes through `MapKey` in `MainWindow.axaml.cs`, which
 maps Avalonia `Key` values to `SpectrumKey` half-row/bit identifiers.
 QWERTY letters/digits map directly to the corresponding Spectrum
-keys; cursor arrows map to the Sinclair "Cursor" joystick (`CAPS` +
-5/6/7/8). `Esc` quits.
+keys; cursor arrows + Space map to the title menu's **option 2**
+key set (`$F0F9`: 6=left, 7=right, 8=down, 9=up, 0=fire — see
+[disasm/input.md](disasm/input.md)), so after pressing 2 on the
+title the game plays with arrows + Space on any host layout
+(AZERTY included). `Esc` quits.
 
 **Why:** the cross-platform playable artefact the project promised.
 It's the same emulator the CLI uses (just driven by a GUI loop

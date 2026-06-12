@@ -107,15 +107,22 @@ codes — see [hud-print.md cross-ref](hud.md)).
 
 ## Control-scheme table — `$F741`
 
-| Index | Pointer | Scheme |
-| ----- | ------- | ------ |
-| 1 | `$FB71` | Sinclair joystick |
-| 2 | `$F177` | Interface 2 |
+The bit-scan at `$F67C` (`B=5`, `SRL A`/`DJNZ` from key 1 upward)
+indexes this table in **reverse**: menu key 1 selects the LAST
+entry.  Verified by emu-peek (`key 1 → $E461=$D8F4`,
+`key 2 → $E461=$F0F9`).
+
+| Menu key | Pointer | Scheme |
+| -------- | ------- | ------ |
+| 5 | `$FB71` | Sinclair joystick |
+| 4 | `$F177` | Interface 2 |
 | 3 | `$F14E` | Kempston |
-| 4 | `$F0F9` | Cursor |
-| 5 | `$D8F4` | Keyboard (extra option?) |
+| 2 | `$F0F9` | Key row 6/7/8/9/0 (6=left 7=right 8=down 9=up 0=fire) |
+| 1 | `$D8F4` | Keyboard (ENTER=fire, L=horizontal, Q/A rows up/down) |
 
 See [input.md](input.md) for the per-scheme handler details.
+Note `$F660` re-defaults `($E461)` to `$FB71` on every title-loop
+pass, so the scheme cannot be pre-selected by poking memory.
 
 ## C# port
 

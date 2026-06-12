@@ -25,7 +25,7 @@ All four handlers fill the bits of `$E45F` identically:
 | --- | ------- | ------- |
 | 0 | FIRE pressed (latched via `$E460`) | `$DE44` BIT 0 → laser fire |
 | 1 | LEFT/RIGHT key (= L on keyboard) | `$D9CB` BIT 1 → horizontal scroll |
-| 2 | (LEFT — shift+keys group) | (used internally by D8F4 only) |
+| 2 | (LEFT row in `$D8F4`; "facing flipped" flag in `$F0F9`) | internal |
 | 3 | DOWN | `$D991` AND $08 → altitude++ |
 | 4 | UP   | `$D964` AND $10 → altitude-- |
 | 5 | (RIGHT toggle) | `$D949` BIT 5 → facing flip |
@@ -38,23 +38,34 @@ can't hold fire to spam shots — must release between).
 ### `$F741` table — title-menu indexed
 
 ```
-$F741: $FB71  $F177  $F14E  $F0F9  $D8F4  ...
-       (1)    (2)    (3)    (4)    (default)
+$F741: $FB71  $F177  $F14E  $F0F9  $D8F4
+       (5)    (4)    (3)    (2)    (1)
 ```
 
-- Option 1 (`$FB71`) — Sinclair JOYSTICK
-- Option 2 (`$F177`) — INTERFACE 2 JOYSTICK
-- Option 3 (`$F14E`) — KEMPSTON JOYSTICK
-- Option 4 (`$F0F9`) — CURSOR JOYSTICK
-- `$D8F4` — KEYBOARD (active by default in our snapshots)
+**The menu indexes this table in REVERSE.**  The selector at `$F67C`
+starts `B=5` and scans the `$F7FE` key bits from key 1 upward with
+`SRL A / DJNZ`, so key 1 leaves `B=5` → `$F741[4]` = `$D8F4`, key 2
+gives `B=4` → `$F741[3]` = `$F0F9`, etc.  Verified by emu-peek:
+holding key 1 on the title installs `$E461=$D8F4`; key 2 installs
+`$E461=$F0F9`.
+
+- Option **1** (`$D8F4`) — KEYBOARD
+- Option **2** (`$F0F9`) — joystick-style key row 6/7/8/9/0
+- Option **3** (`$F14E`) — KEMPSTON
+- Option **4** (`$F177`) — INTERFACE 2
+- Option **5** (`$FB71`) — SINCLAIR
+
+While the title loop runs, `$F660` re-defaults `($E461)` to `$FB71`
+on every pass — so poking `$E461` before the menu has no effect;
+the selection is whatever digit starts the game.
 
 ### `$D8F4` — KEYBOARD
 
 ```
 D8F4  LD HL,$E45F
 D8F7  LD A,$BF; IN A,($FE); CPL; AND $03; LD (HL),A
-                                ; read keys 6/7/8/9/0 (half-row $BFFE)
-                                ; keep only bits 0..1 → fire (key 0) + key 9
+                                ; read half-row $BFFE = ENTER/L/K/J/H
+                                ; keep bits 0..1 → fire (ENTER) + L
 D8FF  RES 0,(HL)
 D901  BIT 0,A
 D903  JR Z,$D914                 ; fire NOT pressed → clear latch
@@ -85,9 +96,11 @@ D955  RES 5,(HL); JR $D95B
 D959  SET 5,(HL)                 ; arm RIGHT toggle
 ```
 
-So KEYBOARD scheme:
-- `0` key = FIRE (with release-debounce via `$E460`)
-- `9` key = the L-equivalent for horizontal scroll
+So KEYBOARD scheme (option 1):
+- `ENTER` = FIRE (with release-debounce via `$E460`) — half-row
+  `$BFFE` bit 0, **not** key 0 as an earlier revision of this doc
+  claimed
+- `L` = horizontal scroll — `$BFFE` bit 1, not key 9
 - Any of SHIFT/Z/X/C/V = LEFT
 - Any of A/S/D/F/G = DOWN
 - Any of Q/W/E/R/T = UP
@@ -117,14 +130,43 @@ to `$E45F` bits, then jumps into the CURSOR-handler's tail at
 Reads half-rows `$F7FE` (keys 1-5) and `$EFFE` (keys 0,9,8,7,6),
 maps the bits onto B, falls into `$F101` like KEMPSTON.
 
-### `$F0F9` — CURSOR (5/6/7/8/0)
+### `$F0F9` — option 2 (keys 6/7/8/9/0, Sinclair port-1 arrangement)
 
-Reads `$EFFE` (cursor keys 5..0 on the Spectrum keyboard map)
-plus the `$E460` debounce latch for fire-release detection.
+Reads half-row `$EFFE` once, then an `RRA` chain peels the bits
+(active-low; bit 0 = key 0 ... bit 4 = key 6):
 
-### `$FB71` — SINCLAIR (Sinclair-1 joystick, keys 6-0)
+```
+F0FD  LD A,$EF; IN A,($FE); LD B,A    ; B = raw read for later
+F107  RRA; JR NC,latch                 ; key 0  → FIRE (edge-latched via $E460 bit 0)
+F116  RRA; JR C,+2; SET 4,C            ; key 9  → UP    ($E45F bit 4)
+F11B  RRA; JR C,+2; SET 3,C            ; key 8  → DOWN  ($E45F bit 3)
+F120  RRA; JR NC,horiz                 ; key 7 pressed → horizontal
+F123  RRA; JR NC,horiz                 ; key 6 pressed → horizontal
+F126  JR $F146                         ; neither → store C, done
+horiz:
+F128  LD E,$00; SET 1,C                ; bit 1 = horizontal scroll
+F12C  BIT 3,B; JR NZ,+2; LD E,$01      ; E = 1 if the press was key 7
+F132  LD A,($E586); AND $01; XOR E     ; compare wanted direction vs facing
+F138  JR Z,$F146                       ;   same → just scroll
+F13A  SET 2,C                           ;   differs → flag + flip facing
+F13C  LD A,($E586); AND $01; XOR $01; LD ($E586),A
+F146  LD A,C; LD ($E45F),A; POP HL; JP $D959
+```
 
-(Not yet disassembled — at the very top of the menu list.)
+So option 2 is **6=LEFT, 7=RIGHT, 8=DOWN, 9=UP, 0=FIRE** — the
+classic Sinclair Interface-2 *port 1* arrangement, **not** the
+Protek cursor layout (5/6/7/8) an earlier revision of this doc
+assumed.  Left/right presses flip `$E586` facing when needed, then
+scroll (`$E45F` bit 1).  Empirically verified: holding key 8 sets
+`$E45F=$08` and dives (`$E584` 0→$51 in 60 frames); key 7 sets
+`$E45F=$02`.
+
+`$F101` is the shared tail entry used by KEMPSTON/INTERFACE 2 —
+they build the raw byte in their own way and jump in.
+
+### `$FB71` — SINCLAIR (option 5)
+
+(Not yet disassembled.)
 
 ## C# port
 

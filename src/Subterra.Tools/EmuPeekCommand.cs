@@ -86,14 +86,6 @@ internal static class EmuPeekCommand
 
     private static void PressNamed(Spectrum48 sys, string name)
     {
-        SpectrumKey? k = name.ToUpperInvariant() switch
-        {
-            "SPACE" => SpectrumKey.Space, "ENTER" => SpectrumKey.Enter,
-            "1" => SpectrumKey.D1, "2" => SpectrumKey.D2, "3" => SpectrumKey.D3, "4" => SpectrumKey.D4, "5" => SpectrumKey.D5,
-            "Q" => SpectrumKey.Q, "A" => SpectrumKey.A, "P" => SpectrumKey.P, "O" => SpectrumKey.O, "M" => SpectrumKey.M,
-            "CAPS" => SpectrumKey.CapsShift,
-            _ => null,
-        };
-        if (k is { } key) sys.PressKey(key);
+        if (SpectrumKey.FromName(name) is { } key) sys.PressKey(key);
     }
 }

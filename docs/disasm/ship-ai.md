@@ -397,6 +397,16 @@ So `$DFAF` does two things:
 
 ## `$DCAC` — sprite-context maintenance
 
+> **Correction (see [player.md](player.md) for the full story):**
+> the region this routine shifts, `$E8A9..$E8C8`, is the staged
+> player sprite DATA (4 × 8-byte quadrant buffers), not a table of
+> addresses.  Each loop pass moves the sprite image down one
+> scanline inside the 16×16 window, wrapping the top quadrants'
+> bottom bytes into the bottom quadrants — vertical sub-cell
+> positioning at pixel precision.  The reading below ("address
+> banks") is kept for the raw disasm but is wrong about the data's
+> meaning.
+
 Called from main loop at `$D804`.  Maintains the `$E8B0..$E8C8`
 table of player sprite addresses (4 quadrants × ~8 sub-position
 banks per scanline within a char-row).
@@ -454,6 +464,6 @@ right scanlines.  `$DCAC` keeps that table coherent.
 | `$EE7E` / `$EE7F` / `$EE80` / `$EE81` / `$EE84` | Boss AI state bytes |
 | `$EE8F` / `$EE90` | Boss mirrored state for next-frame draw |
 | `$DFAF` | Player-vs-scenery + fuel pickup |
-| `$DCAC` | Player sprite bank-shifter |
+| `$DCAC` | Player sprite vertical sub-cell shifter (shifts staged sprite DATA, not addresses) |
 | `$DFEE` | Wall-tile collision → death ($DBC8) |
 | `$E589`,`$E58A` | Worker/pickup target coords |

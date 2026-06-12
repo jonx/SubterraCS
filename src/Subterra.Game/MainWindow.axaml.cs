@@ -78,10 +78,10 @@ public partial class MainWindow : Window
         var snap = Z80SnapshotReader.Load(snapPath);
         var sys = new Spectrum48(rom);
         sys.LoadSnapshot(snap);
-        // Pre-select CURSOR scheme ($F0F9) so arrow keys + Space work without
-        // pressing 4 on the title screen.  $E461 = active handler address (LE).
-        sys.WriteMemory(0xE461, 0xF9);
-        sys.WriteMemory(0xE462, 0xF0);
+        // NOTE: no point pre-selecting a control scheme by poking $E461 —
+        // the title loop rewrites it every pass ($F660 defaults to $FB71,
+        // $F694 installs the scheme picked with keys 1-5).  Instead the
+        // arrow keys below map to the option-2 ($F0F9) key set.
         return sys;
     }
 
@@ -180,10 +180,13 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Map an Avalonia <see cref="Key"/> to one or more Spectrum keys.
-    /// Arrow keys map to cursor-scheme keys 5/6/7/8 directly (no CapsShift needed
-    /// because $F0F9 reads those number rows directly, not the CapsShift+N combos).
-    /// Space maps to key 0 = fire in the cursor scheme (and also fire in keyboard
-    /// scheme via the same $EFFE bit 0).
+    /// Arrow keys + Space map to the key set of the title menu's option 2
+    /// handler ($F0F9, see docs/disasm/input.md): 6=left, 7=right, 8=down,
+    /// 9=up, 0=fire (Sinclair port-1 arrangement).  Verified by disasm +
+    /// emu-peek: holding key 8 sets $E45F bit 3 (DOWN) and dives; key 7
+    /// sets bit 1 (horizontal).  Press 2 on the title to start with this
+    /// scheme — then arrows + Space work regardless of host layout
+    /// (AZERTY included), since they're position-independent keys.
     /// </summary>
     private static SpectrumKey[] MapKey(Key k) => k switch
     {
@@ -223,14 +226,14 @@ public partial class MainWindow : Window
         Key.D7 or Key.NumPad7 => new[] { SpectrumKey.D7 },
         Key.D8 or Key.NumPad8 => new[] { SpectrumKey.D8 },
         Key.D9 or Key.NumPad9 => new[] { SpectrumKey.D9 },
-        Key.Space => new[] { SpectrumKey.D0 },      // fire in cursor + keyboard schemes
+        Key.Space => new[] { SpectrumKey.D0 },      // fire in the option-2 scheme
         Key.Enter or Key.Return => new[] { SpectrumKey.Enter },
         Key.LeftShift or Key.RightShift => new[] { SpectrumKey.CapsShift },
         Key.LeftCtrl or Key.RightCtrl => new[] { SpectrumKey.SymbolShift },
-        Key.Left  => new[] { SpectrumKey.D5 },
-        Key.Down  => new[] { SpectrumKey.D6 },
-        Key.Up    => new[] { SpectrumKey.D7 },
-        Key.Right => new[] { SpectrumKey.D8 },
+        Key.Left  => new[] { SpectrumKey.D6 },
+        Key.Right => new[] { SpectrumKey.D7 },
+        Key.Down  => new[] { SpectrumKey.D8 },
+        Key.Up    => new[] { SpectrumKey.D9 },
         _ => Array.Empty<SpectrumKey>(),
     };
 }

@@ -231,7 +231,7 @@ The 12 calls in order, with what each phase does:
 | `$F868` | Pre-step gate                     | Returns immediately unless player altitude `$E584 ≥ $75` and game-state lock `$E583 == 0`. Once open, advances the world via `JP $F6F2`. |
 | `$D827` | Scroll counter update             | Maintains `$EE74` against the current level index. Drives the vertical-scroll animation. |
 | `$D8C2` | Input snapshot + dispatch         | Copies current player state to backup vars (`$E45B`, `$E45C`), then `CALL $D8F0` — the input dispatcher that fans out via `($E461)` to the active control method. |
-| `$DCAC` | Player sprite stage               | Calls `$E3F4` to copy the new directional frame into the working buffer at `$E8A9`; then handles altitude-mod-8 logic. |
+| `$DCAC` | Player sprite stage + Y sub-shift | Calls `$E3F4` to copy the new directional frame into the working buffer at `$E8A9`; then shifts the staged sprite bytes down `altitude & 7` scanlines (1-px vertical positioning — see [disasm/player.md](disasm/player.md)). |
 | `$DC5D` | Player attribute paint           | Walks IX = `$E8F1` (the 4-quadrant address table again, sister of `$E8C9`), writing the level-coloured attribute byte (from `$E57B`) into each cell the player occupies. |
 | `$F1A5` | **Entity dispatcher**            | 4-frame time-slicer (`$F593`) → walks the active entity list (`$F1B9`/`$F1BB`), draws each via `$F1EF` (which decodes type from `$F5A0` table and blits 32 bytes through `$F2BC`). |
 | `$D9C8` | Horizontal-move logic            | Reads `$E45F` bit 1 (the "L" key), updates horizontal position, then paints the colour strip at `$5801` (attribute row 0) with the player's level colour. |
@@ -415,20 +415,32 @@ it XOR-redraws the ship in place, which means the ship is
 *absent* in the framebuffer for exactly the window between the
 erase pass and the redraw pass.
 
+## RAM ($E8A1–$E8A8)  — player HOME quadrant addresses (static data)
+
+The 8-byte template `$400F $4010 $402F $4030` (TL/TR/BL/BR) copied
+into `$E8C9` and `$E8F1` by the level-init routine `$E2FC`.  Never
+written by code — it pins the ship's screen X to byte columns 15/16
+(x = 120) for the whole game.  See
+[disasm/scroll-horizontal.md](disasm/scroll-horizontal.md) for the
+proof that the ship's X never moves.
+
 ## RAM ($E8A9–$E8C8)  — player working sprite buffer (32 bytes)
 
 Holds the current frame of the player sprite that `$DCF5` is
-about to XOR onto the screen. Only the top 16 bytes (TL + TR
-quadrants) are populated for the standard side-view ship; the
-lower 16 bytes are intentionally zero. Replaced each cycle from
-the `$E63B` bank by the routine at `$E3F4`.
+about to XOR onto the screen. The 16×8 frame is staged into the
+top 16 bytes (TL + TR quadrants) by `$E3F4`, then `$DCAC` shifts
+the whole image down `altitude & 7` scanlines inside the 32-byte
+window (top-quadrant bottom bytes wrap into the bottom quadrants)
+— the cassette's 1-pixel vertical positioning on a char-aligned
+draw.
 
 ## RAM ($E8C9–$E8D0)  — player 4-quadrant screen-address array
 
 Four little-endian 16-bit screen addresses (TL / TR / BL / BR)
 that `$DCF5` reads via IX to figure out where on the bitmap the
-sprite should be XOR'd. Updated by the input/movement code as the
-player flies around.
+sprite should be XOR'd. Recomputed by `$DDEB` as
+`char-row base + $10` (column fixed); only the row part varies
+with altitude.
 
 ## RAM ($DCF5–$DD49)  — **player XOR sprite drawer**
 

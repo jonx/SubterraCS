@@ -9,7 +9,7 @@
         Title="Subterranean Stryker — Subterra.Game">
     <DockPanel>
         <TextBlock DockPanel.Dock="Top" Margin="8,6,8,4" Foreground="#A0A0A0">
-            Arrow keys move · Space fire · Enter menus · 1–4 on title picks scheme · M mutes · Esc quit
+            Press 2 on title to start · then arrows move, Space fires · M mutes · Esc quit
         </TextBlock>
         <TextBlock x:Name="StatusBar" DockPanel.Dock="Bottom"
                    Margin="8,2,8,4" Foreground="#808080" FontFamily="Menlo,Consolas,monospace"/>
