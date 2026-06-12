@@ -78,6 +78,10 @@ public partial class MainWindow : Window
         var snap = Z80SnapshotReader.Load(snapPath);
         var sys = new Spectrum48(rom);
         sys.LoadSnapshot(snap);
+        // Pre-select CURSOR scheme ($F0F9) so arrow keys + Space work without
+        // pressing 4 on the title screen.  $E461 = active handler address (LE).
+        sys.WriteMemory(0xE461, 0xF9);
+        sys.WriteMemory(0xE462, 0xF0);
         return sys;
     }
 
@@ -176,8 +180,10 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Map an Avalonia <see cref="Key"/> to one or more Spectrum keys.
-    /// Cursor keys map to the canonical "Cursor type" joystick (CAPS+5/6/7/8),
-    /// which is the layout the game's own menu offers.
+    /// Arrow keys map to cursor-scheme keys 5/6/7/8 directly (no CapsShift needed
+    /// because $F0F9 reads those number rows directly, not the CapsShift+N combos).
+    /// Space maps to key 0 = fire in the cursor scheme (and also fire in keyboard
+    /// scheme via the same $EFFE bit 0).
     /// </summary>
     private static SpectrumKey[] MapKey(Key k) => k switch
     {
@@ -217,14 +223,14 @@ public partial class MainWindow : Window
         Key.D7 or Key.NumPad7 => new[] { SpectrumKey.D7 },
         Key.D8 or Key.NumPad8 => new[] { SpectrumKey.D8 },
         Key.D9 or Key.NumPad9 => new[] { SpectrumKey.D9 },
-        Key.Space => new[] { SpectrumKey.Space },
+        Key.Space => new[] { SpectrumKey.D0 },      // fire in cursor + keyboard schemes
         Key.Enter or Key.Return => new[] { SpectrumKey.Enter },
         Key.LeftShift or Key.RightShift => new[] { SpectrumKey.CapsShift },
         Key.LeftCtrl or Key.RightCtrl => new[] { SpectrumKey.SymbolShift },
-        Key.Left  => new[] { SpectrumKey.CapsShift, SpectrumKey.D5 },
-        Key.Down  => new[] { SpectrumKey.CapsShift, SpectrumKey.D6 },
-        Key.Up    => new[] { SpectrumKey.CapsShift, SpectrumKey.D7 },
-        Key.Right => new[] { SpectrumKey.CapsShift, SpectrumKey.D8 },
+        Key.Left  => new[] { SpectrumKey.D5 },
+        Key.Down  => new[] { SpectrumKey.D6 },
+        Key.Up    => new[] { SpectrumKey.D7 },
+        Key.Right => new[] { SpectrumKey.D8 },
         _ => Array.Empty<SpectrumKey>(),
     };
 }
