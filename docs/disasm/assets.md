@@ -34,7 +34,8 @@ extracted by separate one-shot commands listed below.
 | [rom-font.bin](#rom-fontbin)                       | ROM `$3D00`     |  768 | `RomFont`                       | Spectrum ROM 8×8 character set `$20..$7F` |
 | [splash-scr.bin](#splash-scrbin)                   | screen capture  | 6912 | `World.SplashScr`               | Loading-screen `.scr` dump (6144 bitmap + 768 attr) |
 | [title-menu-scr.bin](#title-menu-scrbin)           | screen capture  | 6912 | `World.TitleMenuScr`            | "SELECT CONTROL OPTION" menu `.scr` dump |
-| sfx/*.wav (4 files: hit, barfill, spawnin, titletune) | beeper capture | ~700 KB | `SfxWavBank` → `BeeperSynth.PlayPcm` | The cassette's REAL sounds (direct OUT routines + the title tune) rendered by `subterra sfx-render` / `run-emu -wav-from`.  The `$F8xx` "message" SFX are vestigial — never played by the original — see [sound.md](sound.md) |
+| sfx/*.wav (4 real: hit, barfill, spawnin, titletune) | beeper capture | ~700 KB | `SfxWavBank` → `BeeperSynth.PlayPcm` | The cassette's REAL sounds (direct OUT routines + the title tune) rendered by `subterra sfx-render` / `run-emu -wav-from`.  The `$F8xx` "message" SFX are vestigial — never played by the original — see [sound.md](sound.md) |
+| sfx/lost-*.wav (12 reconstructions)                | reconstruction  | ~400 KB | `SfxWavBank` (N-key Lost Sounds mode) | The never-played `$F8xx` messages rendered via `LostSoundReconstructor` (documented assumptions — [sound.md](sound.md) §lost, [CURIOSITIES.md](../CURIOSITIES.md) §2) |
 
 Total: 17 files, ~55 KB on disk.  Roughly 60% of the cassette's
 RAM footprint after game-init.

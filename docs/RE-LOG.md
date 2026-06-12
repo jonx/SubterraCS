@@ -3421,3 +3421,45 @@ Port cleanup: Sdl2Runner maps only Hit/Damage → `hit.wav`;
 every other SfxKind is explicitly PORT-ONLY synth flavour
 (the cassette is silent for those events).  The laser-kill
 "50% jingle" comment now reads "cassette kill is silent".
+
+## 64. The lost sounds, unlocked — and CURIOSITIES.md
+
+User: *"it's very nice to hear about those hidden gems… let's
+document them.  and maybe we can unlock those sounds/effects and
+use them in the game? maybe as an option to be faithful?"*
+
+Format analysis of the eight never-played messages: NOT the
+title player's word-pair format (that reading gives multi-second
+notes).  The structure is variable-length groups of pitch bytes
+separated by `$03` — clearest in the game-over message
+(`1B 58 03 | 58 58 03 | 18 18 03 | …`) — with byte values in
+exactly the title player's pitch range.  Data for a player mode
+that never shipped.
+
+`LostSoundReconstructor` (Subterra.Spectrum) renders each message
+through `$FA32`'s pulse-cycle engine — DJNZ-semantics delays
+(0 = 256), the pitch busy-wait at 26 T per count, and the
+`INC E / DEC D` duty slide bouncing across each note — with two
+documented free parameters (56 cycles per note, 24 ms rest per
+`$03`; interior `$00`s in fanfares 3/4 are double rests, the
+trailing `00 00` is padding).  `sfx-render` writes twelve
+`lost-*.wav` reconstructions; message bytes are inlined in the
+source with their ROM addresses for reproducibility.
+
+Native: **N key** toggles Lost Sounds (default OFF = faithful
+silence).  New SfxKinds BossAlert/FuelLow/ShieldLow fire at the
+exact events the cassette queued the originals for (boss
+activation edge in TickPlaying = $EC26; fuel-station refill =
+$DFE8; the existing low-warnings); when the mode is on, the
+runner maps them plus Pickup/Explode/GameOver/LevelUp to the
+reconstructions (fanfare picked by depth).  Faithful mode keeps
+BossAlert silent and the warnings on the old tone.
+
+New `docs/CURIOSITIES.md` collects every hidden gem in one
+reader-facing page: the Star Wars hall of fame + Timothy/Gof
+signatures, the lost sounds (with the N-key unlock), the level-0
+bug, "the bitmap IS the collision system" (with the §58/§62
+correction story), the boss's no-artwork procedural sprite, the
+stationary-entities verdict, the score-parity twinkle, the
+any-key music exit, the two-instruction Follin timbre, and the
+8th ship that's been waiting to spawn since 1985.

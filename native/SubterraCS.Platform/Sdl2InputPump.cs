@@ -12,7 +12,8 @@ public readonly record struct PumpResult(
     bool Quit,
     bool TogglePause,
     bool ToggleFullscreen,
-    bool Reset);
+    bool Reset,
+    bool ToggleLostSounds);
 
 public sealed class Sdl2InputPump
 {
@@ -32,7 +33,7 @@ public sealed class Sdl2InputPump
 
     public PumpResult Poll()
     {
-        bool quit = false, pause = false, fullscreen = false, reset = false;
+        bool quit = false, pause = false, fullscreen = false, reset = false, lostSounds = false;
 
         while (Sdl2.SDL_PollEvent(out var evt) != 0)
         {
@@ -51,6 +52,7 @@ public sealed class Sdl2InputPump
                 case Sdl2.KeyP:         if (first) pause = true; break;
                 case Sdl2.KeyR:         if (first) reset = true; break;
                 case Sdl2.KeyF11:       if (first) fullscreen = true; break;
+                case 0x6E:              if (first) lostSounds = true; break;   // N — Lost Sounds toggle
 
                 // Title-menu digits 1..5 — the cassette's control-
                 // scheme selection keys (see docs/disasm/title-menu.md).
@@ -79,6 +81,6 @@ public sealed class Sdl2InputPump
         }
 
         if (quit) QuitRequested = true;
-        return new PumpResult(quit, pause, fullscreen, reset);
+        return new PumpResult(quit, pause, fullscreen, reset, lostSounds);
     }
 }

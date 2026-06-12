@@ -228,6 +228,30 @@ SfxKind uses the PORT-ONLY synth tones (the cassette plays
 nothing for those events — see the vestigial-message verdict
 above).
 
+### The lost sounds, reconstructed
+
+The eight never-played messages aren't in the title player's
+(duration, pitch) word-pair format — interpreted that way they'd
+yield multi-second notes.  Their structure is variable-length
+groups of PITCH BYTES separated by `$03` (clearest in the
+game-over message: `1B 58 03 | 58 58 03 | 18 18 03 | …`), values
+sitting exactly in the title player's pitch range (10..125) —
+data for a player mode that never shipped.
+
+[`LostSoundReconstructor`](../../src/Subterra.Spectrum/LostSoundReconstructor.cs)
+renders each message through `$FA32`'s pulse-cycle engine (same
+DJNZ-semantics timing, same `INC E / DEC D` duty slide) with two
+documented assumptions for the parts that have no ground truth:
+56 pulse cycles per note, 24 ms rest per `$03` (double for the
+interior `$00`s in fanfares 3/4; trailing `00 00` is end padding).
+`sfx-render` writes them to `assets/extracted/sfx/lost-*.wav`.
+
+In the native port, the **N key** toggles *Lost Sounds* mode
+(default OFF = faithful): when on, the reconstructions play at
+the events the cassette queued them for — boss spawn, fuel
+station, low-fuel/low-shield, laser kills, game over, level
+fanfares.  See [CURIOSITIES.md](../CURIOSITIES.md) §2.
+
 ### Follin player port — decision
 
 With `$FA32` fully decoded, a C# port is now TRACTABLE (the

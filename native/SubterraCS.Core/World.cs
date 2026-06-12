@@ -639,11 +639,13 @@ public sealed class World
         }
 
         // Low-fuel + low-shield warning SFX — port of $D879 / $D88A
-        // (random gate; play Sfx.Damage if value < $20).
+        // (random gate).  Distinct kinds so the runner's Lost Sounds
+        // mode can map them to the cassette's never-played
+        // fuel-low/shield-low messages.
         if (Fuel < 0x20 && _rng.Next(0, 256) == 0x7E)
-            Sfx.Trigger(SfxKind.Damage);
+            Sfx.Trigger(SfxKind.FuelLow);
         if (Shield < 0x20 && _rng.Next(0, 256) == 0x7E)
-            Sfx.Trigger(SfxKind.Damage);
+            Sfx.Trigger(SfxKind.ShieldLow);
 
         if (Fuel <= 0) { TriggerDeath(); return; }
 
@@ -731,7 +733,12 @@ public sealed class World
         // Mini-map ship dots ($E213) are drawn in DrawPlaying.
         int playerByteX = (ScrollOffsetX + 15) & 0xFF;
         EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth, MiniMap.Buffer);  // $E920
+        bool bossWasActive = Boss.Active;
         Boss.Tick(ScrollProgress, ScrollOffsetX, playerByteX, PlayerY, _rng);                  // $EC10
+        // Boss-spawn alert — the cassette QUEUES its $F8F9 message
+        // here ($EC26) but never plays it; the kind is silent in
+        // faithful mode and maps to lost-bossalert.wav in Lost Sounds.
+        if (!bossWasActive && Boss.Active) Sfx.Trigger(SfxKind.BossAlert);
 
         // Workers — port of $EF08.  Tick returns # rescued this frame;
         // each rescue gives +50 score, RESCUED++; 8 → level cleared.

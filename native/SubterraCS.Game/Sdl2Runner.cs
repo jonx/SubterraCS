@@ -20,6 +20,12 @@ internal static class Sdl2Runner
 
     private static bool _titleTuneWasPlaying;
 
+    /// <summary>Lost Sounds mode (N key, default OFF = faithful):
+    /// when ON, events whose cassette sounds were queued but never
+    /// played (the vestigial $F8xx messages — sound.md, CURIOSITIES.md)
+    /// play their lost-*.wav reconstructions.</summary>
+    private static bool _lostSounds;
+
     public static int Run(World world)
     {
         const int FrameMs = 20; // 50 Hz
@@ -54,6 +60,11 @@ internal static class Sdl2Runner
             if (ev.Quit) break;
             if (ev.TogglePause) paused = !paused;
             if (ev.ToggleFullscreen) window.ToggleFullscreen();
+            if (ev.ToggleLostSounds)
+            {
+                _lostSounds = !_lostSounds;
+                Console.WriteLine($"  Lost Sounds {(_lostSounds ? "ON — playing the reconstructed never-played $F8xx messages" : "OFF — faithful (those events are silent on the cassette)")}");
+            }
             if (ev.Reset)
             {
                 Console.WriteLine("  reset requested — press Esc to quit, restart for a new seed.");
@@ -77,6 +88,16 @@ internal static class Sdl2Runner
                         string? wav = s switch
                         {
                             SfxKind.Hit or SfxKind.Damage => "hit",
+                            // Lost Sounds mode: the reconstructed
+                            // never-played $F8xx messages, mapped to
+                            // the events the cassette queued them for.
+                            SfxKind.BossAlert when _lostSounds => "lost-bossalert",
+                            SfxKind.Pickup    when _lostSounds => "lost-pickup",
+                            SfxKind.FuelLow   when _lostSounds => "lost-fuellow",
+                            SfxKind.ShieldLow when _lostSounds => "lost-shieldlow",
+                            SfxKind.Explode   when _lostSounds => "lost-shipkill",
+                            SfxKind.GameOver  when _lostSounds => "lost-gameover",
+                            SfxKind.LevelUp   when _lostSounds => $"lost-fanfare{Math.Clamp(world.Depth, 1, 5)}",
                             _                             => null,
                         };
                         if (wav is not null && SfxBank.TryGet(wav, out var pcm))

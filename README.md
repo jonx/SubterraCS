@@ -131,7 +131,12 @@ The story of the reverse engineering — every dead end included — is
 in [**docs/RE-LOG.md**](docs/RE-LOG.md). The lookup table of every
 named address we've identified is in
 [**docs/MEMORY-MAP.md**](docs/MEMORY-MAP.md). The two are kept in
-lockstep; every "found new routine" commit touches both.
+lockstep; every "found new routine" commit touches both.  And the
+best discoveries — the Star Wars hall of fame, the developers'
+hidden signatures, the eight sounds the game never plays (press
+**N** in the native port to hear their reconstructions), the
+level that corrupts memory — are collected in
+[**docs/CURIOSITIES.md**](docs/CURIOSITIES.md).
 
 A few highlights from the journey:
 
@@ -389,6 +394,10 @@ Controls (native port):
   (like the original menu)
 - **Shift** (port-only) — precision modifier: each direction key
   fires ONE pixel per press-edge instead of accelerating
+- **N** — toggle *Lost Sounds*: play the reconstructions of the
+  eight sound effects the cassette queues but never plays
+  ([CURIOSITIES.md](docs/CURIOSITIES.md) §2); default off =
+  faithful silence
 - **F11** — toggle fullscreen, **P** — pause, **R** — reset,
   **Esc** — quit
 

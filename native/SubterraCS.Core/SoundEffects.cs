@@ -21,6 +21,13 @@ public enum SfxKind
     Damage,
     GameOver,
     LevelUp,
+    // Events whose cassette sounds exist only as never-played $F8xx
+    // messages (sound.md §vestigial).  Silent in faithful mode; the
+    // runner's Lost Sounds toggle maps them to the lost-*.wav
+    // reconstructions.
+    BossAlert,
+    FuelLow,
+    ShieldLow,
 }
 
 public sealed class SfxQueue
@@ -49,6 +56,10 @@ public sealed class SfxQueue
         SfxKind.Damage   => ( 180, 8, -80),
         SfxKind.GameOver => (  90, 50, -20),
         SfxKind.LevelUp  => ( 660, 12, +320),
+        // FuelLow/ShieldLow keep the old warning tone in faithful
+        // mode; BossAlert is silent there (the cassette plays nothing
+        // at boss spawn — its alert message is vestigial).
+        SfxKind.FuelLow or SfxKind.ShieldLow => (180, 8, -80),
         _                => (   0, 0,    0),
     };
 }

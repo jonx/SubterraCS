@@ -138,6 +138,19 @@ internal static class SfxRenderCommand
             WavWriter.WriteMono16(path, pcm, rate);
             Console.WriteLine($"  {fx.Name,-10} → {Path.GetRelativePath(repoRoot, path)}  ({pcm.Length} samples, {(double)pcm.Length / rate:F2}s)");
         }
+
+        // The LOST SOUNDS — the eight $F8xx messages the game queues
+        // but never plays (sound.md §vestigial).  Rendered through the
+        // documented RECONSTRUCTION in LostSoundReconstructor (the
+        // consuming player never shipped; assumptions are listed
+        // there and in docs/CURIOSITIES.md).
+        foreach (var msg in LostSoundReconstructor.Messages)
+        {
+            var pcm = LostSoundReconstructor.Render(msg.Bytes, rate);
+            var path = Path.Combine(outDir, $"{msg.Name}.wav");
+            WavWriter.WriteMono16(path, pcm, rate);
+            Console.WriteLine($"  {msg.Name,-14} → {Path.GetRelativePath(repoRoot, path)}  ({pcm.Length} samples, {(double)pcm.Length / rate:F2}s, reconstruction of ${msg.Address:X4})");
+        }
         return 0;
     }
 
