@@ -13,7 +13,9 @@ public readonly record struct PumpResult(
     bool TogglePause,
     bool ToggleFullscreen,
     bool Reset,
-    bool ToggleLostSounds);
+    bool ToggleLostSounds,
+    bool ToggleRemap,
+    int RawKeyDown);   // first non-repeat keydown this poll (0 = none)
 
 public sealed class Sdl2InputPump
 {
@@ -27,13 +29,25 @@ public sealed class Sdl2InputPump
         // keymap.cfg lives at the repo root (next to assets/) so it's
         // easy to find and survives rebuilds; created with a commented
         // default template on first run.
-        _keyMap = keyMap ?? KeyMap.LoadOrCreate(
-            Path.Combine(RenderTarget.FindRepoRoot(AppContext.BaseDirectory), "keymap.cfg"));
+        KeyMapPath = Path.Combine(RenderTarget.FindRepoRoot(AppContext.BaseDirectory), "keymap.cfg");
+        _keyMap = keyMap ?? KeyMap.LoadOrCreate(KeyMapPath);
     }
+
+    /// <summary>The live key map (shared with the in-game remap UI).</summary>
+    public KeyMap Map => _keyMap;
+    public string KeyMapPath { get; }
+
+    /// <summary>When false, the fixed system keys (Esc/P/R/F11/N/K and
+    /// the menu digits) are NOT interpreted — the in-game remap screen
+    /// sets this so Esc can mean "back" and any key can be captured
+    /// via <see cref="PumpResult.RawKeyDown"/>.  Game-action mapping
+    /// is also suppressed (the world is paused anyway).</summary>
+    public bool SystemKeysEnabled { get; set; } = true;
 
     public PumpResult Poll()
     {
-        bool quit = false, pause = false, fullscreen = false, reset = false, lostSounds = false;
+        bool quit = false, pause = false, fullscreen = false, reset = false, lostSounds = false, remap = false;
+        int rawKey = 0;
 
         while (Sdl2.SDL_PollEvent(out var evt) != 0)
         {
@@ -44,6 +58,12 @@ public sealed class Sdl2InputPump
             bool first = down && evt.Key.Repeat == 0;
             int sym = evt.Key.Keysym.Sym;
 
+            if (first && rawKey == 0) rawKey = sym;
+
+            // The remap screen owns the keyboard: no system keys, no
+            // game-action mapping — it consumes RawKeyDown directly.
+            if (!SystemKeysEnabled) continue;
+
             // Fixed system keys — not remappable so a broken keymap.cfg
             // can't lock the user out.
             switch (sym)
@@ -53,6 +73,7 @@ public sealed class Sdl2InputPump
                 case Sdl2.KeyR:         if (first) reset = true; break;
                 case Sdl2.KeyF11:       if (first) fullscreen = true; break;
                 case 0x6E:              if (first) lostSounds = true; break;   // N — Lost Sounds toggle
+                case 0x6B:              if (first) remap = true; break;        // K — key-remap screen
 
                 // Title-menu digits 1..5 — the cassette's control-
                 // scheme selection keys (see docs/disasm/title-menu.md).
@@ -81,6 +102,6 @@ public sealed class Sdl2InputPump
         }
 
         if (quit) QuitRequested = true;
-        return new PumpResult(quit, pause, fullscreen, reset, lostSounds);
+        return new PumpResult(quit, pause, fullscreen, reset, lostSounds, remap, rawKey);
     }
 }

@@ -26,6 +26,87 @@ internal static class Sdl2Runner
     /// play their lost-*.wav reconstructions.</summary>
     private static bool _lostSounds;
 
+    // ─── In-game key-remap screen (K) ───────────────────────────────
+    private static bool _remapOpen;
+    private static int _remapCursor;
+    private static bool _remapCapturing;
+    private static int _remapFrame;
+
+    private static readonly KeyMap.GameAction[] RemapActions =
+        Enum.GetValues<KeyMap.GameAction>();
+
+    private static readonly string[] RemapLabels =
+        { "THRUST UP", "THRUST DOWN", "MOVE", "FACE LEFT", "FACE RIGHT", "FIRE", "PRECISION" };
+
+    /// <summary>Remap-screen input: fixed physical keys (arrows to
+    /// navigate, Enter to rebind, Esc or K to save and close); while
+    /// capturing, the first bindable keypress replaces the selected
+    /// action's bindings.</summary>
+    private static void TickRemap(Sdl2InputPump pump, GameInput input, int rawKey)
+    {
+        _remapFrame++;
+        if (rawKey == 0) return;
+
+        if (_remapCapturing)
+        {
+            if (rawKey == KeyMap.KeyEscape) { _remapCapturing = false; return; }
+            if (!KeyMap.IsBindable(rawKey)) return;   // ignore F-keys etc.
+            pump.Map.SetSingleBinding(RemapActions[_remapCursor], rawKey);
+            _remapCapturing = false;
+            return;
+        }
+
+        switch (rawKey)
+        {
+            case KeyMap.KeyUp:
+                _remapCursor = (_remapCursor + RemapActions.Length - 1) % RemapActions.Length;
+                break;
+            case KeyMap.KeyDown:
+                _remapCursor = (_remapCursor + 1) % RemapActions.Length;
+                break;
+            case KeyMap.KeyReturn:
+            case KeyMap.KeySpace:
+                _remapCapturing = true;
+                break;
+            case KeyMap.KeyEscape:
+            case 0x6B:   // K closes too
+                pump.Map.Save(pump.KeyMapPath);
+                Console.WriteLine($"  key bindings saved to {pump.KeyMapPath}");
+                _remapOpen = false;
+                pump.SystemKeysEnabled = true;
+                // Drop any held-flag state so a key held when the
+                // screen opened doesn't stay stuck on.
+                input.Up = input.Down = input.Horizontal = false;
+                input.Left = input.Right = input.Fire = input.Shift = false;
+                input.MenuDigit = 0;
+                break;
+        }
+    }
+
+    /// <summary>Overlay the remap UI on the last game frame.</summary>
+    private static void DrawRemap(Framebuffer fb, KeyMap map)
+    {
+        // Dim the playfield: clear a centered panel area.
+        for (int y = 8; y < 184; y++)
+            for (int col = 1; col < 31; col++)
+                fb.Bitmap[Framebuffer.BitmapAddress(col * 8, y)] = 0;
+        for (int i = 0; i < fb.Attributes.Length; i++) fb.Attributes[i] = 0x07;
+
+        MiniFont.DrawCentered(fb, 16, "KEY BINDINGS", 0x46);
+        for (int i = 0; i < RemapActions.Length; i++)
+        {
+            var keys = string.Join(" ", map.KeysFor(RemapActions[i]).Select(KeyMap.KeyName));
+            bool sel = i == _remapCursor;
+            string line = $"{RemapLabels[i],-12} {keys}";
+            byte attr = sel
+                ? (_remapCapturing && (_remapFrame & 16) < 8 ? (byte)0x68 : (byte)0x45)
+                : (byte)0x47;
+            MiniFont.DrawCentered(fb, 40 + i * 12, sel && _remapCapturing ? $"{RemapLabels[i],-12} PRESS KEY" : line, attr);
+        }
+        MiniFont.DrawCentered(fb, 140, "ARROWS SELECT  ENTER REBIND", 0x44);
+        MiniFont.DrawCentered(fb, 152, "ESC OR K SAVE : EXIT", 0x44);
+    }
+
     public static int Run(World world)
     {
         const int FrameMs = 20; // 50 Hz
@@ -70,7 +151,23 @@ internal static class Sdl2Runner
                 Console.WriteLine("  reset requested — press Esc to quit, restart for a new seed.");
             }
 
-            if (!paused)
+            // K — the in-game key-remap screen.  While open: the world
+            // is frozen, the pump stops interpreting system keys and
+            // game actions (we own the keyboard via RawKeyDown), and
+            // the UI overlays the last-drawn frame.
+            if (ev.ToggleRemap && !_remapOpen)
+            {
+                _remapOpen = true;
+                _remapCursor = 0;
+                _remapCapturing = false;
+                pump.SystemKeysEnabled = false;
+            }
+            else if (_remapOpen)
+            {
+                TickRemap(pump, input, ev.RawKeyDown);
+            }
+
+            if (!paused && !_remapOpen)
             {
                 world.Tick(input);
 
@@ -135,6 +232,7 @@ internal static class Sdl2Runner
                 }
             }
             world.Draw(fb);
+            if (_remapOpen) DrawRemap(fb, pump.Map);
             var rgba = fb.ToRgba();
             window.Present(rgba);
 

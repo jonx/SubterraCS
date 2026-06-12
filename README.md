@@ -398,15 +398,17 @@ Controls (native port):
   eight sound effects the cassette queues but never plays
   ([CURIOSITIES.md](docs/CURIOSITIES.md) §2); default off =
   faithful silence
+- **K** — key bindings screen: remap any game action in-game
+  (arrows select, Enter rebinds, Esc/K saves and exits)
 - **F11** — toggle fullscreen, **P** — pause, **R** — reset,
   **Esc** — quit
 
-All movement/fire keys are **remappable**: the first interactive
-run writes a commented `keymap.cfg` template at the repo root —
-edit it and restart.  One action per line
-(`fire = enter, space`); actions left out keep their defaults;
-system keys (Esc/P/R/F11/digits) stay fixed so a broken config
-can't lock you out.
+All movement/fire keys are **remappable** — easiest via the
+in-game **K** screen, which saves to `keymap.cfg` at the repo
+root.  The file is also hand-editable (one action per line,
+`fire = enter, space`; multiple keys per action; actions left out
+keep their defaults); system keys (Esc/P/R/F11/N/K/digits) stay
+fixed so a broken config can't lock you out.
 
 ## Is a full C# port realistic?
 
