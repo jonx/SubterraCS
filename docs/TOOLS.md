@@ -371,17 +371,23 @@ dotnet run --project src/Subterra.Tools -- \
 
 ### `sfx-render <48k.rom> <snapshot.z80> [-rate=22050]`
 
-**What:** renders every known cassette sound routine to
-`assets/extracted/sfx/<name>.wav` by running the ORIGINAL Z80 code
-in isolation inside the emulator (sentinel-return harness; queued
-Follin messages driven by repeated `$FA32` ticks) and capturing
-the beeper through the same pipeline as `run-emu -wav`.
+**What:** writes three sets of WAV files into `assets/extracted/sfx/`:
 
-**Why:** gives the native port authentic cassette sound effects
-without porting the Follin player — the `SfxWavBank` loads these
-WAVs and `BeeperSynth.PlayPcm` plays them in place of the
-synthesised tones.  See [disasm/sound.md](disasm/sound.md) for
-the harness details and the effect inventory.
+1. **`<name>.wav`** — real cassette effects captured by running the original
+   Z80 routines in isolation inside the emulator (sentinel-return harness;
+   same beeper pipeline as `run-emu -wav`): `hit`, `barfill`, `spawnin`.
+2. **`lost-<name>.wav`** — the eight `$F8xx` messages the game queued but
+   never played, rendered through `LostSoundReconstructor` with documented
+   assumptions (see [CURIOSITIES.md §2](CURIOSITIES.md)).
+3. **`sfx-<name>.wav`** — purpose-built replacements from `DesignedSfxSet`:
+   distinct, recognisable beeper sounds for each event, designed to be
+   actually usable in game.
+
+**Why:** `SfxWavBank` auto-loads every `.wav` by filename, so the
+native port's N-key three-way mode (OFF / DESIGNED / HISTORICAL)
+needs all three file sets present.  See [disasm/sound.md](disasm/sound.md)
+for the Z80 harness and [CURIOSITIES.md §2](CURIOSITIES.md) for the
+story behind the vestigial messages.
 
 ```sh
 dotnet run --project src/Subterra.Tools -- \

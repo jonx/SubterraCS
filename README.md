@@ -184,17 +184,25 @@ original/        original 1985 game files + 48 K Spectrum ROM
   tape/          the .tzx tape image
   dumps/         the .z80 snapshot + SCR loading screen
   rom/           48k.rom (with provenance note)
-src/             everything we wrote, one .NET 10 solution
+src/             emulator-based solution (.NET 10)
   Subterra.Spectrum/   snapshot loader, Z80 CPU, ULA, screen, PNG
   Subterra.Assets/     SpriteSheet decoder, RenderedImage
   Subterra.Tools/      the `subterra` CLI — 12 sub-commands
   Subterra.Game/       Avalonia window — playable emulator
-  Subterra.Editor/     Avalonia asset viewer
+  Subterra.Editor/     Avalonia asset viewer + Map tab editor
+native/          standalone emulator-free C# port (SDL2, no NuGet)
+  SubterraCS.slnx         three-project .NET 10 solution
+  SubterraCS.Core/        game logic — zero dependencies
+  SubterraCS.Platform/    SDL2 P/Invokes + key-binding layer
+  SubterraCS.Game/        executable
 docs/
-  RE-LOG.md      the running notebook (read top-to-bottom)
-  MEMORY-MAP.md  every named address, organised by RAM region
-  TOOLS.md       every tool with what / why / how-to
-  images/        20 curated renders from the RE process
+  RE-LOG.md        the running notebook (read top-to-bottom)
+  MEMORY-MAP.md    every named address, organised by RAM region
+  TOOLS.md         every tool with what / why / how-to
+  CURIOSITIES.md   hidden gems: Star Wars HOF, lost sounds, level-0 bug, …
+  FEASIBILITY.md   pre-port assessment (now historical)
+  disasm/          per-subsystem annotated Z80 listings (20 files)
+  images/          20 curated renders from the RE process
 assets/extracted/
   tiles-b0f4.bin first standalone asset file (3 KB tile bank)
 renders/         timestamped render output — gitignored (regenerable
@@ -395,10 +403,10 @@ Controls (native port):
   (like the original menu)
 - **Shift** (port-only) — precision modifier: each direction key
   fires ONE pixel per press-edge instead of accelerating
-- **N** — toggle *Lost Sounds*: play the reconstructions of the
-  eight sound effects the cassette queues but never plays
-  ([CURIOSITIES.md](docs/CURIOSITIES.md) §2); default off =
-  faithful silence
+- **N** — cycle SFX mode for the events the cassette left silent
+  ([CURIOSITIES.md §2](docs/CURIOSITIES.md)): **OFF** → **DESIGNED**
+  (purpose-built `sfx-*.wav`) → **HISTORICAL** (1985 `lost-*.wav`
+  reconstructions)
 - **K** — key bindings screen: remap any game action in-game
   (arrows select, Enter rebinds, Esc/K saves and exits)
 - **F11** — toggle fullscreen, **P** — pause, **R** — reset,
@@ -413,25 +421,12 @@ fixed so a broken config can't lock you out.
 
 ## Is a full C# port realistic?
 
-Yes — **two to three weeks of focused work**, given everything we
-already have. See [`docs/FEASIBILITY.md`](docs/FEASIBILITY.md) for
-the honest breakdown:
-
-* The game's data is ~15 KB total: master tile bank (3 KB),
-  entity sprite banks (8 KB), music data (4 KB), level schedules
-  (192 B), tables (~200 B more). All extracted.
-* The game's code is ~10 KB, with every major routine mapped in
-  [`docs/MEMORY-MAP.md`](docs/MEMORY-MAP.md).
-* The **level "design" is 192 bytes** — 6 levels × 32 bytes per
-  level (8 timed enemy spawns). No tile maps, no compressed
-  terrain. The hazards are procedurally composed by the entity
-  system as the ship flies through.
-
-The largest remaining work is the 16+ per-enemy AI behaviours;
-everything else (renderer, blitters, dispatcher, player, audio)
-is straightforward and well-mapped. The Z80 emulator we already
-have stays in the repo as the reference oracle for parallel-run
-verification during the port.
+**Yes — and it's been done.** See [the native port](#the-native-port)
+above and [`native/README.md`](native/README.md) for the full
+picture.  [`docs/FEASIBILITY.md`](docs/FEASIBILITY.md) preserves
+the pre-port assessment that predicted two to three focused weeks;
+the estimate held up well, plus the time the reverse-engineering
+took to map the remaining subsystems.
 
 ## Roadmap
 
@@ -442,14 +437,6 @@ format decoding — are done; see
 [native port section](#the-native-port), and
 [docs/disasm/assets.md](docs/disasm/assets.md).)
 
-* **The eight never-played sounds.** The cassette's `$F8xx`
-  message SFX (boss alert, pickup chime, fanfares, game-over
-  tune, kill jingle…) turned out to be **vestigial** — queued but
-  never played by any code path ([sound.md](docs/disasm/sound.md),
-  [RE-LOG §63](docs/RE-LOG.md)). The `$FA32` player and the
-  `$5E88` data format are now fully decoded, so a small
-  interpreter could finally make those 1985 sounds audible —
-  pure archaeology, zero gameplay impact.
 * **Gamepad support** in the native port (the SDL2 wrapper is
   keyboard-only today).
 * **Release packaging** — `dotnet publish` profiles so people can
@@ -459,11 +446,13 @@ format decoding — are done; see
 a data bug in the original, port wraps 5 → 1; the laser-kill
 mechanism found in `$E9F0`; entities proven stationary via the
 full `$F1EF` trace; `$FA32` fully decoded — the game has exactly
-ONE piece of music and the message-SFX system is vestigial, so
-the "Follin player port" and "warning/gameover context" items
-dissolved; native title menu honours keys 1–5; Hall of Fame with
-on-screen name entry + persistence; the boss's procedural
-state-byte sprite; Map tab editor; authentic cassette SFX WAVs.)
+ONE piece of music and the message-SFX system is vestigial; the
+eight never-played `$F8xx` sounds **reconstructed and unlockable
+via N** in the native port ([CURIOSITIES.md §2](docs/CURIOSITIES.md));
+in-game key-remap screen (**K**, saves `keymap.cfg`); native title
+menu honours keys 1–5; Hall of Fame with on-screen name entry +
+persistence; the boss's procedural state-byte sprite; Map tab
+editor; authentic cassette SFX WAVs.)
 
 ---
 

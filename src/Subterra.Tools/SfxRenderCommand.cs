@@ -54,8 +54,10 @@ internal static class SfxRenderCommand
         {
             Console.Error.WriteLine(
                 "usage: sfx-render <48k.rom> <snapshot.z80> [-rate=22050]\n" +
-                "  Renders every known cassette sound routine to\n" +
-                "  assets/extracted/sfx/<name>.wav via the emulator.");
+                "  Renders three sets into assets/extracted/sfx/:\n" +
+                "    <name>.wav       — real cassette effects (emulator-captured Z80 code)\n" +
+                "    lost-<name>.wav  — 1985 archaeological reconstructions (vestigial $F8xx)\n" +
+                "    sfx-<name>.wav   — designed replacements (purpose-built, distinct)");
             return 2;
         }
         int rate = 22050;
@@ -144,12 +146,25 @@ internal static class SfxRenderCommand
         // documented RECONSTRUCTION in LostSoundReconstructor (the
         // consuming player never shipped; assumptions are listed
         // there and in docs/CURIOSITIES.md).
+        Console.WriteLine("\nLost-sound reconstructions (archaeological; N-key HISTORICAL mode):");
         foreach (var msg in LostSoundReconstructor.Messages)
         {
             var pcm = LostSoundReconstructor.Render(msg.Bytes, rate);
             var path = Path.Combine(outDir, $"{msg.Name}.wav");
             WavWriter.WriteMono16(path, pcm, rate);
             Console.WriteLine($"  {msg.Name,-14} → {Path.GetRelativePath(repoRoot, path)}  ({pcm.Length} samples, {(double)pcm.Length / rate:F2}s, reconstruction of ${msg.Address:X4})");
+        }
+
+        // DESIGNED SFX — purpose-built beeper sounds for the same events.
+        // Distinct from the archaeological reconstructions; selected by
+        // the native port's N-key DESIGNED mode.
+        Console.WriteLine("\nDesigned SFX (purpose-built replacements; N-key DESIGNED mode):");
+        foreach (var seq in DesignedSfxSet.Sequences)
+        {
+            var pcm = DesignedSfxSet.Render(seq, rate);
+            var path = Path.Combine(outDir, $"{seq.Name}.wav");
+            WavWriter.WriteMono16(path, pcm, rate);
+            Console.WriteLine($"  {seq.Name,-14} → {Path.GetRelativePath(repoRoot, path)}  ({pcm.Length} samples, {(double)pcm.Length / rate:F2}s)");
         }
         return 0;
     }

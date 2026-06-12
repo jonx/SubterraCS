@@ -6,52 +6,39 @@ in this repo but is its own .NET 10 solution
 (`native/SubterraCS.slnx`) with no references back into the
 emulator-based one.
 
-## Status — work in progress, not a port yet
+## Status — playable, with known fidelity gaps
 
-> **An earlier README claimed this was "feature-complete". It isn't.**
-> The user pointed at a real emulator screenshot vs. the native
-> render and the gap is obvious: the original is open-sky free
-> flight + rescue gameplay with a clean hand-drawn hill silhouette
-> and left-stacked HUD; my earlier passes invented cave walls,
-> a "dive to advance" mechanic, and a bottom-strip HUD that have
-> nothing to do with the original. See
-> [`docs/RE-LOG.md`](../docs/RE-LOG.md) §23 for the honest stocktake
-> and §24 for what we've actually traced so far.
+The native port is a working, playable game: title screen, all six
+original levels (plus infinite procedural levels beyond depth 6),
+enemies, rescues, scoring, shield/fuel/lives, game-over, Hall of
+Fame with name entry and persistence, sound effects and title music.
+See the feature inventory and layout below for the full picture.
 
-What IS correct today
----------------------
-* **Boot splash** — `SUBSTRYK.SCR` from the cassette, displayed
-  pixel-perfect.
-* **Title menu** — captured Spectrum SCREEN$ from running the
-  emulator past BASIC PAUSE; pixel-perfect.
-* **Gameplay model** — it's a SPACE SHIP: free flight up / down /
-  left / right within the playable area.  No diving, no altitude
-  gates.  Level completes when all rescuable workers picked up.
-* **Asset loading + game loop architecture** — assets → splash
-  → title → `LoadLevel(n)` → play → level complete / death.
-* **Player sprite + bullet + entity 16×16 quadrant blit** —
-  faithful ports of `$DCF5`, `$E1DE`, `$F2BC`.
-* **Per-level spawn schedules** — bytes from `$E69D` used
-  verbatim (re-scaled timers because we run at straight 50 Hz
-  vs. the original's multi-pass slicer).
+**Known fidelity gaps** — intentional or partially-unresolved
+divergences from the cassette:
 
-What is NOT correct yet
------------------------
-* **Per-level scenery** — the hill silhouette, tree, surface
-  decor. The native port draws a placeholder pattern from the
-  master tile bank. The real composition routine and its data
-  table location are not fully understood (RE-LOG §24 documents
-  what we DID trace: `$F6F2 → $E319 → $E2C6 → $E2E5 → $E347 →
-  ...`).
-* **HUD draw** — labels in the right shape but rendered with
-  `MiniFont`, not by `RST 10` through the ROM font at `$3C00`.
-  The stripe-bar palette and column count match `$E785`.
-* **Per-type entity AI** — table-driven approximations in
-  `EntityAI.cs`, not byte-for-byte ports of `$F1A5`'s per-type
-  subroutines.
-* **Static entity placement** — workers and other per-level
-  fixed entities are not loaded from the `$F2E8`+ records yet
-  because the records are variable-length and undecoded.
+* **Per-level scenery** — the hill silhouette, tree, surface decor.
+  The composition chain (`$F6F2 → $E319 → $E2C6 → $E2E5 → $E347 …`)
+  is partially traced in
+  [level-load.md](../docs/disasm/level-load.md) but not yet fully
+  ported; the native port draws a placeholder pattern from the
+  master tile bank instead.
+* **HUD font** — labels rendered with `MiniFont`, not by `RST 10`
+  through the ROM font at `$3C00`.  Bar widths and column count match
+  `$E785`; glyph shapes differ slightly.
+* **Entity AI** — `EntityAI.cs` is a per-type dispatcher covering
+  every entity kind we decoded, but it is table-driven
+  approximations, not byte-for-byte ports of `$F1A5`'s per-type
+  subroutines.  See [enemies.md](../docs/disasm/enemies.md).
+* **Static entity placement** — per-level fixed entities are not
+  loaded from the variable-length `$F2E8`+ records (undecoded); the
+  spawn schedule drives placement instead.
+
+The feasibility analysis that preceded the port is in
+[`docs/FEASIBILITY.md`](../docs/FEASIBILITY.md).  The interesting
+discoveries made along the way — Star Wars hall of fame, the lost
+sounds, the boss's procedural sprite, and more — are collected in
+[`docs/CURIOSITIES.md`](../docs/CURIOSITIES.md).
 
 * **Renderer**: Spectrum-style 256 × 192 1-bit bitmap + 32 × 24
   attribute grid, decoded to RGBA. All four blitters from
@@ -130,8 +117,10 @@ native/
 │    │                                + GameState machine (Title/Play/Die/Over)
 │    ├── Hud.cs + MiniFont.cs        bottom-strip HUD + hand-built 8×8 font
 │    │                                (incl. centered title/game-over banners)
+│    ├── HallOfFame.cs               high-score table with name-entry + persistence
 │    ├── GameInput.cs                up/down/horizontal/fire booleans
 │    ├── SoundEffects.cs             SfxKind enum + SfxQueue (Core only)
+│    ├── SfxWavBank.cs               loads + caches PCM WAVs from assets/extracted/sfx/
 │    ├── BeeperSynth.cs              Follin-style PCM beeper
 │    ├── MusicPlayer.cs              walks 16-bit period pairs from $5E88
 │    ├── PngWriter.cs + Crc32        copy of the dependency-free PNG encoder
@@ -141,6 +130,7 @@ native/
 │    ├── Sdl2.cs                     P/Invokes + custom DllImportResolver
 │    ├── Sdl2Window.cs               window + streaming texture + letterbox
 │    ├── Sdl2InputPump.cs            keyboard → GameInput
+│    ├── KeyMap.cs                   user-configurable key bindings + keymap.cfg
 │    ├── Sdl2BeeperAudio.cs          SDL_OpenAudio callback → BeeperSynth
 │    └── Sdl2Time.cs                 public façade over GetTicks/Delay
 └── SubterraCS.Game/                 the executable
@@ -163,10 +153,21 @@ dotnet run --project SubterraCS.Game -- --headless \
 dotnet run --project SubterraCS.Game
 ```
 
-Controls in interactive mode (same as the emulator-based Game):
-**Q / Up** thrust up, **A / Down** thrust down, **L / Left / Right** translate,
-**Enter / Space** fire, **P** pause, **F11** fullscreen, **Esc**
-quit.
+Controls in interactive mode:
+
+- **Q / Up** — thrust up · **A / Down** — thrust down
+- **L** — scroll horizontally in current facing · **Left / Right** — face and scroll
+- **Enter / Space** — fire
+- **Shift** (port-only) — precision modifier: one pixel per key-edge instead of accelerating
+- **1–5** on the title screen — pick control option and start
+- **N** — cycle SFX mode for the events the cassette left silent
+  ([CURIOSITIES.md §2](../docs/CURIOSITIES.md)):
+  **OFF** (faithful silence) → **DESIGNED** (purpose-built `sfx-*.wav`) →
+  **HISTORICAL** (1985 `lost-*.wav` reconstructions)
+- **K** — in-game key bindings screen (arrows select, Enter rebinds, Esc/K saves
+  and exits); settings persist to `keymap.cfg` at the repo root, also
+  hand-editable (one action per line: `fire = enter, space`)
+- **P** pause · **R** reset · **F11** fullscreen · **Esc** quit
 
 ## Dependencies
 

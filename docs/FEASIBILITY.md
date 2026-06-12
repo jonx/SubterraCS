@@ -1,5 +1,15 @@
 # Feasibility — is a full C# port realistic?
 
+> **Status (2026):** The port described here has been built — see
+> [`native/README.md`](../native/README.md) for the current state.
+> Main risks resolved: (1) per-enemy AI ported as `EntityAI.cs`
+> (table-driven, faithful to each type's documented behaviour but not
+> a byte-for-byte Z80 translation); (2) sound effects captured as
+> WAVs via `sfx-render`; the Follin message system decoded and the
+> eight lost sounds reconstructed + unlockable via **N**
+> ([CURIOSITIES.md §2](CURIOSITIES.md)).  This file is preserved as
+> the original pre-port assessment.
+
 **Short answer: yes.** *Subterranean Stryker* is small enough,
 regular enough, and now well-enough mapped that a faithful native
 C# port is realistic — not a "decade-long fan project", more like

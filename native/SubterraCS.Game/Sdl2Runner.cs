@@ -20,11 +20,15 @@ internal static class Sdl2Runner
 
     private static bool _titleTuneWasPlaying;
 
-    /// <summary>Lost Sounds mode (N key, default OFF = faithful):
-    /// when ON, events whose cassette sounds were queued but never
-    /// played (the vestigial $F8xx messages — sound.md, CURIOSITIES.md)
-    /// play their lost-*.wav reconstructions.</summary>
-    private static bool _lostSounds;
+    /// <summary>SFX mode for the events the cassette left silent
+    /// (the vestigial $F8xx messages — sound.md, CURIOSITIES.md).
+    /// Cycled by the N key:
+    ///   Off        — cassette-faithful (those events are silent).
+    ///   Designed   — purpose-built sfx-*.wav sounds.
+    ///   Historical — 1985 archaeological lost-*.wav reconstructions.
+    /// </summary>
+    private enum SfxMode { Off, Designed, Historical }
+    private static SfxMode _sfxMode;
 
     // ─── In-game key-remap screen (K) ───────────────────────────────
     private static bool _remapOpen;
@@ -143,8 +147,19 @@ internal static class Sdl2Runner
             if (ev.ToggleFullscreen) window.ToggleFullscreen();
             if (ev.ToggleLostSounds)
             {
-                _lostSounds = !_lostSounds;
-                Console.WriteLine($"  Lost Sounds {(_lostSounds ? "ON — playing the reconstructed never-played $F8xx messages" : "OFF — faithful (those events are silent on the cassette)")}");
+                _sfxMode = _sfxMode switch
+                {
+                    SfxMode.Off      => SfxMode.Designed,
+                    SfxMode.Designed => SfxMode.Historical,
+                    _                => SfxMode.Off,
+                };
+                string msg = _sfxMode switch
+                {
+                    SfxMode.Designed  => "DESIGNED — purpose-built SFX for the silent events",
+                    SfxMode.Historical => "HISTORICAL — the 1985 reconstructed $F8xx messages",
+                    _                  => "OFF — cassette-faithful (those events are silent)",
+                };
+                Console.WriteLine($"  Sound mode: {msg}");
             }
             if (ev.Reset)
             {
@@ -182,20 +197,30 @@ internal static class Sdl2Runner
                 {
                     while (world.Sfx.TryDequeue(out var s))
                     {
+                        // Hit/Damage always use the authentic cassette WAV.
+                        // For the events the cassette left silent ($F8xx
+                        // vestigial system — sound.md, CURIOSITIES.md §2):
+                        //   Designed  → sfx-*.wav  (purpose-built)
+                        //   Historical → lost-*.wav (1985 reconstructions)
+                        //   Off        → fall through to Voice() synth tones
                         string? wav = s switch
                         {
                             SfxKind.Hit or SfxKind.Damage => "hit",
-                            // Lost Sounds mode: the reconstructed
-                            // never-played $F8xx messages, mapped to
-                            // the events the cassette queued them for.
-                            SfxKind.BossAlert when _lostSounds => "lost-bossalert",
-                            SfxKind.Pickup    when _lostSounds => "lost-pickup",
-                            SfxKind.FuelLow   when _lostSounds => "lost-fuellow",
-                            SfxKind.ShieldLow when _lostSounds => "lost-shieldlow",
-                            SfxKind.Explode   when _lostSounds => "lost-shipkill",
-                            SfxKind.GameOver  when _lostSounds => "lost-gameover",
-                            SfxKind.LevelUp   when _lostSounds => $"lost-fanfare{Math.Clamp(world.Depth, 1, 5)}",
-                            _                             => null,
+                            SfxKind.BossAlert when _sfxMode == SfxMode.Designed   => "sfx-bossalert",
+                            SfxKind.Pickup    when _sfxMode == SfxMode.Designed   => "sfx-pickup",
+                            SfxKind.FuelLow   when _sfxMode == SfxMode.Designed   => "sfx-fuellow",
+                            SfxKind.ShieldLow when _sfxMode == SfxMode.Designed   => "sfx-shieldlow",
+                            SfxKind.Explode   when _sfxMode == SfxMode.Designed   => "sfx-shipkill",
+                            SfxKind.GameOver  when _sfxMode == SfxMode.Designed   => "sfx-gameover",
+                            SfxKind.LevelUp   when _sfxMode == SfxMode.Designed   => $"sfx-fanfare{Math.Clamp(world.Depth, 1, 5)}",
+                            SfxKind.BossAlert when _sfxMode == SfxMode.Historical => "lost-bossalert",
+                            SfxKind.Pickup    when _sfxMode == SfxMode.Historical => "lost-pickup",
+                            SfxKind.FuelLow   when _sfxMode == SfxMode.Historical => "lost-fuellow",
+                            SfxKind.ShieldLow when _sfxMode == SfxMode.Historical => "lost-shieldlow",
+                            SfxKind.Explode   when _sfxMode == SfxMode.Historical => "lost-shipkill",
+                            SfxKind.GameOver  when _sfxMode == SfxMode.Historical => "lost-gameover",
+                            SfxKind.LevelUp   when _sfxMode == SfxMode.Historical => $"lost-fanfare{Math.Clamp(world.Depth, 1, 5)}",
+                            _                                                      => null,
                         };
                         if (wav is not null && SfxBank.TryGet(wav, out var pcm))
                         {

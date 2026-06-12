@@ -55,3 +55,17 @@ routine's *code*.
 * **Verification**: when an annotation comes from empirical
   observation (mem-write-trace, pixel diff, etc.) rather than
   from the disasm alone, mark it `(verified by ...)`.
+
+## See also
+
+* [`../RE-LOG.md`](../RE-LOG.md) — the narrative behind every
+  discovery; read alongside this folder for the "why".
+* [`../MEMORY-MAP.md`](../MEMORY-MAP.md) — flat address index
+  of every named location.
+* [`../CURIOSITIES.md`](../CURIOSITIES.md) — the most interesting
+  finds from this disassembly: Star Wars hall of fame, the lost
+  sounds, the level-0 data bug, the bitmap-as-collision-system.
+* [`../FEASIBILITY.md`](../FEASIBILITY.md) — the pre-port
+  assessment that used these annotations to estimate build effort.
+* [`../../native/README.md`](../../native/README.md) — the native
+  C# port that these annotations enabled.

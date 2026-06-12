@@ -5,7 +5,9 @@ turned up things nobody knew were in there: an easter egg, the
 developers' signatures, eight sounds that were composed but never
 played, a level that corrupts memory, and some genuinely clever
 engineering.  This file collects them all in one place; each entry
-links to the full trace.
+links to the full trace in [docs/disasm/](disasm/) and
+[RE-LOG.md](RE-LOG.md).  Where a discovery is implemented in the
+[native port](../native/README.md), that's noted inline.
 
 ## 1. The Star Wars hall of fame — and the developers' signatures
 
@@ -59,12 +61,17 @@ timing, same Follin duty-slide) with documented assumptions for
 the parts that never shipped (note length, rest length).  The
 results live in `assets/extracted/sfx/lost-*.wav`.
 
-**Hear them in the game:** press **N** in the native port to
-toggle *Lost Sounds* mode.  Default is OFF (faithful — those
-events are silent on the cassette); ON maps each reconstruction
-to the event the original code queued it for: boss spawn, fuel
-station, low-fuel/low-shield warnings, laser kills, game over,
-and the per-level fanfares.  Forty years late, but they play.
+**Hear them in the game:** press **N** in the
+[native port](../native/README.md) to cycle through three SFX modes:
+
+- **OFF** (default) — cassette-faithful: those events are silent, exactly as
+  on the original cassette.
+- **DESIGNED** — purpose-built beeper SFX that are distinct and recognisable;
+  regenerable with `subterra sfx-render` (`sfx-*.wav` in
+  `assets/extracted/sfx/`).
+- **HISTORICAL** — the 1985 reconstructed messages, finally audible forty
+  years late (`lost-*.wav`).  Same underlying data, different assumptions
+  about note length; the two sets sound noticeably different.
 
 ## 3. Level 0 is a bug
 
