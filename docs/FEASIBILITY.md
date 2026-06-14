@@ -177,6 +177,12 @@ Roughly in declining order:
    the repo as a reference / verification tool). The native
    port becomes the primary `Subterra.Game`.
 
+This is the same sequence, generalised to *any* Spectrum game and
+written as a how-to, in [`PLAYBOOK.md` §6 "Field guide"](PLAYBOOK.md#6-field-guide--porting-your-spectrum-game).
+The Playbook also explains the method these estimates assume — boot
+the binary and extract from RAM, disassembling only the strategic
+routines — which is why the numbers above are weeks, not months.
+
 ## The honest answer
 
 A *bit-perfect* re-implementation is unrealistic — the original

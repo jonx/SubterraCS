@@ -34,7 +34,7 @@ routine's *code*.
 | [ship-ai.md](ship-ai.md) | `$E920` ship AI + all helpers (`$EADE`, `$EB00`, `$EB5B`, `$EB7A`, `$EAB2/$EABD`, `$DFAF`, `$DCAC`) | **done** |
 | [boss.md](boss.md) | `$EC10` spawn + `$EC4C` tick + `$EE7D` state | **done** |
 | [workers.md](workers.md) | `$E75D` schedule + `$EF02` chain + pickup zone + `$EFE0` scoring | **done** |
-| [input.md](input.md) | `$D8F0` dispatcher + 4 control schemes (`$D8F4` keyboard, `$F14E` Kempston, `$F177` Interface 2, `$F0F9` cursor, `$FB71` Sinclair) + `$E45F` bit layout | **done** |
+| [input.md](input.md) | `$D8F0` dispatcher + 5 control schemes (`$D8F4` keyboard, `$F0F9` key row 6/7/8/9/0, `$F14E` Kempston, `$F177` Interface 2, `$FB71` Sinclair) + `$E45F` bit layout | **done** |
 | [player.md](player.md) | Player physics + `$E3F4` sprite stage + `$DCAC` bank shift + `$DCF5` XOR draw + `$F868` page-advance gate | **done** |
 | [title-menu.md](title-menu.md) | `$F5FC` title loop + control-scheme selection + game-init | **done** |
 | [main-loop.md](main-loop.md) | `$D7FB..$D826` per-frame dispatch map + `$E8FD` sub-chain + state inventory | **done** |
@@ -58,6 +58,10 @@ routine's *code*.
 
 ## See also
 
+* [`../PLAYBOOK.md`](../PLAYBOOK.md) — the method behind these
+  listings (boot-and-extract, strategic-not-systematic disassembly)
+  and a §7 ASCII map of where each of these routines lives in the
+  48 K image.
 * [`../RE-LOG.md`](../RE-LOG.md) — the narrative behind every
   discovery; read alongside this folder for the "why".
 * [`../MEMORY-MAP.md`](../MEMORY-MAP.md) — flat address index

@@ -6,6 +6,10 @@ factual errors, which we mark with a struck-through note).
 
 The log is meant to be readable end-to-end by anyone who wants to
 understand *how* we got to the C# port — not just the conclusions.
+For the method distilled — boot the binary in our own emulator,
+extract from RAM, disassemble only the strategic routines — and a
+field guide for doing the same to another game, see
+[PLAYBOOK.md](PLAYBOOK.md).
 
 ---
 

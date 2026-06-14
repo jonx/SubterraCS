@@ -3,6 +3,12 @@
 This file accumulates every named address we identify while reversing.
 Group by region. New entries get added as we go.
 
+> **Want the bird's-eye view first?** [PLAYBOOK.md §7 "Anatomy of
+> the cassette"](PLAYBOOK.md#7-anatomy-of-the-cassette--a-map-of-the-48-k-image)
+> has an ASCII map of the whole 48 K image and highlights the ~3–4 KB
+> of *strategic* routines that actually decide the game's feel. This
+> file is the exhaustive address-by-address index behind it.
+
 ## 16 K ROM (Spectrum 48 K system ROM, not in snapshot)
 
 | Address  | Name        | Notes |

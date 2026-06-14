@@ -7,7 +7,11 @@ played, a level that corrupts memory, and some genuinely clever
 engineering.  This file collects them all in one place; each entry
 links to the full trace in [docs/disasm/](disasm/) and
 [RE-LOG.md](RE-LOG.md).  Where a discovery is implemented in the
-[native port](../native/README.md), that's noted inline.
+[native port](../native/README.md), that's noted inline.  (The
+*method* that surfaced all of this — running the binary and reading
+its RAM rather than reading prior write-ups — is in
+[PLAYBOOK.md](PLAYBOOK.md), which is also why we found things earlier
+notes missed.)
 
 ## 1. The Star Wars hall of fame — and the developers' signatures
 

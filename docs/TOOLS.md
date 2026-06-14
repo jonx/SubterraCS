@@ -10,6 +10,13 @@ practice.
 Each tool is also a piece of the larger story in
 [`RE-LOG.md`](RE-LOG.md); cross-references appear inline.
 
+For *why* these tools exist and how they fit the overall method —
+boot the original binary in our own emulator and read the game's
+data out of its RAM, rather than disassembling the whole thing — see
+[`PLAYBOOK.md`](PLAYBOOK.md), especially §3 ("Why we built our own
+emulator and our own tools") and §4 (the toolkit grouped by the
+question each command answers).
+
 ---
 
 ## The runtime ("library") layer

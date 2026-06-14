@@ -53,7 +53,7 @@ dotnet run --project src/Subterra.Game
 
 ### A complete reverse-engineering toolkit
 
-A `subterra` CLI with 12 sub-commands covering snapshot decoding,
+A `subterra` CLI with 19 sub-commands covering snapshot decoding,
 Z80 disassembly, memory inspection, opcode-pattern search, live
 emulator runs with scripted key input, RAM dumps, sprite extraction,
 and instruction-level execution tracing. The full reference lives in
@@ -128,6 +128,15 @@ clean contact sheet into `renders/` (gitignored scratch).
 
 ## How it was built
 
+The **method** — boot the original binary in an emulator we control,
+drive it with scripted input, and read the game's own sprites,
+tiles, and variables straight out of its RAM, disassembling only the
+handful of routines that decide its feel — has its own guide:
+[**docs/PLAYBOOK.md**](docs/PLAYBOOK.md). It also explains why we
+built our own emulator and tools instead of using third-party ones,
+and is written so you could follow it to port a *different* Spectrum
+game.
+
 The story of the reverse engineering — every dead end included — is
 in [**docs/RE-LOG.md**](docs/RE-LOG.md). The lookup table of every
 named address we've identified is in
@@ -188,7 +197,7 @@ original/        original 1985 game files + 48 K Spectrum ROM
 src/             emulator-based solution (.NET 10)
   Subterra.Spectrum/   snapshot loader, Z80 CPU, ULA, screen, PNG
   Subterra.Assets/     SpriteSheet decoder, RenderedImage
-  Subterra.Tools/      the `subterra` CLI — 12 sub-commands
+  Subterra.Tools/      the `subterra` CLI — 19 sub-commands
   Subterra.Game/       Avalonia window — playable emulator
   Subterra.Editor/     Avalonia asset viewer + Map tab editor
 native/          standalone emulator-free C# port (SDL2, no NuGet)
@@ -197,12 +206,13 @@ native/          standalone emulator-free C# port (SDL2, no NuGet)
   SubterraCS.Platform/    SDL2 P/Invokes + key-binding layer
   SubterraCS.Game/        executable
 docs/
+  PLAYBOOK.md      the method + a port-your-own-game field guide (start here)
   RE-LOG.md        the running notebook (read top-to-bottom)
   MEMORY-MAP.md    every named address, organised by RAM region
   TOOLS.md         every tool with what / why / how-to
   CURIOSITIES.md   hidden gems: Star Wars HOF, lost sounds, level-0 bug, …
   FEASIBILITY.md   pre-port assessment (now historical)
-  disasm/          per-subsystem annotated Z80 listings (20 files)
+  disasm/          per-subsystem annotated Z80 listings (21 files)
   images/          20 curated renders from the RE process
 assets/extracted/
   tiles-b0f4.bin first standalone asset file (3 KB tile bank)
