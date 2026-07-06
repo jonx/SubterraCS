@@ -71,6 +71,15 @@ public sealed class MiniMap
         Buffer = PerLevelBuffers[idx];
     }
 
+    /// <summary>Install a generated 4 KB buffer (modern depth 6+
+    /// pages) as the active level map.</summary>
+    public void InstallBuffer(byte[] buffer)
+    {
+        if (buffer.Length != BufferSize)
+            throw new ArgumentException($"level buffer must be {BufferSize} bytes");
+        Buffer = buffer;
+    }
+
     public void Clear() => Array.Clear(Buffer, 0, Buffer.Length);
 
     /// <summary>
@@ -84,36 +93,6 @@ public sealed class MiniMap
     /// cell on screen renders as a clean ribbon, so the byte value
     /// IS what the original puts on screen — we mirror that exactly.
     /// </summary>
-    /// <summary>Paint the BOTTOM N rows of the mini-map (matches the
-    /// emu's incremental paint pattern: char rows 23 first, then 22,
-    /// then 21, then 20, as observed at f50 and f60).</summary>
-    public void DrawToPartial(Framebuffer fb, int rowsToDraw)
-    {
-        rowsToDraw = Math.Clamp(rowsToDraw, 0, Rows);
-        // Bottom-up partial paint: paint source rows that map to
-        // bottom char rows first.  Source row N → screen row N*2.
-        // To paint bottom N char rows = bottom-most source rows.
-        int firstRow = Rows - rowsToDraw;
-        for (int row = firstRow; row < Rows; row++)
-        {
-            int screenY1 = ScreenTop + row * 2;
-            int screenY2 = screenY1 + 1;
-            if (screenY2 >= Framebuffer.Height) continue;
-            for (int byteCol = 0; byteCol < 32; byteCol++)
-            {
-                byte stamp = 0;
-                for (int b = 0; b < 8; b++)
-                {
-                    byte src = Buffer[row * Cols + byteCol * 8 + b];
-                    if (src != 0) stamp |= (byte)(0x80 >> b);
-                }
-                if (stamp == 0) continue;
-                fb.Bitmap[Framebuffer.BitmapAddress(byteCol * 8, screenY1)] |= stamp;
-                fb.Bitmap[Framebuffer.BitmapAddress(byteCol * 8, screenY2)] |= stamp;
-            }
-        }
-    }
-
     public void DrawTo(Framebuffer fb)
     {
         for (int row = 0; row < Rows; row++)

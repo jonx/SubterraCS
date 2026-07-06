@@ -8,9 +8,11 @@ internal static class Program
     private static int Main(string[] args)
     {
         bool headless = args.Contains("--headless");
+        bool modern = args.Contains("--modern");
         int frames = 600;
         string keys = "";
         int? seed = null;
+        int? startLevel = null;   // debug: jump straight into a level
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i].StartsWith("--frames=", StringComparison.Ordinal))
@@ -19,6 +21,8 @@ internal static class Program
                 keys = args[i].Substring(7);
             else if (args[i].StartsWith("--seed=", StringComparison.Ordinal))
                 seed = int.Parse(args[i].Substring(7), CultureInfo.InvariantCulture);
+            else if (args[i].StartsWith("--level=", StringComparison.Ordinal))
+                startLevel = int.Parse(args[i].Substring(8), CultureInfo.InvariantCulture);
         }
 
         Console.WriteLine($"SubterraCS — native C# port (mode: {(headless ? "headless" : "SDL2")})");
@@ -39,9 +43,11 @@ internal static class Program
         var world = new World(
             assets.Tiles, assets.Udgs, assets.EntityBank, assets.EntityTypes,
             assets.PlayerSpriteRight, assets.PlayerSpriteLeft,
-            originalLevels: assets.OriginalLevelSchedules,
             seed: seed ?? Environment.TickCount)
         {
+            // Historic (cassette-rules) by default; --modern or the H
+            // key enables the port-only modernities.
+            ModernMode = modern,
             SplashScr = assets.SplashScr,
             TitleMenuScr = assets.TitleMenuScr,
             RomFont = assets.RomFont,
@@ -58,6 +64,10 @@ internal static class Program
         // Pass music data + captured cassette SFX through to the runner.
         Sdl2Runner.MusicData = assets.MusicData;
         Sdl2Runner.SfxBank = assets.SfxBank;
+
+        // Debug jump-to-level (skips splash/title) — used by the
+        // headless harness to exercise procedural pages directly.
+        if (startLevel is { } lvl) world.LoadLevel(lvl);
 
         if (headless)
         {

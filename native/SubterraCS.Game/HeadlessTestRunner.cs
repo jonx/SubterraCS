@@ -45,7 +45,7 @@ internal static class HeadlessTestRunner
                 // Also dump raw RGBA next to the PNG so external diff
                 // tools can read the framebuffer without decoding PNG.
                 File.WriteAllBytes(outPath + ".rgba", rgba);
-                Console.WriteLine($"    frame {f + 1,5}: depth={world.Depth} score={world.Score} shield={world.Shield} fuel={world.Fuel} entities={world.Alive} spawned={world.Spawned}  →  {Path.GetRelativePath(root, outPath)}");
+                Console.WriteLine($"    frame {f + 1,5}: state={world.State} lives={world.Lives} depth={world.Depth} score={world.Score} shield={world.Shield} fuel={world.Fuel} entities={world.Alive} rescued={world.Rescued}  →  {Path.GetRelativePath(root, outPath)}");
                 snapshots++;
             }
         }

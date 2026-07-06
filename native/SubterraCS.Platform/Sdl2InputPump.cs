@@ -15,6 +15,7 @@ public readonly record struct PumpResult(
     bool Reset,
     bool ToggleLostSounds,
     bool ToggleRemap,
+    bool ToggleModern,
     int RawKeyDown);   // first non-repeat keydown this poll (0 = none)
 
 public sealed class Sdl2InputPump
@@ -44,9 +45,14 @@ public sealed class Sdl2InputPump
     /// is also suppressed (the world is paused anyway).</summary>
     public bool SystemKeysEnabled { get; set; } = true;
 
+    /// <summary>True while M or N is held — the cassette's title loop
+    /// only ticks the Follin tune past the $F637 gate while one of
+    /// those keys is down; historic mode reproduces that.</summary>
+    public bool MusicKeyHeld { get; private set; }
+
     public PumpResult Poll()
     {
-        bool quit = false, pause = false, fullscreen = false, reset = false, lostSounds = false, remap = false;
+        bool quit = false, pause = false, fullscreen = false, reset = false, lostSounds = false, remap = false, modern = false;
         int rawKey = 0;
 
         while (Sdl2.SDL_PollEvent(out var evt) != 0)
@@ -72,8 +78,11 @@ public sealed class Sdl2InputPump
                 case Sdl2.KeyP:         if (first) pause = true; break;
                 case Sdl2.KeyR:         if (first) reset = true; break;
                 case Sdl2.KeyF11:       if (first) fullscreen = true; break;
-                case 0x6E:              if (first) lostSounds = true; break;   // N — Lost Sounds toggle
+                case 0x6E:              if (first) lostSounds = true;          // N — Lost Sounds toggle
+                                        MusicKeyHeld = down; break;            //   (also a $F637 music key)
+                case 0x6D:              MusicKeyHeld = down; break;            // M — $F637 title-music key
                 case 0x6B:              if (first) remap = true; break;        // K — key-remap screen
+                case 0x68:              if (first) modern = true; break;       // H — historic/modern toggle
 
                 // Title-menu digits 1..5 — the cassette's control-
                 // scheme selection keys (see docs/disasm/title-menu.md).
@@ -102,6 +111,6 @@ public sealed class Sdl2InputPump
         }
 
         if (quit) QuitRequested = true;
-        return new PumpResult(quit, pause, fullscreen, reset, lostSounds, remap, rawKey);
+        return new PumpResult(quit, pause, fullscreen, reset, lostSounds, remap, modern, rawKey);
     }
 }

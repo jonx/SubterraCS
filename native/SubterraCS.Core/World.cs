@@ -5,31 +5,43 @@ public enum GameState
     Splash,     // Loading screen (SUBSTRYK.SCR from the cassette)
     Title,      // Title menu — SELECT CONTROL OPTION (1..4)
     HallOfFame, // Idle-title high-score screen (port of $FCDB)
-    NameEntry,  // Port-only: type a name for a Hall of Fame insert
+    NameEntry,  // Modern-only: type a name for a Hall of Fame insert
     Playing,    // The actual game loop
     Dying,      // Brief death animation
     GameOver,   // Game-over screen — press FIRE to retry
-    LevelClear, // Brief celebratory beat when all workers rescued
 }
 
 /// <summary>
 /// The whole game.  Architecture mirrors how the original is structured:
 ///
 ///   load assets → splash → title → game loop:
-///       LoadLevel(n) → place workers + start hazard schedule
-///       per-frame:  update entities → player input → collisions
-///       all workers rescued?  → LevelClear → LoadLevel(n+1)
-///       player dies?          → Dying → respawn or GameOver
+///       LoadLevel(n) → load ships/workers/entity records
+///       per-frame:  input → scroll → entities → collisions
+///       all 8 workers rescued AND altitude ≥ $75?  → +1000,
+///           LoadLevel(n+1)   (port of the $F868 page-advance gate)
+///       player dies?  → Dying → respawn or GameOver
 ///
-/// The Stryker is a SPACE SHIP — it flies freely up / down / left /
-/// right within the playable area.  There is no altitude-gate page
-/// advance.  A level progresses only when every rescuable worker on
-/// the page has been picked up.
+/// Rescuing every worker only UNLOCKS the exit ($E77D[level] flag);
+/// the player must still dive to the bottom of the playfield to
+/// advance — exactly the cassette's progression rule.
 /// </summary>
 public sealed class World
 {
     public const int MaxEntities = 16;
-    public const int MaxBullets  = 8;
+    /// <summary>4 beam slots — the cassette's laser table at $E46B
+    /// holds exactly 4 records (laser.md).</summary>
+    public const int MaxBullets  = 4;
+
+    /// <summary>The historic/modern switch.  OFF (default) = historic:
+    /// every rule is the cassette's, as reverse-engineered in
+    /// docs/disasm/.  ON = the port-only modernities: procedural
+    /// levels past depth 5, laser-vs-decor with scores, enemy-ship
+    /// respawns, ambient fuel drain + fuel-death, respawn
+    /// invincibility grace, low-fuel/low-shield warnings, in-game
+    /// music, and Hall-of-Fame name entry.  The two always-accepted
+    /// extras — the Shift pixel-precision moves and the N-key sound
+    /// modes — are NOT gated by this flag.</summary>
+    public bool ModernMode;
     public const int PlayfieldTop = 0;        // top pixel of the play area
     public const int PlayfieldBottom = 128;   // first pixel of the HUD strip (HUD starts row 16)
 
@@ -73,7 +85,6 @@ public sealed class World
     public readonly BossEntity Boss = new();
     /// <summary>Workers at $E75D.  See WorkerSchedule.cs.</summary>
     public readonly WorkerSchedule Workers = new();
-    private bool _levelPainted;
 
     /// <summary>Latched at draw time (port of <c>$DCF5</c>'s shadow-carry
     /// SCF at <c>$DD2A</c>): true if the player's last XOR-draw overlapped
@@ -84,13 +95,14 @@ public sealed class World
     /// paths in <see cref="EnemyShipTable"/> are a backup.</summary>
     private bool _playerXorOverlap;
 
-    // Hazard schedules: depth 0..5 are the cassette pages from $E69D;
-    // beyond that we hand off to the procedural generator so the game
-    // keeps going.
+    // Levels 1..5 are the cassette pages.  In ModernMode, depth 6+ is
+    // served by the procedural generator, which emits data in the SAME
+    // formats the cassette assets use (mini-map tile buffer, worker
+    // schedule, ship init block, station bytes) so every faithful
+    // subsystem runs unchanged on generated pages.
     private readonly ProceduralGenerator _gen;
-    private readonly SpawnSchedule[]? _originalLevels;
     public int Depth { get; private set; }  // current level (1-based for display)
-    public SpawnSchedule Current { get; private set; }
+    private GeneratedLevel? _genLevel;      // active generated page (depth ≥ 6)
 
     // Player -----------------------------------------------------------
     // Initial position matches the emulator at game-start: top-left
@@ -142,6 +154,18 @@ public sealed class World
     /// Port of the $E41B..$E446 fill loop in the original (48 iterations
     /// of +2 with a per-iter beep; takes ~50 frames at level-start).</summary>
     public int BarFillOverride = -1;
+    /// <summary>Current $E41B fill value (-1 = no fill running).</summary>
+    private int _barFill = -1;
+
+    /// <summary>Port of $E419: reset both accumulators, then run the
+    /// 48-step fill animation; both bars land at $5F when it ends.</summary>
+    private void StartBarRefill()
+    {
+        HitAccum = 0xFF;
+        FuelAccum = 0xFF;
+        _barFill = 0;
+        Sfx.Trigger(SfxKind.BarFill);
+    }
     public bool FacingLeft;
     public int Score;
     // Fuel and Shield use the native game range 0..$5F (0..95), matching
@@ -179,16 +203,8 @@ public sealed class World
     public readonly EntityInstance[] Entities = new EntityInstance[MaxEntities];
     public readonly Bullet[] Bullets = new Bullet[MaxBullets];
 
-    // Level-local state ------------------------------------------------
-    private int _workersToRescueThisLevel;
-    public int WorkersRemaining =>
-        Entities.Count(e => e.Alive && EntityAI.For(e.TypeId) == EntityAI.Kind.Worker);
-    public int WorkersForThisLevel => _workersToRescueThisLevel;
-
     private readonly Random _rng;
     private int _frameCounter;
-    private int _fireCooldown;
-    public int Spawned { get; private set; }
     public int Alive => Entities.Count(e => e.Alive);
     public int FrameCounter => _frameCounter;
 
@@ -196,7 +212,6 @@ public sealed class World
         TileBank tiles, UdgBank udgs, EntityBank entityBank,
         EntityTypeTable entityTypes,
         byte[] playerRight, byte[] playerLeft,
-        SpawnSchedule[]? originalLevels = null,
         int seed = 42)
     {
         Tiles = tiles;
@@ -207,23 +222,9 @@ public sealed class World
         PlayerSpriteLeft = playerLeft;
         _gen = new ProceduralGenerator(seed);
         _rng = new Random(seed);
-        _originalLevels = originalLevels;
-        Current = ScheduleForLevel(0);
 
         for (int i = 0; i < Entities.Length; i++) Entities[i] = new EntityInstance();
         for (int i = 0; i < Bullets.Length; i++)  Bullets[i] = new Bullet();
-    }
-
-    private SpawnSchedule ScheduleForLevel(int level)
-    {
-        if (_originalLevels is { Length: > 0 } && level < _originalLevels.Length)
-        {
-            var src = _originalLevels[level].Entries;
-            var copy = new ScheduleEntry[src.Length];
-            Array.Copy(src, copy, src.Length);
-            return new SpawnSchedule(copy);
-        }
-        return _gen.Page(level);
     }
 
     // ─── Tick dispatch ──────────────────────────────────────────────
@@ -241,7 +242,6 @@ public sealed class World
             case GameState.NameEntry:  TickNameEntry(input); return;
             case GameState.GameOver:   TickGameOver(input); return;
             case GameState.Dying:      TickDying();        return;
-            case GameState.LevelClear: TickLevelClear();   return;
         }
 
         TickPlaying(input);
@@ -379,21 +379,39 @@ public sealed class World
         if (input.Fire && StateTicks > 25) StartNewGame();
     }
 
+    /// <summary>Death phases — port of $DBC8, which runs FOUR 64-iter
+    /// particle passes, then the $DC43 screen dim, then JP $D8A8.
+    /// We run the explosion 4 times, then an 8-frame bitmap dim.</summary>
+    private int _deathPasses;
+    private int _dimFrames;
+
     private void TickDying()
     {
-        Explosion.Tick();
-        // Hold for the explosion's full 64-frame run, then game-over
-        // or respawn.  Port of $DBC8 (which runs 4 × 64 anim iters
-        // then JP $D8A8); we run a single 64-iter pass.
-        if (StateTicks < Explosion.AnimFrames) return;
+        // Phase 1: 4 × 64-frame particle passes (port of $DBC8's
+        // outer LD B,$04 loop around $DBDA).
+        if (_deathPasses < 4)
+        {
+            Explosion.Tick();
+            if (!Explosion.Active)
+            {
+                _deathPasses++;
+                if (_deathPasses < 4)
+                    Explosion.Trigger(PlayerX, PlayerY, Scroll.LevelColour);
+            }
+            return;
+        }
+        // Phase 2: $DC43 screen dim — 8 passes of SRL over the
+        // playfield bitmap (applied in DrawPlaying via _dimFrames).
+        if (_dimFrames < 8) { _dimFrames++; return; }
+
         Explosion.Reset();
         if (Lives <= 0)
         {
-            // Hall of Fame (port-only persistence on top of the
-            // cassette's $FCDB table — the original had no writable
-            // storage).  If the run places, ask for a name first;
-            // otherwise straight to the game-over screen.
-            if (HallOfFame.WouldPlace(Score) >= 0)
+            // Hall of Fame persistence + name entry are modern-only
+            // (the cassette's $FCDB table is read-only; it had no
+            // writable storage).  Historic mode goes straight to the
+            // game-over screen.
+            if (ModernMode && HallOfFame.WouldPlace(Score) >= 0)
             {
                 _nameChars = "PLAYER  ".ToCharArray();
                 _nameCursor = 0;
@@ -412,27 +430,22 @@ public sealed class World
         }
     }
 
-    private void TickLevelClear()
-    {
-        if (StateTicks >= 60)
-        {
-            LoadLevel(NextLevel(Depth));
-        }
-    }
-
     /// <summary>Compute the next level index.  The cassette's $F6F2
     /// (INC + CP $06 + XOR A) wraps level 5 back to 0 — but level 0's
     /// data is a BUG in the original: its record pointer ($F594[0] =
     /// $F2E8) sits 3 bytes before level 1's records ($F2EB), so its six
-    /// 8-byte records are level 1's bytes read out of alignment (types
-    /// $C0/$20/garbage, TopAddrs in ROM at $1102 or stray RAM at $A001
-    /// — the cassette would draw garbage AND corrupt memory), and its
-    /// $E56D scenery pointer targets $B0F4, the tile bank itself.
-    /// Level 0 is unreachable in normal play ($F6F2 increments before
-    /// the first playable level); only the 5→0 wrap exposes it.  The
-    /// port deliberately deviates: wrap 5 → 1 so post-level-5 play
-    /// cycles the real pages.  See docs/disasm/entities.md §Level 0.</summary>
-    private static int NextLevel(int current) => (current + 1) > 5 ? 1 : current + 1;
+    /// 8-byte records are level 1's bytes read out of alignment — the
+    /// cassette would draw garbage AND corrupt memory.  Level 0 is
+    /// unreachable in normal play; only the 5→0 wrap exposes it.
+    /// Historic mode wraps 5 → 1 so post-level-5 play cycles the real
+    /// pages (see docs/disasm/entities.md §Level 0).  Modern mode
+    /// keeps counting — depth 6+ pages come from the procedural
+    /// generator.</summary>
+    private int NextLevel(int current)
+    {
+        if (ModernMode) return current + 1;
+        return (current + 1) > 5 ? 1 : current + 1;
+    }
 
     // ─── Playing-state tick ─────────────────────────────────────────
 
@@ -448,34 +461,39 @@ public sealed class World
         int step = (((Depth + 3) >> 3) + 1) & 0xFF;
         ScrollProgress = Math.Min(0xFFFF, ScrollProgress + step);
 
-        // ---- Player vs scenery — port of $DFAF ----
-        // Probe the level tile at the player's world position.  If the
-        // tile byte is $01 (= solid wall), die.  Uses the same $EB62
-        // semantics as the ship AI scenery probe.
+        // ---- Player vs scenery — port of $DFAF + $DFC5/$DFEE ----
+        // The cassette probes the tile at BOTH ship columns (scroll+15
+        // AND scroll+16) and only jumps to $DBC8 when BOTH probes
+        // return $01 (the $DFEE re-check of the first probe).  A
+        // single-column graze is survivable.
         if (MiniMap.Buffer.Length >= 4096)
         {
-            int playerWorldByte = (ScrollOffsetX + 0x0F) & 0xFF;
             int playerRow = (PlayerY >> 3) & 0x0F;
-            byte tile = MiniMap.Buffer[playerRow * 256 + playerWorldByte];
-            if (tile == 0x01) { TriggerDeath(); return; }
+            byte tileL = MiniMap.Buffer[playerRow * 256 + ((ScrollOffsetX + 0x0F) & 0xFF)];
+            byte tileR = MiniMap.Buffer[playerRow * 256 + ((ScrollOffsetX + 0x10) & 0xFF)];
+            if (tileL == 0x01 && tileR == 0x01 && !Invincible) { TriggerDeath(); return; }
         }
 
         // ---- Fuel-station pickup — port of $DFCD..$DFEB ----
-        // Per-level station position stored at $E58B + level*2 = (X, Y).
-        // If player world-X matches AND altitude is in [Y-1..Y], refill
-        // fuel via the $E419 animation (we just snap to BarMax).
-        if (FuelStationData.Length >= (Depth + 1) * 2)
+        // $DFD0 compares RAW ($E583) — the scroll cursor itself, not
+        // the ship column — against the station X at $E589, and the
+        // altitude against {stationY, stationY-1} ($DFD7..$DFE0).
+        // Refill only fires when fuel < $5F ($DFE2 CP $5F; RET NC),
+        // then JP $E419: the animated fill that resets BOTH
+        // accumulators and refills BOTH bars.
         {
-            byte stationX = FuelStationData[Depth * 2];
-            byte stationY = FuelStationData[Depth * 2 + 1];
-            int worldX = (ScrollOffsetX + 0x0F) & 0xFF;
-            if (worldX == stationX
-                && (Altitude == stationY || Altitude == stationY - 1)
-                && Fuel < BarMax)
+            byte stationX = 0xFF, stationY = 0xFF;
+            if (_genLevel != null) { stationX = _genLevel.StationX; stationY = _genLevel.StationY; }
+            else if (FuelStationData.Length >= (Depth + 1) * 2)
             {
-                Fuel = BarMax;
-                FuelAccum = 0xFF;
-                Sfx.Trigger(SfxKind.Pickup);
+                stationX = FuelStationData[Depth * 2];
+                stationY = FuelStationData[Depth * 2 + 1];
+            }
+            if (ScrollOffsetX == stationX
+                && (Altitude == stationY || Altitude == stationY - 1)
+                && Fuel < BarMax && _barFill < 0)
+            {
+                StartBarRefill();
             }
         }
 
@@ -506,7 +524,10 @@ public sealed class World
             }
             int delta = (SpeedShift >> 1) | 1;
             Altitude = Math.Max(0, Altitude - delta);
-            if ((SpeedShift & 0x08) == 0) SpeedShift++;
+            // $D984 INC A; BIT 3,A; JR NZ — the cassette tests bit 3
+            // of the INCREMENTED value, so the ramp caps at 7 (max
+            // delta 3 px/frame), never 8.
+            if (SpeedShift < 7) SpeedShift++;
         }
         else if (input.Down)
         {
@@ -517,7 +538,7 @@ public sealed class World
             }
             int delta = (SpeedShift >> 1) | 1;
             Altitude = Math.Min(0x78, Altitude + delta);
-            if ((SpeedShift & 0x08) == 0) SpeedShift++;
+            if (SpeedShift < 7) SpeedShift++;
         }
         else
         {
@@ -621,13 +642,11 @@ public sealed class World
             return;
         }
 
-        // Ambient fuel drain — port of $D86C: $E465-- every frame
-        // (= 1 fuel unit per 256 frames ≈ 4.3 sec).
-        FuelAccum = (FuelAccum - 1) & 0xFF;
-        if (FuelAccum == 0xFF) Fuel = Math.Max(0, Fuel - 1);   // wrap = underflow
-
-        // L-key extra drain — port of $D8D8..$D8EC: holding horizontal
-        // drains FuelAccum by $20 per frame on top of the ambient.
+        // L-key drain — port of $D8D8..$D8EC: holding horizontal
+        // drains FuelAccum by $20 per frame.  This is the ONLY fuel
+        // drain the cassette has ($E465/$E466 are untouched while L
+        // is up), and empty fuel merely blocks the horizontal scroll
+        // ($D9F3) — it does not kill.
         if (input.Horizontal)
         {
             FuelAccum -= 0x20;
@@ -638,52 +657,43 @@ public sealed class World
             }
         }
 
-        // Low-fuel + low-shield warning SFX — port of $D879 / $D88A
-        // (random gate).  Distinct kinds so the runner's Lost Sounds
-        // mode can map them to the cassette's never-played
-        // fuel-low/shield-low messages.
-        if (Fuel < 0x20 && _rng.Next(0, 256) == 0x7E)
-            Sfx.Trigger(SfxKind.FuelLow);
-        if (Shield < 0x20 && _rng.Next(0, 256) == 0x7E)
-            Sfx.Trigger(SfxKind.ShieldLow);
-
-        if (Fuel <= 0) { TriggerDeath(); return; }
-
-        // The hazard schedule (port of $EF02) is not yet byte-faithful —
-        // it spawns at inflated cadences and at random x positions that
-        // don't match the emulator.  Disabled until we port the real
-        // executor.  Keep TickHazardSchedule as code for future plug-in.
-        // TickHazardSchedule();
-
-        // Animate the bar fill at level start.  Port of $E41B..$E446
-        // which loops 48 times with A += 2 and a beep each iter, taking
-        // ~50 frames in total.  Empirical match: shield/fuel go 10 →
-        // 95 between f80 and f130 in the emulator.
-        const int BarFillStart = 80;
-        const int BarFillEnd = 130;
-        if (_frameCounter >= BarFillStart && _frameCounter <= BarFillEnd)
+        if (ModernMode)
         {
-            // The $E41B fill loop accelerates: empirically observed
-            // values are 10/20/30/44/64/95 at f80/f90/f100/f110/f120/f130.
-            // Quadratic fit: v(t) = 0.0233 t² + 0.534 t + 10 where
-            // t = frame - 80.  Implemented as integer arithmetic:
-            // v = (233 t² + 5340 t + 100000) / 10000.
-            long t = _frameCounter - BarFillStart;
-            long v = (233 * t * t + 5340 * t + 100000) / 10000;
-            BarFillOverride = (int)Math.Clamp(v, 0, 95);
+            // Modern-only fuel economy: ambient per-frame drain plus
+            // fuel-0 = death, giving the endless mode a survival
+            // pressure the cassette never had.  (No cassette
+            // counterpart — see RE-LOG §66.)
+            FuelAccum = (FuelAccum - 1) & 0xFF;
+            if (FuelAccum == 0xFF) Fuel = Math.Max(0, Fuel - 1);
+            if (Fuel <= 0) { TriggerDeath(); return; }
+
+            // Modern-only low-fuel / low-shield warnings (the
+            // cassette's $F8B4/$F8D8 warning messages have no
+            // callers — sound.md).
+            if (Fuel < 0x20 && _rng.Next(0, 256) == 0x7E)
+                Sfx.Trigger(SfxKind.FuelLow);
+            if (Shield < 0x20 && _rng.Next(0, 256) == 0x7E)
+                Sfx.Trigger(SfxKind.ShieldLow);
         }
-        else if (_frameCounter > BarFillEnd)
+
+        // Bar-fill animation — port of $E419/$E41B: 48 iterations of
+        // A += 2 with a beep each iter.  Runs on every level start and
+        // respawn (the $E347 HUD-repaint chain ends in CALL $E419) and
+        // on fuel-station pickup ($DFEB JP $E419).  Both bars land at
+        // $5F and both accumulators reset when it completes.
+        if (_barFill >= 0)
         {
-            BarFillOverride = -1;   // bars use the real Shield/Fuel
-        }
-        else
-        {
-            // Pre-fill (f<80): bars show UDG-A corners only with
-            // empty middle.  $E464 = $5F at this point in the emu,
-            // but $E0BE hasn't been called yet so the cells aren't
-            // filled.  Setting value=0 makes our DrawBar output
-            // the same empty-middle pattern.
-            BarFillOverride = 0;
+            BarFillOverride = Math.Min(_barFill, BarMax);
+            _barFill += 2;
+            if (_barFill > BarMax + 2)
+            {
+                _barFill = -1;
+                BarFillOverride = -1;
+                Fuel = BarMax;
+                Shield = BarMax;
+                HitAccum = 0xFF;
+                FuelAccum = 0xFF;
+            }
         }
 
         // Level slide-in animation — port of $DB1A's 16-iteration
@@ -705,8 +715,14 @@ public sealed class World
                 Scroll.ScrollOneStep(Tiles, MiniMap.Buffer);
                 // On the iteration that completes the slide-in, fire
                 // the spawn-in animation — port of $F6C8 CALL $E135
-                // which runs immediately after $DB1A returns.
-                if (Scroll.ScrollComplete) Explosion.TriggerSpawnIn(Scroll.LevelColour);
+                // which runs immediately after $DB1A returns.  The
+                // $E17F beeper loop inside $E135 is the spawnin.wav
+                // capture.
+                if (Scroll.ScrollComplete)
+                {
+                    Explosion.TriggerSpawnIn(Scroll.LevelColour);
+                    Sfx.Trigger(SfxKind.SpawnIn);
+                }
             }
         }
 
@@ -732,7 +748,8 @@ public sealed class World
         // Order matches the cassette: ship AI → boss tick → bullet tick.
         // Mini-map ship dots ($E213) are drawn in DrawPlaying.
         int playerByteX = (ScrollOffsetX + 15) & 0xFF;
-        EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth, MiniMap.Buffer);  // $E920
+        EnemyShipTable.TickAi(ScrollOffsetX, playerByteX, PlayerY, EnemyShots, _rng, Depth,
+                              MiniMap.Buffer, modernRespawn: ModernMode);  // $E920
         bool bossWasActive = Boss.Active;
         Boss.Tick(ScrollProgress, ScrollOffsetX, playerByteX, PlayerY, _rng);                  // $EC10
         // Boss-spawn alert — the cassette QUEUES its $F8F9 message
@@ -741,7 +758,12 @@ public sealed class World
         if (!bossWasActive && Boss.Active) Sfx.Trigger(SfxKind.BossAlert);
 
         // Workers — port of $EF08.  Tick returns # rescued this frame;
-        // each rescue gives +50 score, RESCUED++; 8 → level cleared.
+        // each rescue gives +50 score, RESCUED++.  The 8th rescue sets
+        // the level-cleared flag ($E77D[level], modelled as
+        // RemainingThisLevel == 0) — which only UNLOCKS the $F868
+        // page-advance gate above; the player must still dive to
+        // altitude ≥ $75 to leave the level.  $F011 queues the
+        // all-rescued jingle ($F922 — vestigial on the cassette).
         int newRescues = Workers.Tick(ScrollOffsetX, PlayerY);
         if (newRescues > 0)
         {
@@ -749,9 +771,7 @@ public sealed class World
             Rescued += newRescues;
             Sfx.Trigger(SfxKind.Pickup);
             if (Workers.RemainingThisLevel == 0)
-            {
-                EnterState(GameState.LevelClear);
-            }
+                Sfx.Trigger(SfxKind.LevelUp);
         }
 
         // Enemy BULLETS — $ED01 per-frame tick.  Bullets are spawned by
@@ -761,13 +781,23 @@ public sealed class World
         int deathHits = EnemyShipTable.LastTickHits
                       | EnemyShots.Tick(ScrollOffsetX, playerByteX, PlayerY, MiniMap.Buffer);
 
+        // Boss-vs-player — port of $DD58..$DD62: when $EE7C is set the
+        // walker tests the boss slot with the same $DD8C box as ships
+        // (entity_X ∈ {p, p-1}, |ΔY| < 8) and jumps to $DBC8 on
+        // overlap.  Touching the boss is instant death.
+        if (Boss.Active)
+        {
+            int bdxBoss = (playerByteX - Boss.X) & 0xFF;
+            if ((bdxBoss == 0 || bdxBoss == 1) && Math.Abs(Boss.Y - PlayerY) < 8)
+                deathHits |= 0x100;
+        }
+
         // $DD4D per-frame DEATH walker (called from $E8FD at $E90C).
-        // Walks ships ($E597) + bullets ($EE9E) with $DD8C / $DDAA and
-        // jumps to $DBC8 (instant death) on any coord overlap.  Tight
-        // window: entity_X ∈ {p, p-1}, |Y diff| < 8 (bullets: 0..7
-        // below player only).  Honoured Invincible (respawn / level
-        // grace) prevents instant-death just after respawn.  See
-        // docs/disasm/damages.md.
+        // Walks ships ($E597) + bullets ($EE9E) + boss with $DD8C /
+        // $DDAA and jumps to $DBC8 (instant death) on any coord
+        // overlap.  Invincible is a modern-only respawn grace; in
+        // historic mode it is never set (the cassette has none —
+        // damages.md).
         if (deathHits != 0 && !Invincible) { TriggerDeath(); return; }
 
         // PRIMARY damage trigger — port of $DCF5/$DD2A shadow-carry +
@@ -795,92 +825,87 @@ public sealed class World
             _playerXorOverlap = false;
         }
 
-        // Lasers — port of $DE41 + $DEF0.  In the original, all 15
-        // beam bytes are painted at fire time, then the trailing
-        // (ship-side) byte is erased each frame so the visible beam
-        // appears to "fade from the back" toward a fixed head at the
-        // far edge.  Faithful but visually ambiguous at 60 fps —
-        // looks too much like the beam moves backward.
-        //
-        // We use a clearer projectile model: the HEAD travels forward
-        // by 8 px (one beam-byte) per frame, with a short trail
-        // behind, until it has traveled MaxLength bytes.  Same
-        // duration and same hit area as the original beam, just
-        // rendered as a moving "bolt" instead of a fading streak.
-        // The per-frame self-collide that $DEDA does (`INC(HL);
-        // DEC(HL); JR NZ` to bail at non-zero pixels) becomes our
-        // entity-collision check below.
-        if (_fireCooldown > 0) _fireCooldown--;
-        if (input.Fire && _fireCooldown == 0) FireBullet();
+        // Lasers — port of $DE41 + $DEF0, faithful beam model:
+        // 4 slots ($E46B), NO fire cooldown (a fire press is only
+        // ignored when all 4 slots are alive), all beam bytes painted
+        // at fire time (up to 15, self-limited at scenery per $DEDA),
+        // then per-frame the ship-side TAIL byte recedes toward the
+        // fixed head until nothing remains ($DEF0..$DF1B).
+        if (input.Fire) FireBullet();
         foreach (var b in Bullets)
         {
             if (!b.Alive) continue;
-            int dir = b.DX > 0 ? 1 : -1;
-            // Advance head; expire on offscreen or once traveled.
-            b.X += b.DX;
+            // Tail recede: one byte per frame; expire when the span
+            // is exhausted.
             b.Length--;
-            if (b.Length == 0 || (uint)b.X >= 256) { b.Alive = false; continue; }
-            // Laser vs ENEMY SHIPS — port of $E9F0: in the cassette,
-            // each ship's own blitter checks the screen bytes under it
-            // for the beam pattern $EF before drawing; a match kills
-            // the ship, awards the remaining alt-B counter ($0F = 15
-            // points, $E95A) and runs an 8-particle explosion ($EDDB).
-            // ($F958 also queues a "kill jingle" message — but the
-            // message system is vestigial, nothing ever plays it; see
-            // sound.md.  Our Explode tone below is port-only flavour.)
-            // We approximate the pixel test with the beam-byte/ship-
-            // byte overlap our projectile model exposes.
-            int beamByte = (b.X >> 3);
-            int beamWorldByte = (ScrollOffsetX + beamByte) & 0xFF;
+            if (b.Length <= 0) { b.Alive = false; continue; }
+
+            // Laser vs ENEMY SHIPS — port of $E9F0: each target's own
+            // blitter finds the beam pattern $EF under it and dies.
+            // Our equivalent: the ship's screen byte lies within the
+            // beam's live span on a scanline the ship covers.  Kill
+            // awards the remaining alt-B counter ($E95A LD B,$0F = 15)
+            // and runs the 8-particle explosion ($EDDB).  The $F958
+            // kill jingle the cassette queues is vestigial (never
+            // played) — historic mode is silent; ModernMode keeps a
+            // 50% Explode tone as flavour.
             for (int i = 0; i < EnemyShipTable.Slots.Length; i++)
             {
+                if (!b.Alive) break;
                 if (!EnemyShipTable.IsAlive(i)) continue;
                 ref var ship = ref EnemyShipTable.Slots[i];
-                if (ship.X == beamWorldByte && Math.Abs(ship.Y - b.Y) < 10)
-                {
-                    ship.Status = 0;     // dead
-                    ship.Sub = 0x80;      // 128-frame respawn delay
-                    b.Alive = false;
-                    Score += 15;          // remaining alt-B ($E95A LD B,$0F)
-                    KillBurst(((ship.X - ScrollOffsetX) & 0xFF) * 8, ship.Y);
-                    if (_rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);  // port-only (cassette kill is silent)
-                    break;
-                }
+                int shipByte = (ship.X - ScrollOffsetX) & 0xFF;
+                if (shipByte >= 0x20) continue;
+                int dyShip = b.Y - ship.Y;
+                if (dyShip < 0 || dyShip >= 8) continue;   // ship sprite = 8 rows
+                if (!BeamCovers(b, shipByte)) continue;
+                ship.Status = 0;
+                ship.Sub = (byte)(ModernMode ? 0x80 : 0x00);  // modern: respawn timer
+                Score += 15;
+                KillBurst(shipByte * 8, ship.Y);
+                if (ModernMode && _rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);
             }
             if (!b.Alive) continue;
 
-            // Laser vs BOSS — same $E9F0 mechanism, alt-B = $14: a
-            // SINGLE beam contact kills it (score += 20), it
-            // deactivates ($EC6C randomize + $EE7C=0) and can respawn
-            // later; $EE83 counts spawns and ≥10 drops the
-            // alternate-frame throttle (handled in BossEntity).
-            if (Boss.Active
-                && (Boss.X == beamWorldByte || Boss.X + 1 == beamWorldByte)
-                && Math.Abs(Boss.Y - b.Y) < 12)
+            // Laser vs BOSS — same $E9F0 mechanism, alt-B = $14: one
+            // beam contact kills (+20), the boss deactivates ($EC6C
+            // randomize + $EE7C = 0) and can respawn; $EE83 counts
+            // spawns and ≥ 10 drops the alternate-frame throttle.
+            if (Boss.Active)
             {
-                b.Alive = false;
-                Score += 20;              // remaining alt-B ($EC53 LD B,$14)
-                KillBurst(((Boss.X - ScrollOffsetX) & 0xFF) * 8, Boss.Y);
-                if (_rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);
-                Boss.Kill(_rng);          // deactivate + randomize, respawnable
-                continue;
+                int bossByte = (Boss.X - ScrollOffsetX) & 0xFF;
+                int dyBoss = b.Y - Boss.Y;
+                if (bossByte < 0x20 && dyBoss >= 0 && dyBoss < 16
+                    && (BeamCovers(b, bossByte) || BeamCovers(b, bossByte + 1)))
+                {
+                    Score += 20;
+                    KillBurst(bossByte * 8, Boss.Y);
+                    if (ModernMode && _rng.Next(0, 2) == 0) Sfx.Trigger(SfxKind.Explode);
+                    Boss.Kill(_rng);
+                    continue;
+                }
             }
 
-            // Collision against entities — the beam's CURRENT position
-            // is a small 8×8 hit area at (b.X, b.Y).
-            foreach (var e in Entities)
+            // Laser vs DECOR — MODERN ONLY.  The cassette's System-A
+            // records are eternal: $F2BC blits with no $EF beam check,
+            // so the beam cannot hurt decor (entities.md,
+            // collision-matrix.md).  The modern extension gives decor
+            // HP + a score table so generated pages have shootables.
+            if (ModernMode)
             {
-                if (!e.Alive) continue;
-                var kind = EntityAI.For(e.TypeId);
-                if (EntityAI.IsBulletProof(kind)) continue;
-                if (Math.Abs(e.X - b.X) < 10 && Math.Abs(e.Y - b.Y) < 8)
+                foreach (var e in Entities)
                 {
+                    if (!e.Alive || !e.Visible) continue;
+                    if (EntityAI.IsBulletProof(e.TypeId)) continue;
+                    int entByte = e.X >> 3;
+                    int dyEnt = b.Y - e.Y;
+                    if (dyEnt < 0 || dyEnt >= 16) continue;
+                    if (!BeamCovers(b, entByte) && !BeamCovers(b, entByte + 1)) continue;
                     e.Hp--;
-                    b.Alive = false;
                     if (e.Hp <= 0)
                     {
                         e.Alive = false;
-                        Score += EntityAI.ShootScore(kind);
+                        Score += EntityAI.ShootScore(e.TypeId);
                         Sfx.Trigger(SfxKind.Explode);
                         SpawnExplosionAt(e.X, e.Y);
                     }
@@ -894,36 +919,21 @@ public sealed class World
         }
 
         if (InvincibleTicks > 0 && --InvincibleTicks == 0) Invincible = false;
-
-        // Level complete?
-        if (WorkersRemaining == 0 && _workersToRescueThisLevel > 0)
-        {
-            Sfx.Trigger(SfxKind.LevelUp);
-            Score += 250;
-            EnterState(GameState.LevelClear);
-        }
     }
 
-    private void TickHazardSchedule()
+    /// <summary>True if the beam's LIVE span currently covers the
+    /// given screen byte column.  The head (far end) is fixed at
+    /// X + (Span-1) bytes from the anchor; the tail has receded
+    /// (Span - Length) bytes from the anchor toward the head.</summary>
+    private static bool BeamCovers(Bullet b, int screenByte)
     {
-        for (int i = 0; i < SpawnSchedule.Slots; i++)
-        {
-            var entry = Current.Entries[i];
-            // Skip worker entries in the schedule — workers are placed
-            // statically by LoadLevel; we only stream hazards here.
-            if (entry.TypeId == 0)
-            {
-                Current.Entries[i] = new ScheduleEntry(0xFFFF, entry.TypeId, entry.Flags);
-                continue;
-            }
-            ushort newTimer = (ushort)(entry.Timer - 1);
-            if (newTimer > entry.Timer)
-            {
-                Spawn(entry.TypeId, entry.Flags);
-                newTimer = (ushort)(0x0030 + _rng.Next(0, 0x0040));
-            }
-            Current.Entries[i] = new ScheduleEntry(newTimer, entry.TypeId, entry.Flags);
-        }
+        int dir = b.DX > 0 ? 1 : -1;
+        int anchor = b.X >> 3;
+        int tail = anchor + (b.Span - b.Length) * dir;
+        int head = anchor + (b.Span - 1) * dir;
+        return dir > 0
+            ? screenByte >= tail && screenByte <= head
+            : screenByte <= tail && screenByte >= head;
     }
 
     // ─── Lifecycle helpers ──────────────────────────────────────────
@@ -938,13 +948,13 @@ public sealed class World
     {
         Lives--;
         EnterState(GameState.Dying);
-        Sfx.Trigger(SfxKind.Explode);
+        _deathPasses = 0;
+        _dimFrames = 0;
+        if (ModernMode) Sfx.Trigger(SfxKind.Explode);   // $DC43 has no OUT — cassette death is silent
         // Port of $DBC8: attribute-particle explosion at the player's
-        // current screen position.  The original seeds Y from $E584
-        // ($BF - altitude); since our player sprite is fixed at
-        // (PlayerX, PlayerY) we just use those.  Level colour (the
-        // original's $E57B) drives the first paint of the alternation.
-        Explosion.Trigger(PlayerX, PlayerY, 0x44);
+        // current screen position.  $DBF9 paints the particles with
+        // the LEVEL COLOUR ($E57B) alternated with white.
+        Explosion.Trigger(PlayerX, PlayerY, Scroll.LevelColour);
     }
 
     /// <summary>Port of <c>$EDDB</c> — the 8-particle burst fired when
@@ -975,33 +985,29 @@ public sealed class World
 
     private void Respawn()
     {
+        // Port of the cassette's post-death restore $F6D4..$F6EF:
+        //   $E319 — reload the 7 ships from the $E48D init block
+        //   $E29B — clear the bullet table AND deactivate the boss
+        //   $E347 — repaint HUD chrome, ending in CALL $E419 (the
+        //           bar refill: both accumulators + both bars → full)
+        //   $DB1A — replay the scenery slide-in, then loop to $E135
+        // System-A decor records are NOT touched — they are eternal.
         foreach (var b in Bullets) b.Alive = false;
-        // Wipe hazards but KEEP workers — death shouldn't reset progress.
-        foreach (var e in Entities)
-        {
-            if (e.Alive && EntityAI.For(e.TypeId) != EntityAI.Kind.Worker)
-                e.Alive = false;
-        }
+        EnemyShipTable.LoadFromInit(EnemyShipInitData, Math.Min(Depth, 5), _genLevel?.ShipInit);
+        Boss.Deactivate();
+        EnemyShots.Reset();
         PlayerX = FixedPlayerX; Altitude = 0; SpeedShift = 1; DirectionState = 0;
-        Shield = BarMax;
-        Fuel = Math.Max(BarMax / 2, Fuel);
-        HitAccum = 0xFF;
-        FuelAccum = 0xFF;
-        SetInvincible(100);
+        DirectionState |= 0; FacingLeft = false;   // $F6D4 LD A,$01 → facing right
+        StartBarRefill();
+        if (ModernMode) SetInvincible(100);   // modern-only respawn grace
         // Port-only state that must not survive a death: the sub-pixel
-        // scroll offset (dying at SubPixelScroll=5 would otherwise leave
-        // the whole playfield shifted 5 px forever after respawn) and
-        // the latched XOR-overlap flag from the death frame (currently
-        // also masked by the invincibility grace, but reset explicitly
-        // so damage logic never sees a stale pre-death collision).
+        // scroll offset and the latched XOR-overlap flag from the
+        // death frame.
         SubPixelScroll = 0;
         _playerXorOverlap = false;
         _prevUp = _prevDown = _prevHorizontal = false;
-        // Port of cassette's $F6EC CALL $DB1A + $F6EF JP $F6C7 → $E135:
-        // every respawn re-runs the scenery slide-in AND the spawn-in
-        // dot-converge animation.  Resetting Scroll triggers
-        // TickPlaying's slide-in loop on the next tick; that loop
-        // fires TriggerSpawnIn when the slide-in completes.
+        // $F6EC CALL $DB1A + $F6EF JP $F6C7 → $E135: every respawn
+        // re-runs the scenery slide-in AND the spawn-in animation.
         Scroll.Reset();
         EnterState(GameState.Playing);
     }
@@ -1012,6 +1018,7 @@ public sealed class World
         Score = 0;
         Rescued = 0;
         LastRunRank = -1;
+        Boss.Reset();   // $F616 XOR A; LD ($EE83),A — spawn count cleared at title
         // The original's $E587 starts at 0 but $F6F2 INC's it before
         // entering the first playable level — so the first level the
         // player sees uses index 1's records (10 entities, the clean
@@ -1030,22 +1037,26 @@ public sealed class World
     public void LoadLevel(int level)
     {
         Depth = level;
-        Current = ScheduleForLevel(level);
+        // Depth 6+ only exists in ModernMode: the procedural generator
+        // emits a full page in the cassette's own data formats.
+        _genLevel = (ModernMode && level > 5) ? _gen.Generate(level) : null;
         foreach (var e in Entities) e.Alive = false;
         foreach (var b in Bullets) b.Alive = false;
         PlayerX = FixedPlayerX; Altitude = 0; SpeedShift = 1; DirectionState = 0;
-        Shield = BarMax;
-        Fuel = Math.Min(BarMax, Fuel + (BarMax / 4));
-        HitAccum = 0xFF;
-        FuelAccum = 0xFF;
-        SetInvincible(60);
+        // $E347 → $E419: level entry refills BOTH bars via the 48-step
+        // fill animation (no partial carry-over).
+        StartBarRefill();
+        if (ModernMode) SetInvincible(60);   // modern-only level grace
         // Switch the active mini-map buffer to this level's packed
         // bytes (port of the original's $E579 ← $E56D[level*2] step).
-        MiniMap.SelectLevel(level);
+        if (_genLevel != null) MiniMap.InstallBuffer(_genLevel.MiniMapBuffer);
+        else MiniMap.SelectLevel(level);
         // Per-level cave colour — port of $F706 LD A,(HL); LD ($E57B),A.
         // Cassette bytes for L0..L5: $07 $04 $03 $06 $02 $01 (white,
         // green, magenta, yellow, red, blue).
-        if (LevelColourData.Length > 0)
+        if (_genLevel != null)
+            Scroll.LevelColour = _genLevel.LevelColour;
+        else if (LevelColourData.Length > 0)
             Scroll.LevelColour = LevelColourData[level % LevelColourData.Length];
         Scroll.Reset();
         ScrollOffsetX = 0;
@@ -1058,42 +1069,50 @@ public sealed class World
         EnemyShots.Reset();
         // Port of $E319's LDIR from $E48D + level*32 → $E597.  Loads
         // the 7 ships' (X, Y, status, sub) into the live table.
-        EnemyShipTable.LoadFromInit(EnemyShipInitData, level);
-        Boss.Reset();
-        Workers.LoadFromSchedule(WorkerScheduleData, level);
+        EnemyShipTable.LoadFromInit(EnemyShipInitData, Math.Min(level, 5), _genLevel?.ShipInit);
+        Boss.ResetForLevel();
+        Workers.LoadFromSchedule(_genLevel?.WorkerSchedule ?? WorkerScheduleData,
+                                 _genLevel != null ? 0 : level);
         // Spawn-in animation ($E135) is fired by TickPlaying on the
         // frame the slide-in completes — matches the cassette flow
         // $F731 (CALL $DB1A returns) → $F6C8 (CALL $E135).  See
         // docs/disasm/spawn-in.md.
-        // Level scenery paint is deferred — see Scroll.PaintLevel call
-        // gated by frame counter in TickPlaying, matching the emu's
-        // scroll-in over f140..f200.
-        _levelPainted = false;
-        PlaceWorkersForLevel(level);
+        PlaceEntitiesForLevel(level);
         EnterState(GameState.Playing);
     }
 
     /// <summary>
-    /// Static placement of entities for this level — uses the
-    /// per-level records from <c>$F2E8</c> (RE-LOG §30).  Each record
-    /// supplies (type, y, frame, top-screen-addr) which we decode
-    /// back to (type, x, y) for the C# entity instance.
-    ///
-    /// Note: the original's "level 0" record list is a misaligned-
-    /// pointer bug (level 1's bytes read 3 bytes out of phase —
-    /// see docs/disasm/entities.md §Level 0); NextLevel never routes
-    /// here with level == 0, so only levels 1..5 are ever placed.
+    /// Static placement of the System-A entity records for this level —
+    /// the per-level records from <c>$F2E8</c> (RE-LOG §30), loaded
+    /// once by <c>$F1BC</c> and eternal thereafter (never expired,
+    /// never consumed — entities.md).  Depth 6+ uses the generated
+    /// record list instead.
     /// </summary>
-    private void PlaceWorkersForLevel(int level)
+    private void PlaceEntitiesForLevel(int level)
     {
-        if (LevelEntities is null || level >= LevelEntities.Levels.Length)
+        if (_genLevel != null)
         {
-            PlaceFallbackWorkers(level);
+            foreach (var rec in _genLevel.Decor)
+            {
+                var slot = NextFreeEntity();
+                if (slot is null) break;
+                slot.TypeId = rec.TypeId;
+                slot.Frame = 0;
+                slot.FrameTick = 0;
+                slot.MaxFrames = TypeMaxFrames(rec.TypeId);
+                slot.AgeFrames = 0;
+                slot.Hp = rec.Hp;
+                slot.WorldX = rec.WorldX;
+                slot.Y = rec.Y;
+                slot.X = -16;
+                slot.DX = 0; slot.DY = 0;
+                slot.Alive = true;
+            }
             return;
         }
+        if (LevelEntities is null || level >= LevelEntities.Levels.Length) return;
 
         var records = LevelEntities.Levels[level];
-        int workerCount = 0;
         foreach (var rec in records)
         {
             var slot = NextFreeEntity();
@@ -1108,40 +1127,14 @@ public sealed class World
             // (= byte position 0..255 along the wider-than-screen
             // level).  Entity is drawable each frame only when
             // `(rec.Y - $E583) < $1F` ($F222 SUB B / $F223 CP $1F /
-            // $F225 RET NC).  So we store WorldX here; the per-frame
-            // tick recomputes screen X via UpdateEntityVisibility().
-            // Y is fixed at level-load from the TopAddr's scanline bits.
+            // $F225 RET NC).  Y is fixed at level-load from the
+            // TopAddr's scanline bits.
             slot.WorldX = rec.Y;
             var (_, y) = LevelEntities.DecodeBitmapAddress(rec.TopAddr);
             slot.Y = y;
             slot.X = -16;       // placed off-screen until first tick
             slot.DX = (rec.Flags & 0x40) != 0 ? -1 : 1;
             slot.DY = 0;
-            slot.Alive = true;
-            if (rec.TypeId == 0) workerCount++;
-        }
-        // Only require rescues if the level actually has workers; some
-        // pages are pure hazard rooms.  Setting to 0 disables the
-        // auto-progress check until we wire a different end-condition.
-        _workersToRescueThisLevel = workerCount;
-    }
-
-    /// <summary>Fallback if level-entity asset is missing — keeps the
-    /// rescue mechanic alive without crashing.</summary>
-    private void PlaceFallbackWorkers(int level)
-    {
-        int workers = Math.Clamp(3 + level, 3, 8);
-        _workersToRescueThisLevel = workers;
-        var rng = new Random(HashCode.Combine(level, 0x7E57));
-        for (int i = 0; i < workers; i++)
-        {
-            var slot = NextFreeEntity();
-            if (slot is null) break;
-            slot.TypeId = 0;
-            slot.MaxFrames = TypeMaxFrames(0);
-            slot.X = 24 + (i + 1) * (208 / (workers + 1)) + rng.Next(-8, 9);
-            slot.Y = 140;
-            slot.DX = rng.Next(0, 2) == 0 ? -1 : 1;
             slot.Alive = true;
         }
     }
@@ -1152,28 +1145,11 @@ public sealed class World
         StateTicks = 0;
     }
 
-    private static bool AabbHit(int ax, int ay, int bx, int by, int half)
-        => Math.Abs(ax - bx) < half && Math.Abs(ay - by) < half;
-
     private int TypeMaxFrames(int typeId)
     {
         if (typeId >= 0 && typeId < EntityTypes.Types.Length)
             return EntityTypes.Types[typeId].MaxFrames;
         return 8;
-    }
-
-    private void Spawn(int typeId, byte flags)
-    {
-        if (typeId >= EntityTypes.Types.Length) return;
-        var slot = NextFreeEntity();
-        if (slot == null) return;
-        slot.TypeId = typeId;
-        slot.Alive = true;
-        slot.Frame = 0;
-        slot.FrameTick = 0;
-        slot.MaxFrames = EntityTypes.Types[typeId].MaxFrames;
-        EntityAI.InitSpawn(slot, EntityAI.For(typeId), _rng, flags, PlayerX, PlayerY);
-        Spawned++;
     }
 
     private EntityInstance? NextFreeEntity()
@@ -1184,45 +1160,46 @@ public sealed class World
 
     private void FireBullet()
     {
-        // Port of $DE41: the laser beam starts at the ship's middle
-        // (PlayerY + 4, not PlayerY which is the sprite's top), is 15
-        // bytes (120 pixels) wide, paints with pattern $EF, and gets a
-        // random bright-color attribute per shot from the Z80 R-register
-        // ($DEC3..$DECD).  Bullet records live at $E46B in the original;
-        // we use the existing Bullets[] slot list.
+        // Port of $DE41: a fire press is only ignored when all 4 beam
+        // slots ($E46B) are alive — there is no cooldown.  The beam
+        // starts at the byte adjacent to the ship's edge (byte 17
+        // facing right, byte 14 facing left — $DEAD/$DEBC), extends up
+        // to 15 bytes ($DED4 LD B,$0F), paints pattern $EF, and
+        // SELF-LIMITS at scenery: $DEDA's INC(HL)/DEC(HL) probe bails
+        // at the first non-empty screen byte.
         foreach (var b in Bullets)
         {
             if (b.Alive) continue;
-            // Initial b.X is set so AFTER TickPlaying's `b.X += b.DX`
-            // advance, the visible head lands at the byte ONE PAST the
-            // ship's edge — exactly what the original $DEAD/$DEBC does:
-            //   $DEAD  ADD HL,BC   ; BC = facing + 15
-            //   $DEBC  ADD HL,DE   ; DE = +1 if facing right, -1 if left
-            // From byte 0 of the scanline:
-            //   facing=1 (right): byte 0 + 16 + 1 = byte 17 = pixel 136
-            //   facing=0 (left):  byte 0 + 15 - 1 = byte 14 = pixel 112
-            // Ship sprite spans pixels 120..135 (bytes 15..16) so byte
-            // 14 (left) and byte 17 (right) are immediately adjacent.
-            //
-            // Compensate for the post-tick advance:
-            //   left target=112, dx=-8 → initial = 120 = PlayerX - 8
-            //   right target=136, dx=+8 → initial = 128 = PlayerX
-            b.X = PlayerX + (FacingLeft ? -8 : 0);
+            int dir = FacingLeft ? -1 : 1;
+            int anchor = FacingLeft ? 14 : 17;
+            b.X = anchor * 8;
             b.Y = PlayerY + 4;       // middle of the 8px-tall ship sprite
-            b.DX = FacingLeft ? -8 : 8;   // 1 byte = 8 px per frame
+            b.DX = dir * 8;
             b.DY = 0;
             b.Pattern = 0xEF;         // = 11101111 — original's beam byte
-            b.Length = Bullet.MaxLength;  // 15 bytes = 120 px max beam length
-            // Random color per shot: matches $DEC3 LD A,R; AND $07
-            // (the R-register is effectively random).  OR $40 sets the
-            // bright bit.  If the random result is 0, the original
-            // defaults to $43 (bright cyan).
+            // Walk outward, clipping at the screen edge and at solid
+            // scenery (approximated by the level tile under each byte).
+            int span = 0;
+            int row = (b.Y >> 3) & 0x0F;
+            for (int i = 0; i < Bullet.MaxLength; i++)
+            {
+                int sb = anchor + i * dir;
+                if ((uint)sb >= 32) break;
+                if (MiniMap.Buffer.Length >= 4096
+                    && MiniMap.Buffer[row * 256 + ((ScrollOffsetX + sb) & 0xFF)] != 0) break;
+                span++;
+            }
+            if (span == 0) return;    // muzzle against a wall — no beam
+            b.Span = span;
+            b.Length = span;
+            // Random colour per shot — port of $DEC3..$DECD:
+            // LD A,R; AND $07; JR NZ; LD A,$43 (cyan default when the
+            // masked value is 0); OR $40 (bright).  Verified by disasm.
             int rand = _rng.Next(0, 8);
             byte ink = (byte)(rand == 0 ? 0x03 : rand);
             b.Attr = (byte)(ink | 0x40);   // bright | ink
             b.Alive = true;
-            _fireCooldown = 8;
-            Sfx.Trigger(SfxKind.Fire);
+            if (ModernMode) Sfx.Trigger(SfxKind.Fire);   // cassette fire is silent
             return;
         }
     }
@@ -1241,7 +1218,6 @@ public sealed class World
             case GameState.HallOfFame: DrawHallOfFame(fb); break;
             case GameState.NameEntry:  DrawNameEntry(fb); break;
             case GameState.GameOver:   DrawGameOver(fb); break;
-            case GameState.LevelClear: DrawLevelClear(fb); break;
             default:                   DrawPlaying(fb); break;
         }
     }
@@ -1341,20 +1317,17 @@ public sealed class World
             foreach (var b in Bullets)
             {
                 if (!b.Alive) continue;
-                // Draw the bolt with a trail capped to the number of bytes
-                // the bolt has actually traveled (= MaxLength - Length),
-                // so the trail never extends BEHIND the ship's fire-time
-                // position into the ship sprite.  The color is the per-
-                // shot random attribute from $DEC3.
+                // Faithful beam render — port of $DEF0's erase/redraw:
+                // paint every byte of the LIVE span (tail..head) with
+                // pattern $EF and the per-shot random attribute.
                 int dir = b.DX > 0 ? 1 : -1;
-                int baseX = b.X & ~7;
-                const int MaxTrail = 4;
-                int trail = Math.Min(Bullet.MaxLength - b.Length, MaxTrail);
-                for (int i = 0; i < trail; i++)
+                int anchor = b.X >> 3;
+                int tailByte = anchor + (b.Span - b.Length) * dir;
+                for (int i = 0; i < b.Length; i++)
                 {
-                    int x = baseX - i * 8 * dir;
-                    if ((uint)x >= 256) continue;
-                    Blitters.DrawBulletXor(fb, x, b.Y, b.Pattern, b.Attr);
+                    int byteCol = tailByte + i * dir;
+                    if ((uint)byteCol >= 32) continue;
+                    Blitters.DrawBulletXor(fb, byteCol * 8, b.Y, b.Pattern, b.Attr);
                 }
             }
 
@@ -1366,9 +1339,9 @@ public sealed class World
             // pixels — same net effect.  Since XOR is commutative the
             // final pixel state is identical regardless of order.
             EnemyShipTable.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
-            Boss.Draw(fb, ScrollOffsetX, EnemyShipTable.SpriteBanks, EnemyShipTable.Cycle);
-            Workers.DrawPlayfield(fb, ScrollOffsetX);
-            EnemyShots.Draw(fb, ScrollOffsetX);
+            Boss.Draw(fb, ScrollOffsetX, Scroll.LevelColour);
+            Workers.DrawPlayfield(fb, ScrollOffsetX, Scroll.LevelColour, _frameCounter);
+            EnemyShots.Draw(fb, ScrollOffsetX, ModernMode);
 
             // Port-only sub-pixel scroll: now that level + entities are
             // all painted into the playfield, shift the WHOLE 256×128
@@ -1419,28 +1392,34 @@ public sealed class World
             }
         }
 
+        // $DC43 screen dim during the death sequence: repeated SRL
+        // passes over the playfield bitmap (8 passes → black).
+        if (State == GameState.Dying && _dimFrames > 0)
+        {
+            int shift = Math.Min(_dimFrames, 8);
+            for (int y = 0; y < 128; y++)
+                for (int col = 0; col < 32; col++)
+                {
+                    int addr = Framebuffer.BitmapAddress(col * 8, y);
+                    fb.Bitmap[addr] = (byte)(fb.Bitmap[addr] >> shift);
+                }
+        }
+
         // Hud.Draw clears y=128..191 then paints HUD chrome + bars.
         Hud.Draw(fb, this);
 
         // Mini-map AFTER Hud.Draw (which clears y=128..191) — port of
-        // $E104.  Paint the cave silhouette base, then ship/worker dots
-        // on top so they're visible.
-        if (_frameCounter >= 80)
-        {
-            MiniMap.DrawTo(fb);
-        }
-        else if (_frameCounter >= 50)
-        {
-            int progress = _frameCounter - 50;
-            int rowsToDraw = 16 * progress / 30;
-            MiniMap.DrawToPartial(fb, rowsToDraw);
-        }
+        // $E104, which the $E347 HUD-repaint chain runs synchronously
+        // on every level start and respawn.  The bitmap is persistent
+        // on the cassette; we repaint per frame, same net effect.
+        MiniMap.DrawTo(fb);
         EnemyShipTable.DrawMiniMapDots(fb, ScrollOffsetX);
-        Workers.DrawMiniMapDots(fb);
+        Workers.DrawMiniMapDots(fb, _frameCounter);
 
         // Player mini-map dot — port of $E248 / $E25E (player position
-        // → mini-map row 161+altitude/4, column = scroll+16).
-        // OR-paint with bright cyan attribute so it stands out.
+        // → mini-map row 161+altitude/4, column = scroll+16), XOR like
+        // every $E1DE dot (no attribute override — the cassette leaves
+        // the strip's attribute untouched).
         {
             int playerMiniX = (ScrollOffsetX + 0x10) & 0xFF;
             int playerMiniY = 0xA1 + (PlayerY >> 2);
@@ -1448,8 +1427,7 @@ public sealed class World
             {
                 int addr = Framebuffer.BitmapAddress(playerMiniX, playerMiniY);
                 byte bit = (byte)(0x80 >> (playerMiniX & 7));
-                fb.Bitmap[addr] |= bit;
-                fb.Attributes[Framebuffer.AttributeAddress(playerMiniX, playerMiniY)] = 0x45;  // bright cyan
+                fb.Bitmap[addr] ^= bit;
             }
         }
 
@@ -1474,29 +1452,21 @@ public sealed class World
     /// </summary>
     private void DrawLevelScenery(Framebuffer fb)
     {
-        // Playfield attribute strip — bright green on black, matching
-        // the emulator-peeked attributes at rows 0..15 in mid-gameplay
-        // RAM (uniform $04 from $5800..$59FF — see RE-LOG §24).
+        // Playfield attribute strip — the PER-LEVEL colour from $E57B
+        // ($DB1A paints attribute cells with it; $F706 loads it from
+        // the $E57C table: $07 $04 $03 $06 $02 $01 for L0..L5).  The
+        // old hard-coded $04 was a level-1-only observation (RE-LOG
+        // §24 peeked level 1, whose colour happens to be green).
         for (int row = 0; row < HudCharRow; row++)
         {
             for (int col = 0; col < 32; col++)
             {
-                fb.Attributes[row * 32 + col] = 0x04;  // green ink on black
+                fb.Attributes[row * 32 + col] = Scroll.LevelColour;
             }
         }
     }
 
     private const int HudCharRow = 16;
-
-    private void DrawLevelClear(Framebuffer fb)
-    {
-        DrawPlaying(fb);
-        if ((StateTicks & 8) < 4)
-        {
-            MiniFont.DrawCentered(fb, 56, $"LEVEL {Depth} CLEAR", 0x46);
-            MiniFont.DrawCentered(fb, 72, $"+250", 0x44);
-        }
-    }
 
     private void DrawGameOver(Framebuffer fb)
     {

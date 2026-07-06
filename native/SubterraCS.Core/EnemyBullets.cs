@@ -57,45 +57,6 @@ public sealed class EnemyBullets
         return slot;
     }
 
-    /// <summary>Port of <c>$EBB2</c>: spawn one enemy if the random
-    /// gate fires and there's a free slot.  Returns the slot index
-    /// or -1 if the spawn was dropped.
-    ///
-    /// Spawn coordinates: the original reads X/Y from a caller-
-    /// supplied pointer; we generate them here at a world position
-    /// ahead of the player (within the scroll window's right half)
-    /// since the precise caller logic is TBD.  Direction is set to
-    /// the sign-of-difference toward the player, matching
-    /// $EBDE..$EBFB.</summary>
-    public int TrySpawn(int level, int scrollCursor, int playerByteX, int playerY, Random rng)
-    {
-        // $EBAC: LD A,R; AND $0F; CP B(level); RET NC
-        if (rng.Next(0, 16) >= level) return -1;
-
-        int slot = -1;
-        for (int i = 0; i < SlotCount; i++)
-        {
-            if (!IsAlive(i)) { slot = i; break; }
-        }
-        if (slot < 0) return -1;
-
-        // Place the enemy ahead-of-player in world coords.  Player
-        // world byte = scrollCursor + 15; enemy spawns 16..31 bytes
-        // ahead so it's just off the right edge of the screen.
-        int worldX = (scrollCursor + 15 + rng.Next(16, 32)) & 0xFF;
-        int y = rng.Next(8, 100);
-
-        ref var e = ref Slots[slot];
-        e.X = (byte)worldX;
-        e.Y = (byte)y;
-        e.Dx = (sbyte)Sign(playerByteX - worldX);
-        e.Dy = (sbyte)Sign(playerY - y);
-        e.Status = 0x80;     // alive
-        e.Lifetime = 0x40;   // matches $ED85 LD (IX+$05),$40
-
-        return slot;
-    }
-
     /// <summary>Port of <c>$ED01</c>: per-frame tick.  Moves each
     /// alive enemy, decrements its lifetime, expires on Y wrap or
     /// when the lifetime hits zero.  Returns the bitmask of slots
@@ -137,13 +98,13 @@ public sealed class EnemyBullets
                 if (tile != 0) { e.Status = 0; continue; }
             }
 
-            // Port of $DDAA (stride-6 bullet test, see docs/disasm/collision.md):
-            //   X: entity_X == p  OR  entity_X+1 == p   (= entity in {p, p-1})
-            //   Y: 0 <= entity_Y - playerY < 8           (only at-or-below player;
-            //                                              cassette `RET M` rejects
-            //                                              entity-above-player case)
-            // where p = playerByteX = ($E583)+$0F.
-            int bdx = (playerByteX - e.X) & 0xFF;
+            // Port of $DDAA (stride-6 bullet test, collision.md):
+            //   $DDAA LD A,(HL) = p; CP (IX+0); INC A; CP (IX+0)
+            //   → hit when entity_X ∈ {p, p+1}  (note: OPPOSITE side
+            //   from the $DD8C ship window {p, p-1})
+            //   Y: 0 <= entity_Y - playerY < 8 (only at-or-below player;
+            //   the cassette's `RET M` rejects entity-above-player).
+            int bdx = (e.X - playerByteX) & 0xFF;
             int ydiff = e.Y - playerY;
             if ((bdx == 0 || bdx == 1) && ydiff >= 0 && ydiff < 8)
             {
@@ -153,11 +114,13 @@ public sealed class EnemyBullets
         return hitMask;
     }
 
-    /// <summary>Port of <c>$ED95</c>: paint a single attribute byte
-    /// at the resolved screen address.  We draw an 8×8 attribute
-    /// flash + a small dot in the bitmap so the enemy is visible
-    /// against the cave scenery.</summary>
-    public void Draw(Framebuffer fb, int scrollCursor)
+    /// <summary>Port of <c>$ED95</c>: bullets are ATTRIBUTE-ONLY
+    /// flashes — a single attribute write per bullet ($ED71 LD D,$07,
+    /// white), no bitmap pixels.  In empty sky that makes them nearly
+    /// invisible (only cells containing scenery/sprite pixels flash),
+    /// exactly like the cassette.  MODERN ONLY: also XOR a small
+    /// bitmap dot for visibility.</summary>
+    public void Draw(Framebuffer fb, int scrollCursor, bool modernPixels = false)
     {
         for (int i = 0; i < SlotCount; i++)
         {
@@ -171,10 +134,11 @@ public sealed class EnemyBullets
             int screenY = e.Y;
             if ((uint)screenX >= 256 || (uint)screenY >= 192) continue;
 
-            // Single-byte bitmap dot — matches $ED95's single write.
-            fb.Bitmap[Framebuffer.BitmapAddress(screenX, screenY)] ^= 0x3C;
-            // Bright white attribute (the $07 from $ED71 LD D,$07).
-            fb.Attributes[Framebuffer.AttributeAddress(screenX, screenY)] = 0x47;
+            if (modernPixels)
+                fb.Bitmap[Framebuffer.BitmapAddress(screenX, screenY)] ^= 0x3C;
+            // White attribute — the documented $07, without the
+            // invented BRIGHT bit.
+            fb.Attributes[Framebuffer.AttributeAddress(screenX, screenY)] = 0x07;
         }
     }
 

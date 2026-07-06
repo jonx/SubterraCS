@@ -16,7 +16,6 @@ public sealed class Assets
     public byte[] PlayerSpriteRight { get; }
     public byte[] PlayerSpriteLeft { get; }
     public byte[] MusicData { get; }
-    public SpawnSchedule[] OriginalLevelSchedules { get; }
     public byte[] SplashScr { get; }
     public byte[] TitleMenuScr { get; }
     public RomFont RomFont { get; }
@@ -39,7 +38,6 @@ public sealed class Assets
         PlayerSpriteLeft = playerBytes[16..32];
 
         MusicData = File.ReadAllBytes(Path.Combine(assetsDir, "music-5e88.bin"));
-        OriginalLevelSchedules = OriginalLevels.Load(Path.Combine(assetsDir, "level-schedules-e69d.bin"));
 
         // Static cassette screens — the painted loading splash and the
         // procedurally-drawn title menu.  These are captured from the
@@ -68,8 +66,8 @@ public sealed class Assets
         // Loaded into EnemyShipTable at level-load via $E319 port.
         EnemyShipInitData = File.ReadAllBytes(Path.Combine(assetsDir, "level-init-e48d.bin"));
 
-        // Per-level worker schedule (raw bytes, distinct from the
-        // OriginalLevelSchedules SpawnSchedule[] interpretation).
+        // Per-level worker schedule ($E69D, 6 × 32 bytes: 8 records of
+        // (worldX, row, cycle, status) per level — workers.md).
         // Loaded into WorkerSchedule at level-load via $E2E5 port.
         WorkerScheduleData = File.ReadAllBytes(Path.Combine(assetsDir, "level-schedules-e69d.bin"));
 

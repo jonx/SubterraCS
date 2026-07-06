@@ -134,7 +134,7 @@ internal static class Sdl2Runner
             Console.Error.WriteLine($"  audio unavailable: {ex.Message} (continuing silently)");
         }
 
-        var music = new MusicPlayer(MusicData, framesPerNote: 8);
+        var music = new MusicPlayer(MusicData);
         var fb = new Framebuffer();
         uint nextFrameTicks = Sdl2Time.GetTicks();
         bool paused = false;
@@ -157,9 +157,16 @@ internal static class Sdl2Runner
                 {
                     SfxMode.Designed  => "DESIGNED — purpose-built SFX for the silent events",
                     SfxMode.Historical => "HISTORICAL — the 1985 reconstructed $F8xx messages",
-                    _                  => "OFF — cassette-faithful (those events are silent)",
+                    _                  => "OFF — cassette-faithful (only the $DDC4 hit, $E419 bar-fill and $E135 spawn-in play)",
                 };
                 Console.WriteLine($"  Sound mode: {msg}");
+            }
+            if (ev.ToggleModern)
+            {
+                world.ModernMode = !world.ModernMode;
+                Console.WriteLine(world.ModernMode
+                    ? "  Mode: MODERN — endless procedural depths, laser-vs-decor, ship respawns, fuel pressure, respawn grace, in-game music, Hall-of-Fame entry"
+                    : "  Mode: HISTORIC — cassette rules only (plus Shift precision + N sound modes)");
             }
             if (ev.Reset)
             {
@@ -186,31 +193,29 @@ internal static class Sdl2Runner
             {
                 world.Tick(input);
 
-                // Forward game-event SFX.  Authentic captured WAVs
-                // exist only for the cassette's REAL effects (the
-                // direct OUT routines: hit click, bar-fill, spawn-in).
-                // The $F8xx "message" SFX family turned out to be
-                // vestigial — queued but never played by the original
-                // (see sound.md §The message system is vestigial) —
-                // so everything else uses the PORT-ONLY synth tones.
+                // Forward game-event SFX.  The cassette's three REAL
+                // in-game sounds (sound.md: the $DDC4 hit click, the
+                // $E419 bar-fill, the $E135 spawn-in) play their
+                // captured WAVs in EVERY mode.  All other kinds are
+                // events the cassette left silent (its $F8xx message
+                // system is vestigial): silent in Off, mapped to
+                // sfx-*.wav in Designed and lost-*.wav in Historical,
+                // with the synth tones as fallback in those two modes.
                 if (synth != null)
                 {
                     while (world.Sfx.TryDequeue(out var s))
                     {
-                        // Hit/Damage always use the authentic cassette WAV.
-                        // For the events the cassette left silent ($F8xx
-                        // vestigial system — sound.md, CURIOSITIES.md §2):
-                        //   Designed  → sfx-*.wav  (purpose-built)
-                        //   Historical → lost-*.wav (1985 reconstructions)
-                        //   Off        → fall through to Voice() synth tones
                         string? wav = s switch
                         {
-                            SfxKind.Hit or SfxKind.Damage => "hit",
+                            SfxKind.Damage  => "hit",
+                            SfxKind.BarFill => "barfill",
+                            SfxKind.SpawnIn => "spawnin",
                             SfxKind.BossAlert when _sfxMode == SfxMode.Designed   => "sfx-bossalert",
                             SfxKind.Pickup    when _sfxMode == SfxMode.Designed   => "sfx-pickup",
                             SfxKind.FuelLow   when _sfxMode == SfxMode.Designed   => "sfx-fuellow",
                             SfxKind.ShieldLow when _sfxMode == SfxMode.Designed   => "sfx-shieldlow",
                             SfxKind.Explode   when _sfxMode == SfxMode.Designed   => "sfx-shipkill",
+                            SfxKind.Hit       when _sfxMode == SfxMode.Designed   => "hit",
                             SfxKind.GameOver  when _sfxMode == SfxMode.Designed   => "sfx-gameover",
                             SfxKind.LevelUp   when _sfxMode == SfxMode.Designed   => $"sfx-fanfare{Math.Clamp(world.Depth, 1, 5)}",
                             SfxKind.BossAlert when _sfxMode == SfxMode.Historical => "lost-bossalert",
@@ -218,6 +223,7 @@ internal static class Sdl2Runner
                             SfxKind.FuelLow   when _sfxMode == SfxMode.Historical => "lost-fuellow",
                             SfxKind.ShieldLow when _sfxMode == SfxMode.Historical => "lost-shieldlow",
                             SfxKind.Explode   when _sfxMode == SfxMode.Historical => "lost-shipkill",
+                            SfxKind.Hit       when _sfxMode == SfxMode.Historical => "hit",
                             SfxKind.GameOver  when _sfxMode == SfxMode.Historical => "lost-gameover",
                             SfxKind.LevelUp   when _sfxMode == SfxMode.Historical => $"lost-fanfare{Math.Clamp(world.Depth, 1, 5)}",
                             _                                                      => null,
@@ -227,30 +233,33 @@ internal static class Sdl2Runner
                             synth.PlayPcm(pcm);
                             continue;
                         }
+                        // Off mode = cassette-faithful: no synth
+                        // substitutes for the silent events.
+                        if (_sfxMode == SfxMode.Off) continue;
                         var (hz, frames, slide) = SfxQueue.Voice(s);
                         if (hz > 0) synth.Tone(hz, frames, slide);
                     }
-                    // Title music: the AUTHENTIC cassette tune (captured
-                    // via run-emu -wav-from while holding M past the
-                    // $F637 gate), looped while the title is showing.
-                    // The cassette has NO in-game music — the Follin
-                    // player only ticks in the title loop ($F64E/$F65D);
-                    // the in-game MusicPlayer below is a port-only
-                    // embellishment (see sound.md).
-                    if (world.State is GameState.Title or GameState.Splash or GameState.HallOfFame)
+                    // Title music: the AUTHENTIC cassette tune.  The
+                    // cassette only ticks the Follin player while M or
+                    // N is held past the $F637 gate — historic mode
+                    // reproduces that; modern mode loops it freely.
+                    bool onTitle = world.State is GameState.Title or GameState.Splash or GameState.HallOfFame;
+                    bool wantTitleTune = onTitle && (world.ModernMode || pump.MusicKeyHeld);
+                    if (wantTitleTune)
                     {
                         if (!synth.PcmActive && SfxBank.TryGet("titletune", out var tune))
                             synth.PlayPcm(tune);
                     }
-                    else if (_titleTuneWasPlaying && world.State == GameState.Playing)
+                    else if (_titleTuneWasPlaying)
                     {
-                        synth.StopPcm();   // leaving title mid-tune
+                        synth.StopPcm();   // key released / left the title
                     }
-                    _titleTuneWasPlaying = world.State is GameState.Title or GameState.Splash or GameState.HallOfFame;
+                    _titleTuneWasPlaying = wantTitleTune;
 
-                    // Background music ticks slower than SFX, only when
-                    // no SFX is currently sounding (let SFX preempt).
-                    if (world.State == GameState.Playing)
+                    // In-game music is MODERN ONLY — the cassette has
+                    // none (sound.md: the Follin player ticks only in
+                    // the title loop).
+                    if (world.ModernMode && world.State == GameState.Playing)
                     {
                         music.Tick(synth);
                     }

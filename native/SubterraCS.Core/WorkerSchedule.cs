@@ -77,6 +77,13 @@ public sealed class WorkerSchedule
         for (int i = 0; i < SlotCount; i++)
         {
             ref var w = ref Slots[i];
+            // $EF0F just-picked path: bit 5 set last frame → clear it,
+            // set bit 7 (permanently picked).  One-frame freeze.
+            if ((w.Status & 0x20) != 0)
+            {
+                w.Status = (byte)((w.Status & ~0x20) | 0x80);
+                continue;
+            }
             if ((w.Status & 0x80) != 0) continue;          // already picked
 
             // 4-byte horizontal window: A in [playerByte..playerByte+3]
@@ -86,35 +93,34 @@ public sealed class WorkerSchedule
             int dr = (w.Row - playerRow) & 0xFF;
             if (dr > 2) continue;
 
-            // Pickup!  Port of $EFE0.
-            w.Status |= 0x80;
+            // Pickup!  Port of $EFE0: set bit 5 (just-picked); the
+            // NEXT frame's $EF0F pass converts it to bit 7.
+            w.Status |= 0x20;
             rescued++;
             RescuedThisLevel++;
         }
         return rescued;
     }
 
-    /// <summary>Port of <c>$EF4E</c> + <c>$EF9C</c>: per-worker 8×8
-    /// playfield blit at (worldX - scrollCursor, row*8).  Drawn twice
-    /// in the original (level-color + white for blink); we use a
-    /// single bright-yellow pass for simplicity.
-    /// Also port of <c>$F02E</c> mini-map dot at (X, mini-map row).</summary>
-    /// <summary>4 frames × 8 bytes of the worker shovel-swing animation
-    /// from <c>$F071</c>/<c>$F079</c>/<c>$F081</c>/<c>$F089</c>.
-    /// Verified bytes from at-f100.bin.</summary>
-    private static readonly byte[][] WorkerFrames = new[]
-    {
-        new byte[] { 0x18, 0x1C, 0x0E, 0x0E, 0x16, 0xAE, 0xCA, 0x49 },
-        new byte[] { 0x18, 0x1C, 0x0E, 0x1E, 0xA6, 0xCE, 0x4A, 0x19 },
-        new byte[] { 0x0C, 0x4C, 0xCE, 0xAE, 0x16, 0x0E, 0x0A, 0x19 },
-        new byte[] { 0x6C, 0xCC, 0xAE, 0x1E, 0x06, 0x0E, 0x0A, 0x19 },
-    };
+    /// <summary>The single 8-byte worker sprite at <c>$F071</c>.
+    /// The cassette has NO frame animation: $EF4E draws the SAME
+    /// sprite every frame ($F071 for the white pass; the $F0F1
+    /// "level-colour" sprite is 8 zero bytes — dump-verified), and
+    /// the cycle byte ($EF2F INC; AND $1F) never selects frames.
+    /// The bytes at $F079/$F081/$F089 exist in RAM but nothing ever
+    /// indexes them.</summary>
+    private static readonly byte[] WorkerSprite =
+        { 0x18, 0x1C, 0x0E, 0x0E, 0x16, 0xAE, 0xCA, 0x49 };
 
-    /// <summary>Draw playfield 8×8 sprites only (mini-map dots come
-    /// via <see cref="DrawMiniMapDots"/> after the mini-map base).
-    /// Each worker animates through 4 shovel-swing frames using its
-    /// <see cref="Worker.Cycle"/> byte ($EF2F INC; AND $1F).</summary>
-    public void DrawPlayfield(Framebuffer fb, int scrollCursor)
+    /// <summary>Port of <c>$EF28..$EF42</c> + <c>$EF9C</c>: each
+    /// non-picked worker is drawn TWICE per frame with the OVERWRITE
+    /// blitter (`LD (HL),A` — not XOR): first the all-zero $F0F1
+    /// sprite with the level-colour attribute, then the $F071 sprite
+    /// with white.  Net bitmap = the white-pass sprite stamped over
+    /// the cell; the attribute lands on white but flickers against
+    /// the level colour within the frame on real hardware.  We model
+    /// that shimmer by alternating the attribute per host frame.</summary>
+    public void DrawPlayfield(Framebuffer fb, int scrollCursor, byte levelColour, int frameCounter)
     {
         for (int i = 0; i < SlotCount; i++)
         {
@@ -127,35 +133,45 @@ public sealed class WorkerSchedule
             int sy = w.Row * 8;
             if (sy + 8 > 128) continue;
 
-            // Advance the animation counter ($EF2F: INC A; AND $1F).
-            // 32 ticks per cycle; we want 4 frames so frame = cycle/8.
+            // Just-picked freeze frame ($EF1D → $EF28 without the
+            // white pass): the zero $F0F1 sprite stamped with the
+            // level colour — a blank cell for one frame.
+            bool freeze = (w.Status & 0x20) != 0;
+
+            // $EF2F: INC A; AND $1F — the cycle byte advances but
+            // selects nothing; kept for state fidelity.
             w.Cycle = (byte)((w.Cycle + 1) & 0x1F);
-            byte[] frame = WorkerFrames[(w.Cycle >> 3) & 0x03];
 
             for (int row = 0; row < 8; row++)
             {
                 int yy = sy + row;
-                fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= frame[row];
+                fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] = freeze ? (byte)0 : WorkerSprite[row];
             }
-            fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = 0x46;  // bright yellow
+            byte attr = freeze ? levelColour
+                : (frameCounter & 1) == 0 ? (byte)0x07 : levelColour;
+            fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = attr;
         }
     }
 
-    /// <summary>Mini-map worker dots — call AFTER MiniMap.DrawTo so
-    /// they appear on top of the cave silhouette.</summary>
-    public void DrawMiniMapDots(Framebuffer fb)
+    /// <summary>Port of <c>$F02E</c>: mini-map worker dots FLASH —
+    /// the $F070 counter cycles 0..7 every 2 frames and bit 2 gates
+    /// an OR-draw (on) vs AND-clear (off), so workers blink at ~3 Hz
+    /// while ship dots stay steady.  Row = $A0 + 2·row ($F036
+    /// LD A,$1F; SLA B; SUB B → scanline $BF-B).</summary>
+    public void DrawMiniMapDots(Framebuffer fb, int frameCounter)
     {
+        bool onCycle = ((frameCounter >> 1) & 0x04) != 0;   // bit 2 of the $F070 counter
+        if (!onCycle) return;   // base strip is repainted per frame, so "off" = just skip
         for (int i = 0; i < SlotCount; i++)
         {
             ref var w = ref Slots[i];
             if ((w.Status & 0x80) != 0) continue;          // picked → hidden
             int miniX = (w.X + 1) & 0xFF;
-            int miniY = 0xA1 + (w.Row * 2);
+            int miniY = 0xA0 + (w.Row * 2);
             if (miniY < 160 || miniY >= 192) continue;
             int addr = Framebuffer.BitmapAddress(miniX, miniY);
             byte bit = (byte)(0x80 >> (miniX & 7));
             fb.Bitmap[addr] |= bit;
-            fb.Attributes[Framebuffer.AttributeAddress(miniX, miniY)] = 0x46;  // bright yellow
         }
     }
 }

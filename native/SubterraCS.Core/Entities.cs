@@ -39,15 +39,17 @@ public sealed class Bullet
     public const int MaxLength = 15;
 
     /// <summary>Fire-time anchor X (= ship's exit-side edge).  The
-    /// head end is computed as X + (MaxLength-1)*8*dir.</summary>
+    /// head end is computed as X + (Span-1)*8*dir.</summary>
     public int X, Y, DX, DY;
     public bool Alive;
     /// <summary>Bitmap byte the beam paints (e.g. $EF = 7 lit pixels).</summary>
     public byte Pattern;
-    /// <summary>Remaining beam length in bytes (0..15).  Each frame the
-    /// tail moves one byte AWAY from the ship (toward the head); when
-    /// Length reaches 0 only the head byte remains and then the bullet
-    /// expires.</summary>
+    /// <summary>Bytes painted at fire time (≤ 15) — the beam
+    /// self-limits at scenery ($DEDA) and at the screen edge.</summary>
+    public int Span;
+    /// <summary>Remaining beam length in bytes (0..Span).  Each frame
+    /// the tail recedes one byte toward the fixed head ($DEF0); the
+    /// beam expires when Length reaches 0.</summary>
     public int Length;
     /// <summary>Spectrum attribute byte (bright | ink) — randomized per shot.</summary>
     public byte Attr;

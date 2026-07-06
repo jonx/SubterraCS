@@ -54,17 +54,20 @@ public sealed class EnemyShips
     /// The 8th record (e.g. level 1's `50 58 80 00` — a plausible
     /// alive ship at X=$50 Y=$58) is dead data: either a cut 8th ship
     /// or padding so the LDIR length is a round $20.</summary>
-    public void LoadFromInit(byte[] initData, int level)
+    public void LoadFromInit(byte[] initData, int level, byte[]? generated = null)
     {
         Reset();
-        int baseOff = level * 32;
-        if (baseOff + SlotCount * 4 > initData.Length) return;
+        // Generated pages (modern depth 6+) supply their own 32-byte
+        // block in the same $E48D record format.
+        byte[] src = generated ?? initData;
+        int baseOff = generated != null ? 0 : level * 32;
+        if (baseOff + SlotCount * 4 > src.Length) return;
         for (int i = 0; i < SlotCount; i++)
         {
-            Slots[i].X      = initData[baseOff + i*4 + 0];
-            Slots[i].Y      = initData[baseOff + i*4 + 1];
-            Slots[i].Status = initData[baseOff + i*4 + 2];
-            Slots[i].Sub    = initData[baseOff + i*4 + 3];
+            Slots[i].X      = src[baseOff + i*4 + 0];
+            Slots[i].Y      = src[baseOff + i*4 + 1];
+            Slots[i].Status = src[baseOff + i*4 + 2];
+            Slots[i].Sub    = src[baseOff + i*4 + 3];
         }
         // Verified contents of $E5DB at f100: 4 banks × 8 bytes of an
         // animated alien sprite (the bytes encode an 8x8 silhouette).
@@ -104,17 +107,11 @@ public sealed class EnemyShips
             int pixelX = (Slots[i].X + 1) & 0xFF;
             int pixelY = 0xA1 + (Slots[i].Y >> 2);   // 161 + Y/4
             if (pixelY < 160 || pixelY >= 192) continue;
-            // OR the pixel (not XOR) so it stays visible even if the
-            // mini-map underneath already had this bit set.
+            // $E1DE XORs the bit and leaves the strip's attribute
+            // untouched — no colour override.
             int addr = Framebuffer.BitmapAddress(pixelX, pixelY);
             byte bit = (byte)(0x80 >> (pixelX & 7));
-            fb.Bitmap[addr] |= bit;
-            // Bright RED attribute on this cell so the dot stands out
-            // against the green mini-map background.  (The cassette
-            // uses the bottom-strip's existing attribute, which makes
-            // the dot same-colour-as-background — not great visibility
-            // in our port either, so we override.)
-            fb.Attributes[Framebuffer.AttributeAddress(pixelX, pixelY)] = 0x42;  // bright red
+            fb.Bitmap[addr] ^= bit;
         }
     }
 
@@ -144,7 +141,7 @@ public sealed class EnemyShips
 
     public void TickAi(int scrollCursor, int playerByteX, int playerY,
                         EnemyBullets bullets, Random rng, int level,
-                        byte[]? levelTiles = null)
+                        byte[]? levelTiles = null, bool modernRespawn = false)
     {
         LastTickHits = 0;
         // $E924: XOR $01; LD ($EE73),A; RET Z — only proceed every 2 frames.
@@ -158,19 +155,20 @@ public sealed class EnemyShips
             ref var s = ref Slots[i];
             if ((s.Status & 0x80) == 0)
             {
-                // Dead slot — port of $EADE respawn behaviour.
-                // The cassette respawns when the spawn counter at
-                // $E8F9/$E8FA reaches threshold; we simulate with
-                // a per-slot countdown via Sub (Sub > 0 = waiting).
+                // Dead slot.  On the cassette a level's 7 ships come
+                // only from the $E48D init block and NEVER respawn
+                // (the $EADE re-init path is gated to level ≥ 6 at
+                // $E97F — unreachable).  MODERN ONLY: laser-killed
+                // ships come back after a countdown so endless pages
+                // stay populated.
+                if (!modernRespawn) continue;
                 if (s.Sub > 0) { s.Sub--; }
-                else if (level >= 1 && rng.Next(0, 256) < (level * 8))
+                else if (level >= 1 && rng.Next(0, 256) < Math.Min(level, 16) * 8)
                 {
-                    // Respawn at a random world X (off-screen so the
-                    // ship sails in) with random Y in playfield range.
                     s.X = (byte)((scrollCursor + rng.Next(32, 224)) & 0xFF);
                     s.Y = (byte)rng.Next(0x10, 0x70);
                     s.Status = 0x80;
-                    s.Sub = (byte)(0x40 | (rng.Next(0, 4) << 5));  // bit 6/5 → init direction
+                    s.Sub = (byte)(0x40 | (rng.Next(0, 4) << 5));
                 }
                 continue;
             }
@@ -288,138 +286,147 @@ public sealed class EnemyShips
 }
 
 /// <summary>
-/// STUB — boss / special entity at <c>$EE7D..$EE84</c> (single slot).
+/// Boss / special entity at <c>$EE7D..$EE91</c> (single slot).
 /// Spawned by <c>$EC10</c> when scroll-progress (<c>$EE74</c>)
-/// reaches <c>$4A38</c> with a 1-in-2-ish random gate.  Calls
-/// <c>$F8F9</c> to print a warning message on screen, then ticks
-/// via <c>$EC4C</c> each frame (twice with extra chance from
-/// <c>$EC45 LD A,R; CP $16</c>).
+/// exceeds <c>$4A38</c> with a ~53% random gate, then ticked via
+/// <c>$EC4C</c> — full port of the $EC82..$ECE6 movement body
+/// including the mod-12 cycle counter, the $EE84 "speed table"
+/// (which is in fact NEVER INITIALIZED — see Draw), and the
+/// $EE7F/$EE80 direction-persistence pair.
 /// </summary>
 public sealed class BossEntity
 {
-    public byte X;             // +0
-    public byte Y;             // +1
-    public byte Status;        // +2
-    public byte Sub;           // +3
-    public byte Frame;         // +4 / cycle
-    public byte Reserved5;     // +5
-    public byte Reserved6;     // +6
-    public byte LifetimeCheck; // +7
+    public byte X;                 // $EE7D — world byte
+    public byte Y;                 // $EE7E — pixel Y
 
-    public bool Active;             // $EE7C: 0 = not spawned, 1 = active
-    public byte KillCount;          // $EE83
-    public byte AltFrame;           // $EE82 (toggles 0/1 each frame)
-    public int  ScrollProgress;    // $EE74 — increments with player scroll
+    public bool Active;            // $EE7C: 0 = not spawned, 1 = active
+    public byte KillCount;         // $EE83 — SPAWN counter (INC'd at $EC29 on activation)
+    public byte DirPersistence = 1;// $EE7F — resists rapid direction flips
+    public sbyte LastDir = 1;      // $EE80 — cached X-direction sign
+    public byte Cycle = 2;         // $EE81 — mod-12 movement cycle (init value from dumps)
+    private byte _altGate;         // $EE82 — alternate-frame toggle
 
     public const int SpawnThreshold = 0x4A38;  // $EC1A
 
-    public void Reset()
+    /// <summary>The $EE84 "per-cycle speed table" — verified NEVER
+    /// written by any instruction in the binary (the only reference
+    /// is the read at $EC96).  Its content is leftover loader bytes,
+    /// identical in the pre-game snapshot and every gameplay dump:
+    /// B7 ED DB.  The byte feeds ONLY the draw mirror ($EC9A), so
+    /// the boss's shifting bands are literally uninitialized memory.</summary>
+    private static readonly byte[] SpeedTable = { 0xB7, 0xED, 0xDB };
+
+    /// <summary>Per-level reset — $EE7D/$EE7E initial values observed
+    /// in every dump ($20, $10); KillCount ($EE83) is NOT cleared per
+    /// level (only the title loop's $F616 zeroes it).</summary>
+    public void ResetForLevel()
     {
-        X = Y = Status = Sub = Frame = Reserved5 = Reserved6 = LifetimeCheck = 0;
+        X = 0x20; Y = 0x10;
+        DirPersistence = 1; LastDir = 1; Cycle = 2; _altGate = 0;
         Active = false;
-        KillCount = 0;
-        AltFrame = 0;
-        ScrollProgress = 0;
     }
 
-    /// <summary>Port of <c>$EC10</c>: spawn check + per-frame
-    /// processing.  Triggers boss spawn after enough scroll progress
-    /// + random gate; once active, ticks via <see cref="TickActive"/>.
-    /// </summary>
+    /// <summary>Full reset — new game (title $F616 clears $EE83).</summary>
+    public void Reset()
+    {
+        ResetForLevel();
+        KillCount = 0;
+    }
+
+    /// <summary>$E29B (respawn chain) — deactivate without the $EC6C
+    /// randomize.</summary>
+    public void Deactivate() => Active = false;
+
+    /// <summary>Port of <c>$EC10</c>: spawn check + tick dispatcher.</summary>
     public void Tick(int scrollProgress, int scrollCursor, int playerByteX, int playerY, Random rng)
     {
         if (!Active)
         {
-            // $EC1A: HL = $4A38; SBC HL,DE; RET NC if not yet far enough
-            if (scrollProgress < SpawnThreshold) return;
-            // $EC21: LD A,R; CP $78; RET C — ~50% random gate
+            // $EC1A: HL=$4A38; SBC HL,DE; RET NC — requires progress
+            // STRICTLY greater than $4A38.
+            if (scrollProgress <= SpawnThreshold) return;
+            // $EC21: LD A,R; CP $78; RET C — spawn only when R ≥ $78
+            // (≈ 53% of frames).
             if (rng.Next(0, 256) < 0x78) return;
-            // $EC26: CALL $F8F9 = print "boss alert" message — skipped.
-            // $EC29: $EE83++; $EE7C = 1
+            // $EC26 queues the $F8F9 boss-alert message (vestigial).
+            // $EC29: $EE83++ (spawn count); $EE7C = 1.  NO coordinates
+            // are written — the boss keeps its previous X/Y (initial
+            // $20/$10, or wherever $EC6C randomized it after a kill).
             KillCount++;
             Active = true;
-            // Place the boss off the right edge of the screen so it
-            // enters the visible window as the player keeps scrolling.
-            X = (byte)((scrollCursor + 0x20) & 0xFF);
-            Y = 0x40;
-            Frame = 0;
-            Reserved5 = 0; Reserved6 = 0;
-            Sub = 0;
-            return;
+            // $EC32 falls through to the tick the same frame.
         }
-        // $EC32..$EC41: until 10 spawns ($EE83 ≥ $0A) the boss only
-        // ticks every other frame; after that the throttle drops and
-        // it becomes relentless.  $EC45: ~10% chance to double-tick.
+        // $EC32..$EC41: until 10 spawns ($EE83 ≥ $0A) the boss ticks
+        // every other frame; after that the throttle drops.
         if (KillCount < 0x0A)
         {
-            AltGate ^= 1;
-            if (AltGate == 0) return;
+            _altGate ^= 1;
+            if (_altGate == 0) return;
         }
-        TickActive(scrollCursor, playerByteX, playerY, rng);
-        if (rng.Next(0, 256) < 0x16) TickActive(scrollCursor, playerByteX, playerY, rng);
+        TickBody(scrollCursor, playerY);
+        // $EC45: LD A,R; CP $16 — ~8.6% chance to double-tick.
+        if (rng.Next(0, 256) < 0x16) TickBody(scrollCursor, playerY);
     }
 
-    private byte AltGate;   // $EE82 alternate-frame toggle
-
-    /// <summary>Port of <c>$EC6C</c> — the laser-kill reset reached
-    /// when $E9F0 zeroes the boss's alt-B life counter: randomize
-    /// X/Y, deactivate.  The boss can respawn when the $EC10 gates
-    /// pass again; <see cref="KillCount"/> (incremented at spawn)
-    /// eventually drops the alternate-frame throttle above.</summary>
+    /// <summary>Port of <c>$EC6C</c> — laser-kill reset: randomize Y
+    /// from the R register (7-bit, 0..127) and X from the chained RNG
+    /// state, deactivate.  The boss respawns when the $EC10 gates pass
+    /// again.</summary>
     public void Kill(Random rng)
     {
-        Y = (byte)rng.Next(0, 0x7C);
-        X = (byte)rng.Next(0, 256);
+        Y = (byte)rng.Next(0, 0x80);       // LD A,R → 7-bit R register
+        X = (byte)rng.Next(0, 256);        // R + ($EE7A) chained state
         Active = false;
     }
 
-    /// <summary>Port of <c>$EC4C</c>: boss movement + draw.  The
-    /// cassette uses a cycle-rotated speed table at <c>$EE84</c>
-    /// and a direction-chase algorithm based on
-    /// <c>($E583)+16</c> vs boss.X (`$ECA5..$ECCE`).  Our port
-    /// approximates by moving the boss 1 byte/frame toward the
-    /// player and tracking lifetime via <see cref="LifetimeCheck"/>.</summary>
-    public void TickActive(int scrollCursor, int playerByteX, int playerY, Random rng)
+    /// <summary>Port of the <c>$EC81..$ECE6</c> movement body.</summary>
+    private void TickBody(int scrollCursor, int playerY)
     {
-        // $EC82: cycle EE81 in 1..12 (mod-12 counter)
-        AltFrame = (byte)((AltFrame + 1) % 12);
+        // $EC82: DEC the 1..12 cycle counter, reload 12 at zero.
+        Cycle = (byte)(Cycle - 1);
+        if (Cycle == 0) Cycle = 0x0C;
+        // $EC8D..$EC99: speed byte = $EE84[(cycle-1)/4] → mirrored to
+        // the draw slot ($EE8F/$EE90).  Movement does NOT use it.
+        _drawSpeedByte = SpeedTable[(Cycle - 1) >> 2];
 
-        // $ECA5: A = ($E583) + $10; CP boss.X
+        // $ECA0..$ECCE: X chase toward ($E583)+$10 with persistence.
         int chase = (scrollCursor + 0x10) & 0xFF;
         if (chase != X)
         {
-            // $ECAD: chase via $EBFF/$EC06 (sign helpers — return ±1)
-            int dxSign = ((chase - X) & 0xFF) < 0x80 ? +1 : -1;
-            X = (byte)((X + dxSign) & 0xFF);
+            sbyte newDir = (sbyte)(((chase - X) & 0xFF) < 0x80 ? +1 : -1);
+            if (newDir != LastDir)
+            {
+                // $ECBD: DEC persistence; adopt the new direction only
+                // when it hits zero.  No X move on this path.
+                if (--DirPersistence == 0) LastDir = newDir;
+            }
+            else
+            {
+                // $ECC6: same direction — persistence++ (AND $3F),
+                // then X += cached sign ($EE80).
+                DirPersistence = (byte)((DirPersistence + 1) & 0x3F);
+                X = (byte)((X + LastDir) & 0xFF);
+            }
         }
         else
         {
-            // $ECD7..: same column, track Y
-            int dySign = playerY > Y ? +1 : (playerY < Y ? -1 : 0);
-            Y = (byte)Math.Clamp(Y + dySign, 0, 120);
-        }
-
-        // Out-of-window cull (== EAB2)
-        int offset = (X - scrollCursor) & 0xFF;
-        if (offset >= 0x40)
-        {
-            // Boss strayed too far — keep active but won't draw this frame.
+            // $ECD7: same column — step Y one pixel toward the player.
+            if (playerY > Y) Y++;
+            else if (playerY < Y) Y--;
         }
     }
 
-    /// <summary>Port of <c>$EC4C</c>'s draw section.  The boss has NO
-    /// sprite bank: its alt-DE sprite-source (loaded at <c>$EC50</c>)
-    /// is <c>$EE8E</c> — its own extended-state block.  The 16 bytes
-    /// the two <c>$E9AC</c> calls consume are the state mirror that
-    /// <c>$EC9A</c> keeps writing the current per-cycle speed byte
-    /// into (<c>$EE8F</c>/<c>$EE90</c>) plus neighbouring state — so
-    /// on screen the boss is a 16×8 procedural glitch-creature of
-    /// horizontal bands that shift as its speed phase cycles (see
-    /// boss.md §Visual).  We reproduce that: the sprite bytes are a
-    /// mirror of OUR boss state, with [1] and [2] = the current
-    /// speed-phase byte exactly like $EC9A's double write.
-    /// Bright RED attribute so it stands out as the boss.</summary>
-    public void Draw(Framebuffer fb, int scrollCursor, byte[] shipSpriteBanks, int cycle)
+    private byte _drawSpeedByte = 0xB7;
+
+    /// <summary>Port of <c>$EC4C</c>'s draw.  The boss has NO sprite
+    /// bank: the blit source (alt-DE at <c>$EC50</c>) is <c>$EE8E</c>,
+    /// the boss's own state-mirror block.  Dump-verified content:
+    /// $EE8E=$7E, $EE8F/$EE90 = the current "speed" byte (written by
+    /// $EC9A), $EE91=$7E, and everything after is zero.  So the boss
+    /// renders as a 4-scanline band creature — [$7E, spd, spd, $7E] —
+    /// whose middle bands cycle B7/ED/DB with the movement phase.
+    /// Attribute = level colour ($E9BE), like every ship blit.</summary>
+    public void Draw(Framebuffer fb, int scrollCursor, byte levelAttr)
     {
         if (!Active) return;
         int offset = (X - scrollCursor) & 0xFF;
@@ -428,31 +435,13 @@ public sealed class BossEntity
         int sy = Y;
         if ((uint)sx >= Framebuffer.Width || (uint)sy >= Framebuffer.Height) return;
 
-        // The state-mirror "sprite" — port of the $EE8E..$EE9D bytes.
-        // $EC9A writes the speed byte twice ([1], [2]); the rest are
-        // the boss's own live state values, just like the cassette's
-        // mirror block.  The speed byte cycles with AltFrame so the
-        // bands visibly shift, which is the boss's signature look.
-        byte speed = (byte)(0x11 << (AltFrame & 0x03) | (AltFrame & 0x0F));
-        Span<byte> state = stackalloc byte[16]
+        Span<byte> state = stackalloc byte[4] { 0x7E, _drawSpeedByte, _drawSpeedByte, 0x7E };
+        for (int row = 0; row < 4; row++)
         {
-            X, speed, speed, Status,
-            Sub, (byte)(AltFrame * 21), Y, KillCount,
-            speed, X, (byte)(Y ^ X), speed,
-            Status, (byte)(AltFrame * 13), speed, Sub,
-        };
-
-        for (int cell = 0; cell < 2; cell++)
-        {
-            int cellX = sx + cell * 8;
-            if (cellX >= Framebuffer.Width) break;
-            for (int row = 0; row < 8; row++)
-            {
-                int yy = sy + row;
-                if ((uint)yy >= Framebuffer.Height) break;
-                fb.Bitmap[Framebuffer.BitmapAddress(cellX, yy)] ^= state[cell * 8 + row];
-            }
-            fb.Attributes[Framebuffer.AttributeAddress(cellX, sy)] = 0x42;  // bright red = boss
+            int yy = sy + row;
+            if ((uint)yy >= Framebuffer.Height) break;
+            fb.Bitmap[Framebuffer.BitmapAddress(sx, yy)] ^= state[row];
         }
+        fb.Attributes[Framebuffer.AttributeAddress(sx, sy)] = levelAttr;
     }
 }

@@ -107,9 +107,9 @@ public static class Hud
         // bytes the original $E347 painter writes via RST 10 → ROM font.
         var font = world.RomFont;
 
-        // Row 16: "DEPTH :   N"
-        // Depth is the original's $E587 (1-based at first playable level).
-        DrawText(fb, font, 0, 128, $"DEPTH :{world.Depth,3}", 0x46);
+        // Row 16: "DEPTH  N" — $E046 prints the digit at $5007
+        // (column 7); depth is the original's $E587 (1-based).
+        DrawText(fb, font, 0, 128, $"DEPTH  {world.Depth}", 0x46);
 
         // Row 17: "SCORE : NNNNNN"     "RESCUED:NN"@col22
         DrawText(fb, font, 0,      136, $"SCORE :{world.Score:D6}", 0x46);
