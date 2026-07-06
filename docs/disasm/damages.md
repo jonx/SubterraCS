@@ -187,7 +187,7 @@ that runs per-frame for "instant-death on solid-wall tile 01"
 | `$DBC8` DEATH | `TriggerDeath` → `GameState.Dying` → `Respawn` | shield pinned to 0 here (we don't model the "INC A; LD ($E464),A" pin-at-1) |
 | `$DD4D` per-frame death walker | `World.TickPlaying` `deathHits != 0 && !Invincible` → `TriggerDeath` | coord overlap = instant death (separate path from damage drain).  `LastTickHits` (ships, $DD8C window) and `EnemyShots.Tick` return (bullets, $DDAA window) feed this. |
 | `$E419..$E446` init | `Respawn` / `LoadLevel` set `HitAccum=0xFF`, `Shield=BarMax=$5F` | |
-| (none — cassette has no per-hit invincibility) | `Invincible` is set only by `Respawn(100)` / `LoadLevel(60)` | initially I added `SetInvincible(20)` inside the damage block — that's a non-cassette artifact and was removed once `$DDC4` was decoded properly |
+| (none — cassette has no invincibility of any kind) | `Invincible` is MODERN-ONLY (respawn/level grace); historic mode never sets it (RE-LOG §66) | initially I added `SetInvincible(20)` inside the damage block — a non-cassette artifact removed once `$DDC4` was decoded; the respawn grace later moved behind the modern flag too |
 
 ## History — why this took multiple sessions
 

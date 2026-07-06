@@ -153,7 +153,9 @@ IS the collision system.  Full trace in [laser.md](laser.md).
 
 Laser-vs-DECOR remains port-only (System-A entities draw by
 overwrite via `$F2BC`, which has no `$EF` check — they erase the
-beam instead of dying to it).
+beam instead of dying to it).  In the native port this extension
+is gated behind the MODERN flag; historic mode's beam cannot hurt
+decor (RE-LOG §66).
 
 ## C# port status
 
@@ -165,9 +167,9 @@ beam instead of dying to it).
 | `$DFAF`/`$EB62` player-vs-wall | inline `TickPlaying` tile probe | done |
 | `$EB5B` ship-vs-scenery reverse | `EnemyShips.TickAi` X+Y tile probes | done |
 | `$EB62` bullet-vs-scenery expire | `EnemyBullets.Tick` levelTiles probe | done |
-| `$DEDA` laser self-limit | (skipped — we use entity AABB) | partial |
+| `$DEDA` laser self-limit | `World.FireBullet` clips the span at scenery tiles | done |
 | Boss-vs-player | `World.TickPlaying` deathHits path (boss feeds coord walker) | done |
-| Player-laser-vs-ship | `TickPlaying` bullet loop | port-only (cassette has none) |
+| `$E9F0` laser-vs-ship/boss | `TickPlaying` beam-span test (+15/+20) | done (§62 — the beam DOES kill) |
 
 ## Damage cost summary
 

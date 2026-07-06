@@ -212,16 +212,23 @@ Hz.
 
 ## C# port status
 
-Not yet ported.  Currently the C# port uses System A entities
-with `TypeId == 0` for "workers", but level 1 has NO type-0
-entries in `$F2EB` — they're a separate subsystem entirely.
+Ported — `WorkerSchedule.cs`:
 
-To port:
-1. Extract `$E69D` schedule data as `assets/extracted/level-schedules-e69d.bin`
-   (already done — used elsewhere for spawning).
-2. Add `WorkerSchedule` class: 8 × 4-byte records + per-frame
-   `Tick` (pickup detect + playfield draw + mini-map flash).
-3. Wire score+50 / RESCUED++ / level-cleared-at-8 into `World`.
+- `$E2E5` LDIR load from `level-schedules-e69d.bin`; 8 × 4-byte
+  records; `$EFAE` 4-byte × 3-row pickup zone; `$EFE0` bit-5
+  just-picked → bit-7 next frame (the one-frame freeze, drawn as
+  the blank `$F0F1` stamp with level colour).
+- Draw is the faithful OVERWRITE blit (`$EF9C LD (HL),A`, not
+  XOR) of the single `$F071` sprite — dump-verified: `$F0F1` is
+  8 zero bytes and nothing ever indexes past `$F078`, so an
+  earlier port's "4-frame shovel-swing animation" was invention
+  and is removed (RE-LOG §66).  The intra-frame level-colour/
+  white attribute double-write is modelled as a per-frame
+  shimmer.
+- Mini-map dots flash via the `$F070` bit-2 gate at row
+  `$A0 + 2·row`; ship dots stay steady.
+- Rescue-all only sets the `$E77D[level]` cleared flag — the
+  page advance stays behind the `$F868` dive gate in `World`.
 
 ## Related
 

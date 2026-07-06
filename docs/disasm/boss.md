@@ -14,8 +14,8 @@ enough into a level.  Lives parallel to the ship/bullet tables.
 | `$EE81` | Movement cycle counter (1..12) |
 | `$EE82` | Alternate-frame toggle |
 | `$EE83` | Kill count (how many times this boss has died this level) |
-| `$EE84..$EE87` | Per-cycle speed table (indexed by `$EE81 / 4`) |
-| `$EE8E..$EE91` | Mirrored state for next-frame draw |
+| `$EE84..$EE87` | "Per-cycle speed table" — **never initialized** (see §The $EE84 table below) |
+| `$EE8E..$EE91` | Draw-mirror block: `$7E, spd, spd, $7E` (dump-verified; bytes 1–2 written by `$EC9A`) |
 | `$EE7C` | Active flag (0 = not spawned, 1 = active) |
 | `$EE74` (word) | Scroll-progress counter — see [scroll-horizontal.md](scroll-horizontal.md) |
 
@@ -128,10 +128,24 @@ SOURCE pointer (alt-DE, loaded at `$EC50`) is `$EE8E`: **the
 boss's own extended-state block**.  The bytes drawn are whatever
 `$EC9A` mirrored there — the current per-cycle speed byte written
 twice (`LD HL,$EE8F; LD (HL),A; INC HL; LD (HL),A`) plus
-neighbouring state.  The boss is a procedural glitch-creature:
-horizontal bands that shift as its speed phase cycles.  No sprite
-bank exists for it — the earlier "TBD sprite location" is
-resolved as "there isn't one".
+neighbouring state.  Dump-verified content of the block:
+`$EE8E=$7E`, `$EE8F/$EE90` = the speed byte, `$EE91=$7E`, zeros
+after — so the boss renders as a 4-scanline band creature,
+`[$7E, spd, spd, $7E]`.  No sprite bank exists for it — the
+earlier "TBD sprite location" is resolved as "there isn't one".
+
+## The `$EE84` table — uninitialized memory (RE-LOG §66)
+
+A `find-bytes` sweep for `84 EE` shows exactly ONE reference in
+the whole binary: the read at `$EC96`.  **Nothing ever writes
+`$EE84..$EE87`.**  The pre-game snapshot and every gameplay dump
+(at-deep, post-game, at-f400) contain the same leftover loader
+bytes there: `B7 ED DB 00`.  Since the `$EC8D` index `(cycle-1)/4`
+spans 0..2 for the 1..12 cycle, the bytes the boss "cycles
+through" are B7 → ED → DB — 1985 shipping code drawing its own
+uninitialized memory.  Note also that the speed byte feeds ONLY
+the draw mirror; the actual X movement at `$ECCC..$ECD2` adds the
+±1 direction sign cached at `$EE80`, not the table byte.
 
 ## Death — the `$EC66` alt-B test (laser kill)
 
@@ -149,18 +163,23 @@ for the rest of the level).  Full trace in
 
 ## C# port
 
-`BossEntity` in `EnemyShips.cs`:
+`BossEntity` in `EnemyShips.cs` — now a full port of the tick body:
 
-- `Tick(scrollProgress, scrollCursor, playerByteX, playerY, rng)`:
-  spawn-gate matching `$EC10` (scrollProgress ≥ `$4A38` + ~50%
-  random); on spawn, set `Active`, place off the right edge.
-  Once active, calls `TickActive`.
-- `TickActive`: chase the player in X (1 byte/frame toward
-  `scrollCursor + 16`); when in same column, track Y.  Simpler
-  than the cassette's 4-phase speed cycling.
-- `Draw`: small XOR'd 8x8 'X' pattern at the boss's screen
-  position.  Bright yellow attribute.
-
-The full `$EC82..$ECCE` 4-phase speed cycling + persistence
-counter isn't ported yet.  The boss-specific sprite data location
-is also TBD.
+- Spawn: progress STRICTLY > `$4A38` + the R ≥ `$78` gate;
+  `KillCount` (`$EE83`) increments at spawn; NO coordinates are
+  written (the boss keeps its init `$20`/`$10` or the last `$EC6C`
+  randomize).  `$EE83` is cleared only at the title (`$F616`), so
+  it persists across levels within a game.
+- Movement (`$EC82..$ECE6`): mod-12 cycle DEC with reload; the
+  `$EE84` byte (B7/ED/DB — uninitialized, see above) goes to the
+  draw mirror only; X chase toward `($E583)+$10` moves ±1 per
+  applied tick, gated by the `$EE7F` persistence counter and the
+  `$EE80` direction cache; same-column → ±1 Y toward the player.
+- Throttle: every-other-frame until 10 spawns, ~8.6% double-tick.
+- Kill (`$EC6C`): Y = R (7-bit), X randomized, deactivate.
+- Draw: the real `$EE8E` block — `[$7E, spd, spd, $7E]` XOR'd at
+  the boss cell, attribute = level colour (`$E9BE`).
+- Boss-vs-player: the `$DD58..$DD62` walker test is ported in
+  `World.TickPlaying` — `$DD8C` box ({p, p−1}, |ΔY| < 8) →
+  instant death.
+- Respawn chain (`$E29B`): `Deactivate()` without randomize.

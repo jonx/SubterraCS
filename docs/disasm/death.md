@@ -186,13 +186,13 @@ stack to whatever was saved at `$E457` (the main game-loop entry).
 
 ## C# port notes
 
-In our port the explosion is a particle effect at the attribute level:
-- 8 particles seeded from a captured `$E861` table
-- Y override = $BF - altitude
-- 64 anim iterations of: paint cell colour, step, paint white
-- Followed by a bitmap dim (one SRL pass per shift), then restore.
-
-We don't byte-extract the seed table — instead we use the same shape
-(8 outward-fanning particles) with values that match the observable
-pattern.  The animation count (64), particle count (8), and the
-"paint colour A → paint colour B" alternation are exact.
+In our port (`Explosion.cs` + `World.TickDying`, updated per
+RE-LOG §66):
+- 8 particles seeded from the REAL `$E861` bytes (DY pre-negated
+  for port-screen Y), emanating from the player position
+- FOUR 64-iteration passes, exactly the `$DBC8 LD B,$04` loop
+- particles painted with the LEVEL COLOUR (`$E57B`) alternating
+  white, per `$DBF9`
+- then the `$DC43` bitmap dim: 8 SRL passes over the playfield
+- historic death is SILENT (`$DC43` contains no OUT); the modern
+  flag adds an Explode tone.

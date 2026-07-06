@@ -702,9 +702,13 @@ from the right.
 12 bytes (6 levels × 2): per-level (X, Y) for a "fuel station"
 pickup spot.  Loaded at level-load by `$E2C6` into `($E589)`.
 
-When the player's world position matches via `$DFAF` test
-(`$E583+15 == ($E589) && altitude in [($E58A)-1..($E58A)]`),
-fuel refills via `$F90E` chime + `$E419` bar-fill animation.
+When the player's world position matches, fuel refills via
+`$F90E` chime (vestigial) + `$E419` bar-fill animation.  The
+compare at `$DFD0` is against **raw `$E583`** — the scroll
+cursor itself, not the ship column: `LD HL,$E589; LD A,($E583);
+CP (HL); RET NZ`, then altitude ∈ {`($E58A)`, `($E58A)`−1}, then
+`CP $5F; RET NC` (no refill when already full).  An earlier
+"+15" reading of this summary was wrong — see RE-LOG §66.
 
 Verified positions (from at-f100.bin):
 ```
@@ -877,25 +881,31 @@ Updated by `$E910` each cycle.
 | $EE81 | Cycle counter (1..12) |
 | $EE82 | Alternate-frame toggle |
 | $EE83 | Kill count |
-| $EE84..$EE87 | Per-cycle speed table (rotated by $EE81) |
-| $EE8E..$EE91 | Mirrored state for next-frame draw |
+| $EE84..$EE87 | "Per-cycle speed table" — **NEVER INITIALIZED**: the only reference in the whole binary is the read at `$EC96`; content is leftover loader bytes `B7 ED DB 00`, identical in the pre-game snapshot and every gameplay dump (RE-LOG §66) |
+| $EE8E..$EE91 | Draw-mirror block — the boss's "sprite" source.  Dump-verified content: `$7E, spd, spd, $7E` (bytes 1–2 written by `$EC9A`), zeros after |
 
 ## Code ($EC4C) — boss tick body
 
 Movement + draw for the single boss slot.  Same `$EAB2` /
-`$EABD` / `$E9AC ×2` draw chain as ships, plus its own movement
-algorithm using `$EE81` to pick a per-cycle speed from `$EE84[]`
-and direction logic at `$ECA0..$ECCE` that chases the player.
+`$EABD` / `$E9AC ×2` draw chain as ships.  Movement: the `$EE81`
+cycle picks a byte from `$EE84[]` but that byte feeds ONLY the
+draw mirror ($EC9A writes it to `$EE8F`/`$EE90`); the actual X
+step is ±1 from the cached direction sign at `$EE80`, gated by
+the `$EE7F` persistence counter ($ECA0..$ECCE).  Since `$EE84`
+is never written, the boss's shifting visual bands are literally
+uninitialized memory (B7/ED/DB) — see [boss.md](disasm/boss.md).
 
 ## Code ($DFAF) — player-scenery collision + fuel pickup
 
 Called from main loop at `$D813`.  Probes the level scenery at
-player position (= `$E583+15`, `$E584`) using `$EB62`.  If the
-tile is `$01` (= solid wall), JP `$DBC8` (death).
+BOTH ship columns — `$E583+15` and `$E583+16` — using `$EB62`,
+and only jumps to `$DBC8` (death) when **both** probes return
+`$01` (the `$DFC5 CALL $EB62` + `$DFEE` re-check).  A
+single-column graze is survivable.
 
-Also checks `($E589)` for a worker/pickup target match — if
-the player is at the right (X, Y) AND fuel < `$5F`, calls
-`$F90E` (fuel sound) + `$E419` (refill animation).
+Also checks `($E589)` for the fuel-station match (raw `$E583`
+compare at `$DFD0` — see §$E58B above); on match with fuel <
+`$5F`, calls `$F90E` (vestigial chime) + `$E419` (refill).
 
 ## Code ($DCAC) — player sprite bank-shifter
 

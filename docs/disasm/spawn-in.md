@@ -161,7 +161,7 @@ character.
 | Cassette | C# location | Notes |
 | -------- | ----------- | ----- |
 | `$E135` | `Explosion.TriggerSpawnIn` + 40-frame `Tick` loop | seeds match `$E841` (port pre-inverts Y/DY) |
-| `$DBC8`/`$DBDA` death | `Explosion.Trigger` + 64-frame `Tick` loop | seeds now match `$E861` (DY pre-negated); we still only run 1 pass vs cassette's 4 |
+| `$DBC8`/`$DBDA` death | `Explosion.Trigger` + 64-frame `Tick` loop | seeds match `$E861` (DY pre-negated); `TickDying` now runs the cassette's FOUR passes + the `$DC43` dim (RE-LOG §66) |
 | `$F731 CALL $DB1A` (level slide-in) | `World.TickPlaying` drives `Scroll.ScrollOneStep` over 60 frames using `StateTicks` | each `ScrollOneStep` ports one outer iteration of $DB1A (scroll up + paint new bottom row) |
 | `$F6EC CALL $DB1A` (respawn slide-in) | `World.Respawn` calls `Scroll.Reset()`; TickPlaying loop replays the slide-in | matches cassette's $F6EC..$F6EF JP $F6C7 loop |
 | `$F6C8 CALL $E135` (level start spawn-in) | `World.TickPlaying` fires `TriggerSpawnIn` on the frame `Scroll.ScrollComplete` flips true | matches the cassette flow $F731 returns → $F6C8 calls $E135 |

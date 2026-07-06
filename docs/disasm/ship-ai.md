@@ -389,11 +389,16 @@ DFF4  EX AF,AF'; RET
 ```
 
 So `$DFAF` does two things:
-1. **Player-vs-scenery collision** — probes the level tile at the
-   player's world position via `$EB62`.  If the tile is `$01`
-   (= solid wall), jumps to `$DBC8` (death).
-2. **Fuel pickup** — if the player's position matches `($E589)`
-   (next pickup target), refills the fuel via `$F90E` + `$E419`.
+1. **Player-vs-scenery collision** — probes the level tile at BOTH
+   ship columns via `$EB62`; only when both probes return `$01`
+   (the `$DFEE` re-check of the first) does it jump to `$DBC8`
+   (death).  A one-column graze is survivable.
+2. **Fuel pickup** — if RAW `($E583)` matches the station X at
+   `($E589)` (NOT +15 — this instruction trace is authoritative;
+   MEMORY-MAP's old "+15" summary was corrected in RE-LOG §66)
+   and altitude ∈ {stationY, stationY−1} and fuel < `$5F`,
+   refills via `$F90E` (vestigial) + `$E419` (both bars +
+   accumulators, animated).
 
 ## `$DCAC` — sprite-context maintenance
 

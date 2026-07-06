@@ -349,13 +349,17 @@ Avalonia-wrapping `Subterra.Game`.  It's in [`native/`](native/) —
 a standalone three-project solution
 ([`SubterraCS.slnx`](native/SubterraCS.slnx)) with a hand-rolled
 SDL2 wrapper (~250 LoC of P/Invokes, no NuGet packages), the four
-sprite-blitters ported as C# methods, the entity / spawn / level
-systems re-implemented natively, and a **procedural level
-generator** that takes over once the original's six pages have
-been exhausted.  As of RE-LOG §55, every gameplay subsystem from
-level-load through death has been disasm'd, documented in
-[`docs/disasm/`](docs/disasm/), and ported faithfully — verified by a
-0% diff-vs-emu at f100 and f300 (title + early frames).
+sprite-blitters ported as C# methods, and the entity / worker /
+ship / boss / level systems re-implemented natively.  Since the
+fidelity audit (RE-LOG §66) the port runs in **HISTORIC mode by
+default** — cassette rules only, every behavioural constant traced
+to its Z80 routine — with a single **MODERN toggle** (H key /
+`--modern`) that bundles the port-only embellishments: an endless
+**procedural level generator** past depth 5 (emitting pages in the
+cassette's own data formats), laser-vs-decor scoring, ship
+respawns, fuel survival pressure, respawn grace, in-game music,
+and Hall-of-Fame name entry.  The two always-on extras are the
+Shift pixel-precision moves and the N-key sound modes.
 
 <p align="center">
   <img src="docs/images/comparison-emu-vs-native_20260529-023449.png" alt="Side-by-side comparison: cassette emulator (left) and native C# port (right), both showing the same cave silhouette with tree, hill profile, HUD bars, and mini-map" width="640"/><br/>
@@ -412,16 +416,20 @@ Controls (native port):
 - **Enter / Space** — fire
 - **1–5** on the title screen — pick a control option and start
   (like the original menu)
-- **Shift** (port-only) — precision modifier: each direction key
-  fires ONE pixel per press-edge instead of accelerating
+- **H** — toggle **HISTORIC** (cassette rules, default) ↔
+  **MODERN** (procedural depths 6+, laser-vs-decor, ship respawns,
+  fuel pressure, respawn grace, in-game music, name entry)
+- **Shift** (always-on extra) — precision modifier: each direction
+  key fires ONE pixel per press-edge instead of accelerating
 - **N** — cycle SFX mode for the events the cassette left silent
-  ([CURIOSITIES.md §2](docs/CURIOSITIES.md)): **OFF** → **DESIGNED**
-  (purpose-built `sfx-*.wav`) → **HISTORICAL** (1985 `lost-*.wav`
-  reconstructions)
+  ([CURIOSITIES.md §2](docs/CURIOSITIES.md)): **OFF** (only the
+  cassette's real three sounds) → **DESIGNED** (purpose-built
+  `sfx-*.wav`) → **HISTORICAL** (1985 `lost-*.wav` reconstructions);
+  holding **M**/**N** on the title plays the Follin tune, exactly
+  the cassette's `$F637` gate
 - **K** — key bindings screen: remap any game action in-game
   (arrows select, Enter rebinds, Esc/K saves and exits)
-- **F11** — toggle fullscreen, **P** — pause, **R** — reset,
-  **Esc** — quit
+- **F11** — toggle fullscreen, **P** — pause, **Esc** — quit
 
 All movement/fire keys are **remappable** — easiest via the
 in-game **K** screen, which saves to `keymap.cfg` at the repo

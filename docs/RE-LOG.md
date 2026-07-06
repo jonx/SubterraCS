@@ -3522,3 +3522,97 @@ loop re-defaults the scheme every pass (`$F660`) — so it's removed;
 host arrows/Space now map to the option-2 key set (6/7/8/9/0) and
 the hint says "press 2 on title".  Arrows + Space are
 position-independent, which is the actual fix for AZERTY layouts.
+
+## 66. The fidelity audit — the port had grown a second, invented rule set
+
+A full audit of `native/` against docs/disasm/ (four parallel review
+passes: world/levels, enemies/AI, audio, UI) confirmed a suspicion:
+the low-level pixel plumbing was faithfully back-ported, but the
+game-flow layer had accumulated invented rules — some marked
+PORT-ONLY, the worst ones silent, two of them citing Z80 addresses
+(`$D86C`, `$D88A`) that exist in no disassembly.  The remediation
+introduced a single **Historic/Modern switch** (`World.ModernMode`,
+H key / `--modern`, historic by default): historic mode is now
+cassette-rules-only (plus the two always-accepted extras — Shift
+pixel-precision and the N-key sound modes); every invention that was
+worth keeping moved behind the modern flag; the rest was deleted.
+
+**What the audit removed from historic (all silent inventions):**
+
+- Auto level-advance on the 8th rescue, with a "LEVEL n CLEAR +250"
+  banner.  It made the ported `$F868` dive gate unreachable dead
+  code and skipped the documented +1000 page-advance award.  The
+  cassette rule is restored: rescue all 8 → `$E77D[level]` unlocks →
+  dive to altitude ≥ `$75` → +1000 → next level.
+- Laser-vs-decor with an invented HP/score table (entities are
+  eternal — `$F2BC` has no `$EF` check).  Modern-only now.
+- Enemy-ship respawns (cassette ships come only from `$E48D` and
+  stay dead; the `$EADE` path is gated to unreachable level ≥ 6).
+  Modern-only now.
+- Ambient per-frame fuel drain + fuel-0-= -death (cassette drains
+  only while L is held — `$D8D8 SUB $20` — and empty fuel merely
+  blocks the scroll at `$D9F3`).  Modern-only now.
+- Respawn/level-start invincibility (damages.md: "No invincibility
+  flag.  No cooldown").  Modern-only respawn grace now.
+- In-game music (the cassette's only music is the title tune) and
+  synth SFX for events the cassette leaves silent.  The Off sound
+  mode now plays exactly the cassette's three real in-game sounds —
+  `$DDC4` hit, `$E419` bar-fill, `$E135` spawn-in — and the
+  captured `barfill.wav`/`spawnin.wav` are finally wired up.
+  In-game music is modern-only and now parses the real
+  (duration, pitch) `$5E88` format instead of misreading it.
+
+**Four contested constants settled by disasm (use the source!):**
+
+1. `$D95D` vertical ramp: `$D984 INC A; BIT 3,A; JR NZ` tests bit 3
+   of the INCREMENTED value — the counter caps at **7** (max delta
+   3 px/frame).  The port's pre-increment test allowed 8 (delta 5).
+2. `$DFCD` fuel station: `$DFD0 LD A,($E583); CP (HL)` — **raw**
+   scroll cursor, not +15.  MEMORY-MAP's "+15" summary was the
+   error; ship-ai.md's instruction trace was right.  Also settled:
+   both-columns wall death (`$DFC5`/`$DFEE`), refill-only-when-
+   below-$5F, and `$E419` refilling BOTH bars.
+3. `$DEC3` laser colour: the disasm shows `JR NZ; LD A,$43` — the
+   port's cyan-default-when-zero and `OR $40` bright bit were RIGHT
+   and laser.md's summary was incomplete.  (The audit flagged the
+   code; the code wins.)
+4. `$F0F1` (worker sprite #2) is 8 zero bytes, and `$F071` is the
+   only sprite ever drawn — the "4-frame shovel-swing animation" in
+   the port was invention presented as verified.  Workers now use
+   the faithful overwrite blit + white/level-colour shimmer.
+
+**New discovery — the boss is uninitialized memory.**  While
+porting the real `$EC82..$ECE6` movement body (mod-12 cycle,
+`$EE7F`/`$EE80` direction persistence, ±1 chase), a find-bytes
+sweep showed the "per-cycle speed table" at `$EE84` is **never
+written by any instruction in the binary** — the only reference is
+the read at `$EC96`.  Every dump (pre-game and gameplay) shows the
+same leftover loader bytes `B7 ED DB`.  The `$EE8E` draw-mirror
+block is `$7E, spd, spd, $7E, 0…` — so the boss the player sees is
+a 4-scanline band creature whose middle bands cycle through
+uninitialized memory.  1985 shipping code drawing its own garbage,
+faithfully reproduced by the port now.  (MEMORY-MAP + boss.md
+updated.)
+
+**Also restored to cassette behaviour:** boss-vs-player `$DD8C`
+instant death (was missing entirely); the 4-slot no-cooldown
+tail-recede laser with `$E9F0`-style span hits (replacing the
+traveling-bolt + 8-frame cooldown + ±10px boxes); per-level cave
+colours (was hard-coded green — a level-1-only observation); the
+`$E419` 48-step bar fill and `$E104` mini-map paint on EVERY level
+start/respawn (were keyed to the global frame counter and never
+replayed); death = 4×64 particle passes + the `$DC43` bitmap dim;
+`$DDAA` bullet window flipped back to {p, p+1}; bullets are
+attribute-only flashes; the respawn chain now reloads ships and
+deactivates the boss per `$F6D4..$F6EF` and leaves the eternal
+decor records alone.
+
+**The modern mode got real.**  `ProceduralGenerator` was dead code
+misreading `$E69D` as a "hazard spawn schedule" (it's the worker
+table — workers.md).  It now generates complete depth-6+ pages in
+the cassette's own data formats — 4 KB tile buffer, `$E69D`-format
+worker records, `$E48D`-format ship records, `$E58B`-format station
+pair, `$E57B` colour — so every faithful subsystem runs unchanged
+on generated caves (with dive shafts guaranteeing the `$F868` gate
+stays passable).  `SpawnSchedule`/`OriginalLevels`/`TrySpawn`/
+`InitSpawn` (the dead invented spawn layer) are deleted.

@@ -72,6 +72,19 @@ DE7F  LD (IX+$00),A      ; store status byte
 Random color per shot — this is **why the laser changes color
 every time you fire**.
 
+The attribute site at `$DEC3` completes the picture
+(disasm-verified, RE-LOG §66):
+
+```
+DEC3  LD A,R; AND $07    ; random ink 0..7
+DEC7  JR NZ,$DECB        ; zero (black) →
+DEC9  LD A,$43            ;   default = BRIGHT CYAN
+DECB  OR $40              ; set the BRIGHT bit
+```
+
+So a masked-to-zero roll falls back to bright cyan and every beam
+is BRIGHT — the port's `rand == 0 ? $43 : rand | $40` was correct.
+
 ## Bullet Y origin (offset +1)
 
 ```
@@ -261,7 +274,11 @@ In our C# port:
 - `Bullet.Y = altitude + 4` (middle of the 8-px-tall ship sprite —
   fixes "laser is slightly too high")
 - `Bullet.Pattern = $EF` (7-pixel stripe, matches original)
-- `Bullet.Length = MaxLength = 15` (full beam at fire time)
+- `Bullet.Span ≤ 15` — bytes painted at fire time, self-limited
+  at scenery (`$DEDA`) and the screen edge; `Length` counts down
+  from `Span` as the tail recedes
+- 4 slots, NO fire cooldown (a press is ignored only when all 4
+  slots are alive — `$DE41`)
 - `Bullet.DX` sign = firing direction (used by the draw routine;
   the bullet doesn't actually translate — head is anchored)
 - `Bullet.Attr` randomized per shot from `_rng.Next(0, 8) | $40`
@@ -271,22 +288,20 @@ In our C# port:
   recede outward.  Matches the original's visual: beam appears at
   full length on fire, then the near-ship end fades first.
 
-### Visual model: traveling bolt vs. faithful tail-recede
+### Visual model — history: traveling bolt, now reverted
 
-The original's "all 15 bytes paint at fire, tail erases one byte
-per frame from the ship side" is faithful to the cassette, but
-at 60 fps it reads as "the back end is moving away from the
-ship while the front sits still" — which is visually ambiguous
-and the user repeatedly reported as "shooting from outside
-toward the ship".
-
-After three port attempts (top-of-sprite Y, then ship-anchored
-forward draw, then head-anchored backward draw — each less
-ambiguous than the last but still off), the final port uses a
-**traveling-bolt model**: the head `b.X` advances by 8 px per
-frame with a 4-byte trail behind, expiring after `MaxLength`
-travel.  Same duration and similar hit footprint as the
-original, but unambiguously "shoots out from ship".
+An earlier port pass replaced the faithful model with a
+"traveling-bolt" (head advancing 8 px/frame, 4-byte trail, plus
+an invented 8-frame fire cooldown, 8 slots, and ±10/±12 px hit
+boxes), because the faithful tail-recede read ambiguously at
+60 fps.  **The fidelity audit (RE-LOG §66) reverted this**: the
+port is back to the cassette model — 4 slots, no cooldown, full
+span painted at fire time (self-limited at scenery per `$DEDA`),
+tail receding one byte per frame, and hits scored when a target's
+cell lies within the LIVE span on a scanline it covers (the
+`$E9F0` semantics).  The bolt model survives nowhere; if the
+recede ever needs re-clarifying visually it should be done as a
+modern-flag option, not a silent swap.
 
 Bugs found and fixed along the way (all reported by the user):
 
