@@ -415,6 +415,8 @@ Full subsystem index with status: [disasm/README.md](disasm/README.md).
 ## Where to go next
 
 * **Want the finished product?** → [README.md](../README.md)
+* **Want the timeline — the seven phases and the lessons?** →
+  [HISTORY.md](HISTORY.md)
 * **Want the day-by-day story, dead ends included?** →
   [RE-LOG.md](RE-LOG.md)
 * **Want every named address?** → [MEMORY-MAP.md](MEMORY-MAP.md)

@@ -9,7 +9,9 @@ understand *how* we got to the C# port — not just the conclusions.
 For the method distilled — boot the binary in our own emulator,
 extract from RAM, disassemble only the strategic routines — and a
 field guide for doing the same to another game, see
-[PLAYBOOK.md](PLAYBOOK.md).
+[PLAYBOOK.md](PLAYBOOK.md).  For the curated timeline of the whole
+project (seven phases, the wrong turns, the lessons), see
+[HISTORY.md](HISTORY.md).
 
 ---
 

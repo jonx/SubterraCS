@@ -137,6 +137,11 @@ built our own emulator and tools instead of using third-party ones,
 and is written so you could follow it to port a *different* Spectrum
 game.
 
+The **timeline** — seven phases from "snapshot loader" to the
+Historic/Modern split, including the two times the port went too
+creative and how the audits caught it — is chronicled in
+[**docs/HISTORY.md**](docs/HISTORY.md).
+
 The story of the reverse engineering — every dead end included — is
 in [**docs/RE-LOG.md**](docs/RE-LOG.md). The lookup table of every
 named address we've identified is in
@@ -207,6 +212,7 @@ native/          standalone emulator-free C# port (SDL2, no NuGet)
   SubterraCS.Game/        executable
 docs/
   PLAYBOOK.md      the method + a port-your-own-game field guide (start here)
+  HISTORY.md       the chronicle — 7 phases, the wrong turns, the lessons
   RE-LOG.md        the running notebook (read top-to-bottom)
   MEMORY-MAP.md    every named address, organised by RAM region
   TOOLS.md         every tool with what / why / how-to
